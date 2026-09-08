@@ -530,6 +530,7 @@ export class DataMapper {
             frozenMaterialCost: record.frozen_material_cost !== null && record.frozen_material_cost !== undefined ? Number(record.frozen_material_cost) : undefined,
             parentWoId: record.parent_wo_id || undefined,
             assignedTo: record.assigned_to,
+            closedAt: record.closed_at || undefined, // stamps at first TECO (0284) — timeline fallback
             recurringWorkId: record.recurring_work_id || undefined,
             tasks: mappedTasks,
             jsa: mappedJSA,

@@ -1,22 +1,32 @@
 /**
  * My Work — the technician's home.
  *
- * One purpose: my assigned work, today, in priority order, one tap to execute.
- * Card-first (mobile), grouped by urgency (Overdue / Today / This Week / Later),
- * with a last-synced offline copy so the list still opens in a dead zone.
- * Technician roles land here by default (see RoleLanding in App.tsx).
+ * Two halves, one control. OPEN: my assigned work, today, in priority order,
+ * one tap to execute — card-first (mobile), grouped by urgency (Overdue /
+ * Today / This Week / Later), with a last-synced offline copy so the list still
+ * opens in a dead zone. DONE: what I have finished, month by month, with the
+ * hours I booked — the job history a person could never see before.
+ *
+ * Every card carries a status sentence ("In progress since Tue", "Scheduled ·
+ * assigned yesterday by J. Supervisor") read from the system journal in one
+ * batched query (lib/woTimeline.ts). Technician roles land here by default
+ * (see RoleLanding in App.tsx).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    ClipboardList, ChevronRight, MapPin, RefreshCw, WifiOff, CheckCircle2,
+    ClipboardList, ChevronRight, MapPin, RefreshCw, WifiOff, CheckCircle2, Clock, History,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
 import { WorkOrderRecord } from '../schema';
 import { StatusPill, PriorityPill, Button } from '../components/ui';
+import { statusSentence, groupByMonth, completionDateOf, formatWhen, statusLabel, type JournalLike } from '../lib/woTimeline';
+import { isVoidWo } from '../../lib/woState';
 
 type MyWO = WorkOrderRecord & { assets?: { name?: string } | null };
+type DoneWO = MyWO & { my_hours: number; via: 'assigned' | 'labour' | 'completed' };
+type Segment = 'open' | 'done';
 
 const CACHE_PREFIX = 'ers_mywork_cache_';
 
@@ -70,15 +80,40 @@ function dueLabel(due?: string): { text: string; cls: string } {
 const PRIORITY_RANK: Record<string, number> = { EMERGENCY: 0, CRITICAL: 0, URGENT: 1, HIGH: 2, MEDIUM: 3, LOW: 4 };
 const rankOf = (p?: string) => PRIORITY_RANK[(p || '').toUpperCase()] ?? 5;
 
+const fmtHours = (h: number) => (h >= 10 ? Math.round(h).toString() : (Math.round(h * 10) / 10).toString());
+
 export const MyWork: React.FC = () => {
     const { profile } = useAuth();
     const navigate = useNavigate();
     const contactId = profile?.contactId || '';
+    const userId = profile?.id || '';
+    // Names the status-change journal may carry for this person (author_name
+    // = username || email at write time) -> "jobs you completed".
+    const authorKeys = useMemo(() => [profile?.username, profile?.email].filter((x): x is string => !!x), [profile?.username, profile?.email]);
+    const canHaveHistory = !!contactId || authorKeys.length > 0;
 
+    const [segment, setSegment] = useState<Segment>('open');
     const [rows, setRows] = useState<MyWO[]>([]);
     const [loading, setLoading] = useState(true);
     const [offlineCopy, setOfflineCopy] = useState<string | null>(null); // savedAt when serving cache
     const [error, setError] = useState<string | null>(null);
+    // System journals per WO id — the status sentence source. Best-effort:
+    // a card with no journal still renders, it just says less.
+    const [journals, setJournals] = useState<Record<string, JournalLike[]>>({});
+
+    const [done, setDone] = useState<DoneWO[] | null>(null); // null = not loaded yet
+    const [doneLoading, setDoneLoading] = useState(false);
+    const [doneError, setDoneError] = useState<string | null>(null);
+
+    const loadJournals = useCallback(async (ids: string[]) => {
+        if (ids.length === 0) return;
+        try {
+            const j = await DatabaseService.getInstance().getWoStatusJournals(ids);
+            setJournals(prev => ({ ...prev, ...j }));
+        } catch (e) {
+            console.warn('[MyWork] status journals unavailable:', e);
+        }
+    }, []);
 
     const load = useCallback(async () => {
         if (!contactId) { setLoading(false); return; }
@@ -88,6 +123,7 @@ export const MyWork: React.FC = () => {
             setOfflineCopy(null);
             setError(null);
             writeCache(contactId, data);
+            loadJournals(data.map(r => r.id));
         } catch (e) {
             const cached = readCache(contactId);
             if (cached) {
@@ -101,23 +137,42 @@ export const MyWork: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [contactId]);
+    }, [contactId, loadJournals]);
+
+    const loadDone = useCallback(async () => {
+        if (!canHaveHistory) return;
+        setDoneLoading(true);
+        try {
+            const data = await DatabaseService.getInstance().getMyWorkHistory(contactId, userId, authorKeys);
+            setDone(data);
+            setDoneError(null);
+            loadJournals(data.map(r => r.id));
+        } catch (e) {
+            setDoneError('Could not load your job history right now.');
+            console.warn('[MyWork] history load failed:', e);
+        } finally {
+            setDoneLoading(false);
+        }
+    }, [contactId, userId, authorKeys, canHaveHistory, loadJournals]);
 
     useEffect(() => { load(); }, [load]);
+    // History is fetched the first time the segment is opened, then refreshed
+    // with the rest of the page.
+    useEffect(() => { if (segment === 'done' && done === null && !doneLoading) loadDone(); }, [segment, done, doneLoading, loadDone]);
 
     // Assignments land while the tab is backgrounded — refresh silently
     // whenever the window regains focus (data fetched only on mount before).
     // 'ers-refresh' is the shell-level pull-to-refresh broadcast (AppLayout
     // owns the gesture now — this page's own wrapper is retired).
     useEffect(() => {
-        const onFocus = () => load();
+        const onFocus = () => { load(); if (done !== null) loadDone(); };
         window.addEventListener('focus', onFocus);
         window.addEventListener('ers-refresh', onFocus);
         return () => {
             window.removeEventListener('focus', onFocus);
             window.removeEventListener('ers-refresh', onFocus);
         };
-    }, [load]);
+    }, [load, loadDone, done]);
 
     const grouped = useMemo(() => {
         const g: Record<Bucket, MyWO[]> = { overdue: [], today: [], week: [], later: [] };
@@ -134,7 +189,30 @@ export const MyWork: React.FC = () => {
         inProgress: rows.filter(r => r.status === 'WIP').length,
     }), [grouped, rows]);
 
+    // Finished work: dated at completion, newest first, by month.
+    const doneDated = useMemo(() => (done || []).map(wo => ({ wo, at: completionDateOf(wo, journals[wo.id]) }))
+        .sort((a, b) => Date.parse(b.at || '1970') - Date.parse(a.at || '1970')), [done, journals]);
+    const doneGroups = useMemo(() => groupByMonth(doneDated, d => d.at), [doneDated]);
+    const doneStats = useMemo(() => {
+        const now = new Date();
+        const thisMonth = doneDated.filter(d => {
+            if (!d.at || isVoidWo(d.wo.status)) return false;
+            const t = new Date(d.at);
+            return t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth();
+        });
+        return {
+            completedMonth: thisMonth.length,
+            hoursMonth: thisMonth.reduce((s, d) => s + (d.wo.my_hours || 0), 0),
+            completedAll: doneDated.filter(d => !isVoidWo(d.wo.status)).length,
+        };
+    }, [doneDated]);
+
     const openWO = (id: string) => navigate(`/work-orders/${id}`);
+
+    const sentenceFor = (wo: MyWO) => statusSentence(
+        { status: wo.status, createdAt: wo.created_at, closedAt: wo.closed_at },
+        journals[wo.id],
+    );
 
     const Card = ({ wo }: { wo: MyWO }) => {
         const due = dueLabel(wo.due_date);
@@ -161,9 +239,67 @@ export const MyWork: React.FC = () => {
                     <StatusPill status={wo.status} />
                     <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
                 </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0">
+                    <Clock size={12} className="flex-shrink-0 text-slate-400" />
+                    <span className="truncate">{sentenceFor(wo)}</span>
+                </div>
             </button>
         );
     };
+
+    const DoneCard = ({ wo, at }: { wo: DoneWO; at?: string }) => {
+        const cancelled = isVoidWo(wo.status);
+        return (
+            <button
+                onClick={() => openWO(wo.id)}
+                className="w-full text-left bg-white border border-slate-200 rounded-card shadow-card hover:shadow-raised active:scale-[0.995] transition-all p-4 flex flex-col gap-1.5"
+            >
+                <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-xs text-slate-500 flex-shrink-0">{wo.wo_number}</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">{wo.type}</span>
+                    {wo.via === 'labour' && (
+                        <span className="text-[10px] font-semibold text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded flex-shrink-0" title="You booked hours on this job without being the named assignee">
+                            hours booked
+                        </span>
+                    )}
+                    {wo.via === 'completed' && (
+                        <span className="text-[10px] font-semibold text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded flex-shrink-0" title="You completed this job without being the named assignee">
+                            you completed
+                        </span>
+                    )}
+                    <span className="flex-1" />
+                    <StatusPill status={wo.status} />
+                </div>
+                <div className={`font-semibold leading-snug line-clamp-2 ${cancelled ? 'text-slate-500' : 'text-slate-800'}`}>{wo.title}</div>
+                <div className="flex items-center gap-3 text-xs text-slate-500 min-w-0">
+                    {wo.assets?.name && (
+                        <span className="flex items-center gap-1 truncate min-w-0">
+                            <MapPin size={12} className="flex-shrink-0" /><span className="truncate">{wo.assets.name}</span>
+                        </span>
+                    )}
+                    <span className="flex-shrink-0">{statusLabel(wo.status)}{at ? ` ${formatWhen(at)}` : ''}</span>
+                    {wo.my_hours > 0 && <span className="flex-shrink-0 tabular-nums">{fmtHours(wo.my_hours)} h</span>}
+                    <span className="flex-1" />
+                    <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
+                </div>
+            </button>
+        );
+    };
+
+    const subtitle = segment === 'open'
+        ? (rows.length === 0 && !loading ? 'Nothing assigned to you right now' : `${rows.length} open ${rows.length === 1 ? 'job' : 'jobs'} assigned to you`)
+        : (done === null || doneLoading ? 'Your finished jobs' : `${doneStats.completedAll} finished ${doneStats.completedAll === 1 ? 'job' : 'jobs'} on record`);
+
+    const noPerson = (
+        <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
+            <ClipboardList size={36} className="text-slate-400" />
+            <div className="font-semibold text-slate-800">Your account isn't linked to a person record</div>
+            <p className="text-sm text-slate-500 m-0">Work is assigned to people. Ask your administrator to link your login to a person in People &amp; Org, and your assignments will appear here.</p>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')} leftIcon={<ClipboardList size={14} />}>
+                Browse all work orders
+            </Button>
+        </div>
+    );
 
     const content = (
         <div className="ers-page-narrow flex flex-col gap-5 pb-8">
@@ -171,83 +307,149 @@ export const MyWork: React.FC = () => {
             <div className="flex items-center gap-3">
                 <div>
                     <h1 className="text-xl md:text-2xl font-bold text-slate-800">My Work</h1>
-                    <p className="text-sm text-slate-500">
-                        {rows.length === 0 && !loading ? 'Nothing assigned to you right now'
-                            : `${rows.length} open ${rows.length === 1 ? 'job' : 'jobs'} assigned to you`}
-                    </p>
+                    <p className="text-sm text-slate-500">{subtitle}</p>
                 </div>
                 <span className="flex-1" />
-                <Button variant="secondary" size="sm" onClick={() => { setLoading(true); load(); }} leftIcon={<RefreshCw size={14} />} className="hidden md:inline-flex">
+                <Button variant="secondary" size="sm" onClick={() => { setLoading(true); load(); if (done !== null) loadDone(); }} leftIcon={<RefreshCw size={14} />} className="hidden md:inline-flex">
                     Refresh
                 </Button>
             </div>
 
-            {/* ── Offline notice ── */}
-            {offlineCopy && (
-                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">
-                    <WifiOff size={15} className="flex-shrink-0" />
-                    Showing your last synced list ({new Date(offlineCopy).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}). Pull to refresh when back online.
-                </div>
+            {/* ── Open / Done ── */}
+            <div className="flex bg-slate-100 p-0.5 rounded-lg self-start" role="tablist" aria-label="My work">
+                <button
+                    role="tab"
+                    aria-selected={segment === 'open'}
+                    onClick={() => setSegment('open')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${segment === 'open' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <ClipboardList size={13} /> Open{rows.length > 0 && <span className="tabular-nums text-slate-400">{rows.length}</span>}
+                </button>
+                <button
+                    role="tab"
+                    aria-selected={segment === 'done'}
+                    onClick={() => setSegment('done')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${segment === 'done' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <History size={13} /> Done{done && done.length > 0 && <span className="tabular-nums text-slate-400">{done.length}</span>}
+                </button>
+            </div>
+
+            {segment === 'open' && (
+                <>
+                    {/* ── Offline notice ── */}
+                    {offlineCopy && (
+                        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2">
+                            <WifiOff size={15} className="flex-shrink-0" />
+                            Showing your last synced list ({new Date(offlineCopy).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}). Pull to refresh when back online.
+                        </div>
+                    )}
+
+                    {/* ── Summary strip ── */}
+                    {rows.length > 0 && (
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className={`rounded-card border p-3 text-center ${counts.overdue ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+                                <div className={`text-2xl font-bold tabular-nums ${counts.overdue ? 'text-red-600' : 'text-slate-800'}`}>{counts.overdue}</div>
+                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Overdue</div>
+                            </div>
+                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
+                                <div className="text-2xl font-bold tabular-nums text-slate-800">{counts.today}</div>
+                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Due today</div>
+                            </div>
+                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
+                                <div className="text-2xl font-bold tabular-nums text-slate-800">{counts.inProgress}</div>
+                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">In progress</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Loading / error / empty ── */}
+                    {loading && (
+                        <div className="flex flex-col gap-3">
+                            {[0, 1, 2].map(i => <div key={i} className="h-24 bg-slate-100 rounded-card animate-pulse" />)}
+                        </div>
+                    )}
+                    {!loading && error && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-card p-4">{error}</div>
+                    )}
+                    {!loading && !error && rows.length === 0 && !contactId && noPerson}
+                    {!loading && !error && rows.length === 0 && contactId && (
+                        <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
+                            <CheckCircle2 size={36} className="text-emerald-500" />
+                            <div className="font-semibold text-slate-800">You're all caught up</div>
+                            <p className="text-sm text-slate-500 m-0">No open work is assigned to you. New assignments will appear here.</p>
+                            <div className="flex gap-2">
+                                <Button variant="secondary" size="sm" onClick={() => setSegment('done')} leftIcon={<History size={14} />}>
+                                    See what you've finished
+                                </Button>
+                                <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')} leftIcon={<ClipboardList size={14} />}>
+                                    Browse all work orders
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Buckets ── */}
+                    {(Object.keys(BUCKET_META) as Bucket[]).map(b => grouped[b].length > 0 && (
+                        <div key={b} className="flex flex-col gap-2">
+                            <div className="flex items-baseline gap-2 mt-1">
+                                <h2 className={`text-[12px] uppercase font-bold tracking-wider ${BUCKET_META[b].accent}`}>{BUCKET_META[b].label}</h2>
+                                <span className="text-[12px] text-slate-400 tabular-nums">{grouped[b].length}</span>
+                            </div>
+                            {grouped[b].map(wo => <Card key={wo.id} wo={wo} />)}
+                        </div>
+                    ))}
+                </>
             )}
 
-            {/* ── Summary strip ── */}
-            {rows.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
-                    <div className={`rounded-card border p-3 text-center ${counts.overdue ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
-                        <div className={`text-2xl font-bold tabular-nums ${counts.overdue ? 'text-red-600' : 'text-slate-800'}`}>{counts.overdue}</div>
-                        <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Overdue</div>
-                    </div>
-                    <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
-                        <div className="text-2xl font-bold tabular-nums text-slate-800">{counts.today}</div>
-                        <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Due today</div>
-                    </div>
-                    <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
-                        <div className="text-2xl font-bold tabular-nums text-slate-800">{counts.inProgress}</div>
-                        <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">In progress</div>
-                    </div>
-                </div>
-            )}
+            {segment === 'done' && (
+                <>
+                    {!canHaveHistory && noPerson}
 
-            {/* ── Loading / error / empty ── */}
-            {loading && (
-                <div className="flex flex-col gap-3">
-                    {[0, 1, 2].map(i => <div key={i} className="h-24 bg-slate-100 rounded-card animate-pulse" />)}
-                </div>
-            )}
-            {!loading && error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-card p-4">{error}</div>
-            )}
-            {!loading && !error && rows.length === 0 && !contactId && (
-                <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
-                    <ClipboardList size={36} className="text-slate-400" />
-                    <div className="font-semibold text-slate-800">Your account isn't linked to a person record</div>
-                    <p className="text-sm text-slate-500 m-0">Work is assigned to people. Ask your administrator to link your login to a person in People &amp; Org, and your assignments will appear here.</p>
-                    <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')} leftIcon={<ClipboardList size={14} />}>
-                        Browse all work orders
-                    </Button>
-                </div>
-            )}
-            {!loading && !error && rows.length === 0 && contactId && (
-                <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
-                    <CheckCircle2 size={36} className="text-emerald-500" />
-                    <div className="font-semibold text-slate-800">You're all caught up</div>
-                    <p className="text-sm text-slate-500 m-0">No open work is assigned to you. New assignments will appear here.</p>
-                    <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')} leftIcon={<ClipboardList size={14} />}>
-                        Browse all work orders
-                    </Button>
-                </div>
-            )}
+                    {done !== null && done.length > 0 && (
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
+                                <div className="text-2xl font-bold tabular-nums text-slate-800">{doneStats.completedMonth}</div>
+                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Done this month</div>
+                            </div>
+                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
+                                <div className="text-2xl font-bold tabular-nums text-slate-800">{fmtHours(doneStats.hoursMonth)}</div>
+                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Hours this month</div>
+                            </div>
+                            <button onClick={() => setSegment('open')} className="rounded-card border border-slate-200 bg-white p-3 text-center hover:bg-slate-50 transition-colors">
+                                <div className="text-2xl font-bold tabular-nums text-slate-800">{rows.length}</div>
+                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Open now</div>
+                            </button>
+                        </div>
+                    )}
 
-            {/* ── Buckets ── */}
-            {(Object.keys(BUCKET_META) as Bucket[]).map(b => grouped[b].length > 0 && (
-                <div key={b} className="flex flex-col gap-2">
-                    <div className="flex items-baseline gap-2 mt-1">
-                        <h2 className={`text-[12px] uppercase font-bold tracking-wider ${BUCKET_META[b].accent}`}>{BUCKET_META[b].label}</h2>
-                        <span className="text-[12px] text-slate-400 tabular-nums">{grouped[b].length}</span>
-                    </div>
-                    {grouped[b].map(wo => <Card key={wo.id} wo={wo} />)}
-                </div>
-            ))}
+                    {canHaveHistory && (doneLoading || done === null) && !doneError && (
+                        <div className="flex flex-col gap-3">
+                            {[0, 1, 2].map(i => <div key={i} className="h-20 bg-slate-100 rounded-card animate-pulse" />)}
+                        </div>
+                    )}
+                    {doneError && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-card p-4">{doneError}</div>
+                    )}
+                    {!doneLoading && !doneError && done !== null && done.length === 0 && (
+                        <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
+                            <History size={36} className="text-slate-400" />
+                            <div className="font-semibold text-slate-800">No finished jobs yet</div>
+                            <p className="text-sm text-slate-500 m-0">Jobs assigned to you, jobs you complete, and jobs you book hours on will build your history here.</p>
+                        </div>
+                    )}
+
+                    {!doneLoading && done !== null && doneGroups.map(g => (
+                        <div key={g.key} className="flex flex-col gap-2">
+                            <div className="flex items-baseline gap-2 mt-1">
+                                <h2 className="text-[12px] uppercase font-bold tracking-wider text-slate-700">{g.label}</h2>
+                                <span className="text-[12px] text-slate-400 tabular-nums">{g.rows.length}</span>
+                            </div>
+                            {g.rows.map(d => <DoneCard key={d.wo.id} wo={d.wo} at={d.at} />)}
+                        </div>
+                    ))}
+                </>
+            )}
         </div>
     );
 

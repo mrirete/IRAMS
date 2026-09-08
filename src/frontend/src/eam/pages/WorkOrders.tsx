@@ -61,6 +61,7 @@ import { OrgTreePicker } from '../components/OrgTreePicker';
 import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { FilesTab } from '../components/FilesTab';
 import { AuditTrail } from '../components/AuditTrail';
+import { WoStatusTimeline } from '../components/WoStatusTimeline';
 import { AroundThisFailure } from '../components/AroundThisFailure';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // Added import
 import { NotificationService } from '../services/NotificationService';
@@ -394,6 +395,7 @@ export const WorkOrders: React.FC = () => {
                         initialSearch={assetParam}
                         canCreate={canCreate}
                         canDelete={canDelete}
+                        myContactId={woProfile?.contactId || ''}
                         onBulkDelete={async (ids: string[]) => {
                             // ═══ RBAC Layer 2: Submit-level guard ═══
                             if (!canDelete) {
@@ -527,7 +529,7 @@ const WorkClassPill: React.FC<{ c: string }> = ({ c }) => {
     return <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border ${m.cls}`}>{m.label}</span>;
 };
 
-const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], assets?: any[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean }> = ({ jobs, onSelect, onCreate, dictionaries, assets = [], onBulkDelete, initialSearch = '', canCreate = true, canDelete = true }) => {
+const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], assets?: any[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean, myContactId?: string }> = ({ jobs, onSelect, onCreate, dictionaries, assets = [], onBulkDelete, initialSearch = '', canCreate = true, canDelete = true, myContactId = '' }) => {
     const promptModal = usePrompt();
     const [density, setDensity] = useState<Density>('compact');
     const [statusFilter, setStatusFilter] = useState<WorkOrderStatus | 'ALL'>('ALL');
@@ -564,9 +566,14 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     // Backlog = open work only (excludes finished statuses); the "Backlog" preset
     // sorts oldest-first so the aging tail surfaces — a planner's backlog cockpit.
     const [backlogOnly, setBacklogOnly] = useState(false);
-    type WOView = { id: string; name: string; builtin?: boolean; statusFilter: WorkOrderStatus | 'ALL'; classFilter: 'ALL' | 'PROACTIVE' | 'REACTIVE'; backlogOnly?: boolean; sortField: SortField; sortAsc: boolean };
+    // "Assigned to me" — the person's own jobs (work_orders.assigned_to = my
+    // contact), every state, so the desktop list can answer "where are my jobs
+    // and what happened to them" the way My Work does on mobile.
+    const [mineOnly, setMineOnly] = useState(false);
+    type WOView = { id: string; name: string; builtin?: boolean; statusFilter: WorkOrderStatus | 'ALL'; classFilter: 'ALL' | 'PROACTIVE' | 'REACTIVE'; backlogOnly?: boolean; mineOnly?: boolean; sortField: SortField; sortAsc: boolean };
     const BUILTIN_VIEWS: WOView[] = [
         { id: 'all', name: 'All Work Orders', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: false, sortField: 'priority', sortAsc: false },
+        ...(myContactId ? [{ id: 'mine', name: 'Assigned to me', builtin: true, statusFilter: 'ALL' as const, classFilter: 'ALL' as const, backlogOnly: false, mineOnly: true, sortField: 'status' as SortField, sortAsc: false }] : []),
         { id: 'backlog', name: 'Backlog · oldest first', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: true, sortField: 'created', sortAsc: true },
         { id: 'reactive-backlog', name: 'Reactive backlog', builtin: true, statusFilter: 'ALL', classFilter: 'REACTIVE', backlogOnly: true, sortField: 'priority', sortAsc: false },
     ];
@@ -582,7 +589,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     }, []);
 
     const applyView = (v: WOView) => {
-        setStatusFilter(v.statusFilter); setClassFilter(v.classFilter); setBacklogOnly(!!v.backlogOnly);
+        setStatusFilter(v.statusFilter); setClassFilter(v.classFilter); setBacklogOnly(!!v.backlogOnly); setMineOnly(!!v.mineOnly);
         setSortField(v.sortField); setSortAsc(v.sortAsc); setActiveViewId(v.id); setViewsOpen(false);
         localStorage.setItem('irams_wo_sort_field', v.sortField);
         localStorage.setItem('irams_wo_sort_asc', String(v.sortAsc));
@@ -596,7 +603,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
             icon: <Bookmark size={20} className="text-indigo-600" />
         });
         if (!name || !name.trim()) return;
-        const v: WOView = { id: 'u-' + Date.now(), name: name.trim(), statusFilter, classFilter, backlogOnly, sortField, sortAsc };
+        const v: WOView = { id: 'u-' + Date.now(), name: name.trim(), statusFilter, classFilter, backlogOnly, mineOnly, sortField, sortAsc };
         const next = [...userViews, v];
         setUserViews(next); localStorage.setItem(VIEWS_KEY, JSON.stringify(next));
         setActiveViewId(v.id); setViewsOpen(false);
@@ -618,11 +625,12 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
             const matchesStatus = statusFilter === 'ALL' || job.status === statusFilter;
             const matchesClass = classFilter === 'ALL' || classifyWork(job) === classFilter;
             const matchesBacklog = !backlogOnly || !BACKLOG_FINISHED.has((job.status || '').toUpperCase());
+            const matchesMine = !mineOnly || (!!myContactId && job.assignedTo === myContactId);
             const matchesSearch = (job.title || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.id || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.woNumber || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.assetName || '').toLowerCase().includes(search.toLowerCase());
-            return matchesStatus && matchesClass && matchesBacklog && matchesSearch;
+            return matchesStatus && matchesClass && matchesBacklog && matchesMine && matchesSearch;
         });
 
         // Apply sort
@@ -644,7 +652,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
             }
             return sortAsc ? cmp : -cmp;
         });
-    }, [jobs, statusFilter, classFilter, backlogOnly, search, sortField, sortAsc, BACKLOG_FINISHED]);
+    }, [jobs, statusFilter, classFilter, backlogOnly, mineOnly, myContactId, search, sortField, sortAsc, BACKLOG_FINISHED]);
 
     // Planned-vs-Reactive ratio (governance KPI) — over classified work only.
     const classRatio = useMemo(() => {
@@ -1913,6 +1921,15 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         </span>
                     ) : undefined
                 }
+                metadata={
+                    <WoStatusTimeline
+                        status={localJob.status}
+                        createdAt={localJob.dateCreated}
+                        closedAt={localJob.closedAt}
+                        journals={localJob.journals as any}
+                        className="w-full max-w-3xl"
+                    />
+                }
                 actions={[
                     {
                         label: 'Save',
@@ -2030,6 +2047,19 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         </button>
                     )}
                 </div>
+            </div>
+
+            {/* Phone: the header is title-only below 640px, so the progress
+                rail gets its own quiet strip — status is the first thing a
+                technician looks for on a job. */}
+            <div className="sm:hidden px-3 py-2 border-b border-slate-100 bg-white">
+                <WoStatusTimeline
+                    compact
+                    status={localJob.status}
+                    createdAt={localJob.dateCreated}
+                    closedAt={localJob.closedAt}
+                    journals={localJob.journals as any}
+                />
             </div>
 
             {/* Tab Navigation */}
@@ -7549,26 +7579,14 @@ const MyWorkTodayView: React.FC<MyWorkTodayViewProps> = ({
     const [selectedFailureModes, setSelectedFailureModes] = useState<Record<string, string>>({});
     const [actualHoursInput, setActualHoursInput] = useState<Record<string, string>>({});
 
-    // Filter work orders assigned to current user in active states (SCHED / WIP)
+    // Work orders assigned to the current user in active states (SCHED / WIP).
+    // assigned_to is a contacts.id (profile.contactId); the legacy username /
+    // users.id matches are kept for records written before that was settled.
+    // No fallback: an empty list means nothing is assigned. Showing other
+    // people's jobs here misled users into thinking the work was theirs.
     const assignedJobs = useMemo(() => {
-        const username = currentUser?.username || currentUser?.email || '';
-        const filtered = workOrders.filter(job => {
-            const isAssigned = job.assignedTo === username || job.assignedTo === currentUser?.id;
-            const isActive = ['SCHED', 'WIP'].includes(job.status);
-            return isAssigned && isActive;
-        });
-
-        // Fallback for development/testing if no WOs are assigned to current user
-        if (filtered.length === 0) {
-            return workOrders.filter(job => ['SCHED', 'WIP'].includes(job.status));
-        }
-        return filtered;
-    }, [workOrders, currentUser]);
-
-    const isDevFallback = useMemo(() => {
-        const username = currentUser?.username || currentUser?.email || '';
-        const trueAssigned = workOrders.some(job => job.assignedTo === username || job.assignedTo === currentUser?.id);
-        return !trueAssigned;
+        const mine = new Set([currentUser?.contactId, currentUser?.id, currentUser?.username, currentUser?.email].filter(Boolean));
+        return workOrders.filter(job => mine.has(job.assignedTo) && ['SCHED', 'WIP'].includes(job.status));
     }, [workOrders, currentUser]);
 
     // Handle Quick Start Job
@@ -7670,17 +7688,10 @@ const MyWorkTodayView: React.FC<MyWorkTodayViewProps> = ({
                 </span>
             </div>
 
-            {isDevFallback && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 flex items-center gap-2">
-                    <span className="text-base">⚠️</span>
-                    <span>No work orders explicitly assigned to you. Showing all active system work orders for testing.</span>
-                </div>
-            )}
-
             {assignedJobs.length === 0 ? (
                 <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
                     <ClipboardList size={32} className="mx-auto mb-2 text-slate-300" />
-                    <p className="text-xs">You have no active work orders scheduled for today.</p>
+                    <p className="text-xs">No scheduled or in-progress work is assigned to you right now.</p>
                 </div>
             ) : (
                 <div className="space-y-4">

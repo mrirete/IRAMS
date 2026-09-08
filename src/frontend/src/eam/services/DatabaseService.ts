@@ -2689,6 +2689,116 @@ export class DatabaseService {
     }
 
     /**
+     * System journal rows (status / assignment changes) for many work orders in
+     * one round trip — feeds the status sentence on My Work cards and the
+     * timeline without a query per card. Keyed by work order id, oldest first.
+     */
+    public async getWoStatusJournals(woIds: string[]): Promise<Record<string, { entry: string; createdAt: string; createdBy: string; isSystem: boolean }[]>> {
+        const ids = Array.from(new Set(woIds.filter(Boolean)));
+        const out: Record<string, { entry: string; createdAt: string; createdBy: string; isSystem: boolean }[]> = {};
+        if (ids.length === 0) return out;
+        // PostgREST IN lists have a practical URL ceiling — chunk generously.
+        for (let i = 0; i < ids.length; i += 150) {
+            const { data, error } = await supabase
+                .from('journal_entries')
+                .select('entity_id, entry, created_at, author_name, is_system')
+                .eq('entity_type', 'WORK_ORDER')
+                .eq('is_system', true)
+                .in('entity_id', ids.slice(i, i + 150))
+                .order('created_at', { ascending: true });
+            if (error) throw error;
+            for (const r of data || []) {
+                (out[r.entity_id] ||= []).push({ entry: r.entry, createdAt: r.created_at, createdBy: r.author_name || '', isSystem: !!r.is_system });
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Finished work this person did: work orders they were assigned to, any
+     * they booked labour on, and any they themselves moved to Work complete /
+     * Closed (the status-change journal names its author; most legacy jobs
+     * were never assigned to anyone, but somebody completed them). Done and
+     * cancelled states only (the open half lives in getMyWorkOrders). Labour
+     * rows carry either a contacts.id or a users.id historically, so both are
+     * matched; `authorKeys` are the names the journal may carry (username,
+     * email). `my_hours` sums that person's confirmations on the job.
+     */
+    public async getMyWorkHistory(contactId: string, userId?: string, authorKeys: string[] = [], limit = 300): Promise<(WorkOrderRecord & { assets?: { name?: string } | null; my_hours: number; via: 'assigned' | 'labour' | 'completed' })[]> {
+        const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const personIds = Array.from(new Set([contactId, userId].filter((x): x is string => !!x && UUID.test(x))));
+        const keys = Array.from(new Set(authorKeys.filter(Boolean)));
+        if (personIds.length === 0 && keys.length === 0) return [];
+        const DONE = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'];
+        const none = Promise.resolve({ data: [] as any[], error: null as any });
+
+        const [assignedRes, labourRes, completedRes] = await Promise.all([
+            contactId && UUID.test(contactId)
+                ? supabase
+                    .from('work_orders')
+                    .select('*, assets(name)')
+                    .eq('assigned_to', contactId)
+                    .in('status', DONE)
+                    .order('closed_at', { ascending: false, nullsFirst: false })
+                    .order('updated_at', { ascending: false })
+                    .limit(limit)
+                : none,
+            personIds.length
+                ? supabase
+                    .from('work_order_labor')
+                    .select('wo_id, hours_worked, contact_id')
+                    .in('contact_id', personIds)
+                : none,
+            keys.length
+                ? supabase
+                    .from('journal_entries')
+                    .select('entity_id, entry')
+                    .eq('entity_type', 'WORK_ORDER')
+                    .eq('is_system', true)
+                    .in('author_name', keys)
+                    .ilike('entry', 'Status changed:%')
+                    .limit(2000)
+                : none,
+        ]);
+        if (assignedRes.error) throw assignedRes.error;
+        // Labour is a bonus signal — a failed read must not blank the history.
+        const labour = labourRes.error ? [] : (labourRes.data || []);
+        const hoursByWo = new Map<string, number>();
+        for (const l of labour) {
+            hoursByWo.set(l.wo_id, (hoursByWo.get(l.wo_id) || 0) + (Number(l.hours_worked) || 0));
+        }
+
+        // "I completed it": a status change this person made INTO a done state.
+        const DONE_TARGET = /(?:\u2192|->)\s*(TECO|CLOSED|COMPLETED|COMP|CLSD)\b/i;
+        const completedIds = new Set<string>();
+        for (const j of (completedRes.error ? [] : (completedRes.data || []))) {
+            if (DONE_TARGET.test(String(j.entry || ''))) completedIds.add(j.entity_id);
+        }
+
+        type Row = WorkOrderRecord & { assets?: { name?: string } | null; my_hours: number; via: 'assigned' | 'labour' | 'completed' };
+        const rows = new Map<string, Row>();
+        for (const r of assignedRes.data || []) {
+            rows.set(r.id, { ...(r as any), my_hours: hoursByWo.get(r.id) || 0, via: 'assigned' });
+        }
+        const fetchExtra = async (ids: string[], via: 'labour' | 'completed') => {
+            const missing = ids.filter(id => !rows.has(id));
+            for (let i = 0; i < missing.length; i += 150) {
+                const { data: extra } = await supabase
+                    .from('work_orders')
+                    .select('*, assets(name)')
+                    .in('id', missing.slice(i, i + 150))
+                    .in('status', DONE);
+                for (const r of extra || []) {
+                    rows.set(r.id, { ...(r as any), my_hours: hoursByWo.get(r.id) || 0, via });
+                }
+            }
+        };
+        await fetchExtra(Array.from(hoursByWo.keys()), 'labour');
+        await fetchExtra(Array.from(completedIds), 'completed');
+        return Array.from(rows.values());
+    }
+
+    /**
      * Get all work orders linked to a specific asset.
      * Used by the Asset Jobs tab to show associated work.
      */
