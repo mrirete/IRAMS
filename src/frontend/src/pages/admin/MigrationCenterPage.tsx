@@ -374,6 +374,22 @@ export const MigrationCenterPage: React.FC = () => {
                 </label>
             </div>
 
+            {/* The other direction: this register OUT into SAP Migration Cockpit load files. */}
+            <Link
+                to="/admin/migration/sap"
+                className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white hover:border-primary-200 transition-colors px-5 py-4 text-sm"
+            >
+                <FileSpreadsheet size={18} className="mt-0.5 text-primary-600 shrink-0" />
+                <span className="flex-1">
+                    <span className="font-semibold text-slate-800">Moving the other way — into SAP?</span>
+                    <span className="block text-slate-500 mt-0.5">
+                        The SAP Load Center fills the Migration Cockpit templates (functional locations, equipment, materials, BOMs,
+                        measuring points, readings, source lists, opening stock) from this register, with a readiness check per object.
+                    </span>
+                </span>
+                <ArrowRight size={16} className="mt-0.5 text-slate-400 shrink-0" />
+            </Link>
+
             {/* Order warning — the failure mode this page exists to prevent */}
             {counts && counts.assets === 0 && counts.workOrders > 0 && (
                 <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

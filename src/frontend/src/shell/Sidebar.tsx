@@ -402,8 +402,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         {adminExpanded && (
                             <div className="mt-1 mb-2 ml-6 pl-3 border-l border-slate-200 space-y-0.5">
                                 {/* First: the onboarding motion a new tenant starts with. */}
-                                <NavLink to="/admin/migration" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                                <NavLink to="/admin/migration" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Migration Center
+                                </NavLink>
+                                <NavLink to="/admin/migration/sap" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                                    SAP Load Center
                                 </NavLink>
                                 <NavLink to="/eam-admin" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Dictionaries & Permissions

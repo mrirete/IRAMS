@@ -1,0 +1,353 @@
+/**
+ * SapLoadCenterPage — the Migration Center's outbound side: IREAMS → SAP.
+ *
+ * A plant leaving IREAMS for SAP PM/MM (or running both) needs Migration
+ * Cockpit load files. This page fills the consultant's eight-object workbook
+ * from the live register, shows what is ready and what will break a load, and
+ * hands over one workbook — or one sheet at a time in load order.
+ *
+ * Target-system values (company code, plants, valuation classes, storage
+ * location codes…) are SAP configuration, not IREAMS data, so they are entered
+ * here and remembered in this browser. They are also written into the
+ * workbook's Read-me so the file states what it was built against.
+ */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+    ArrowLeft, Download, FileSpreadsheet, Loader2, RefreshCw, AlertTriangle, AlertOctagon, Info,
+    CheckCircle2, Settings2, Database,
+} from 'lucide-react';
+import { downloadWorkbook } from '../../eam/services/assetTemplates';
+import { useToast } from '../../eam/contexts/ToastContext';
+import { errMessage } from '../../eam/services/importTypes';
+import { SAP_OBJECTS, type SapObjectKey } from '../../lib/sapLoad/spec';
+import {
+    buildSapLoad, buildSapWorkbook, defaultParams, suggestStorageLocations,
+    type SapLoadResult, type SapLoadSource, type SapTargetParams, type MaterialBucket,
+} from '../../lib/sapLoad/build';
+import { loadSapSource } from '../../lib/sapLoad/source';
+
+const STORAGE_KEY = 'ireams.sapLoad.params.v1';
+
+function loadParams(): SapTargetParams {
+    const base = defaultParams();
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return base;
+        const saved = JSON.parse(raw) as Partial<SapTargetParams>;
+        return {
+            ...base, ...saved,
+            materialGroup: { ...base.materialGroup, ...(saved.materialGroup ?? {}) },
+            valuationClass: { ...base.valuationClass, ...(saved.valuationClass ?? {}) },
+            storageLocations: { ...(saved.storageLocations ?? {}) },
+        };
+    } catch { return base; }
+}
+
+const BUCKETS: { key: MaterialBucket; label: string; mtart: string }[] = [
+    { key: 'SPARE', label: 'Spares', mtart: 'ERSA' },
+    { key: 'CONSUMABLE', label: 'Consumables', mtart: 'VERB' },
+    { key: 'TOOL', label: 'Tools', mtart: 'HIBE' },
+    { key: 'MATERIAL', label: 'Materials', mtart: 'ROH' },
+];
+
+const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
+    <label className="block">
+        <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
+        {children}
+        {hint && <span className="block text-[11px] text-slate-400 mt-0.5">{hint}</span>}
+    </label>
+);
+
+const inputCls = 'mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-200';
+
+export const SapLoadCenterPage: React.FC = () => {
+    const { showToast } = useToast();
+    const [params, setParams] = useState<SapTargetParams>(loadParams);
+    const [source, setSource] = useState<SapLoadSource | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [showParams, setShowParams] = useState(false);
+
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        setLoadError(null);
+        try {
+            const src = await loadSapSource();
+            setSource(src);
+            // Stores get a storage-location code the first time they are seen.
+            setParams(prev => ({ ...prev, storageLocations: suggestStorageLocations(src.stores, prev.storageLocations) }));
+        } catch (e: unknown) {
+            setLoadError(errMessage(e));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { void refresh(); }, [refresh]);
+
+    useEffect(() => {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(params)); } catch { /* remembered only when storage allows */ }
+    }, [params]);
+
+    const result: SapLoadResult | null = useMemo(
+        () => (source ? buildSapLoad(source, params) : null),
+        [source, params],
+    );
+
+    const set = <K extends keyof SapTargetParams>(k: K, v: SapTargetParams[K]) => setParams(p => ({ ...p, [k]: v }));
+
+    const readmeExtra = useCallback((): string[][] => {
+        if (!result) return [];
+        return [
+            ['Filled from IREAMS', `${new Date().toLocaleString()} — ${SAP_OBJECTS.map(o => `${o.label}: ${result.objects[o.key].length}`).join(', ')}.`],
+            ['Readiness', `${result.issues.filter(i => i.level === 'error').length} error(s), ${result.issues.filter(i => i.level === 'warn').length} warning(s) — see sheet "9 Readiness".`],
+        ];
+    }, [result]);
+
+    const downloadAll = () => {
+        if (!result) return;
+        downloadWorkbook(buildSapWorkbook(result, params, { mode: 'filled', readmeExtra: readmeExtra() }), `IREAMS_SAP_Load_${params.systemLabel ? params.systemLabel.replace(/[^A-Za-z0-9]+/g, '_') + '_' : ''}${new Date().toISOString().slice(0, 10)}.xlsx`);
+        showToast('SAP load workbook downloaded — check the Readiness sheet before loading.', 'success');
+    };
+
+    const downloadOne = (key: SapObjectKey) => {
+        if (!result) return;
+        const spec = SAP_OBJECTS.find(o => o.key === key)!;
+        downloadWorkbook(buildSapWorkbook(result, params, { mode: 'filled', objects: [key], readmeExtra: readmeExtra() }), `IREAMS_SAP_${spec.sheet.replace(/\s+/g, '_')}.xlsx`);
+    };
+
+    const downloadBlank = () => {
+        downloadWorkbook(buildSapWorkbook(null, params, { mode: 'template' }), 'SAP_Load_Templates.xlsx');
+        showToast('Blank SAP load templates downloaded (with example rows).', 'success');
+    };
+
+    const errors = result?.issues.filter(i => i.level === 'error') ?? [];
+    const warnings = result?.issues.filter(i => i.level === 'warn') ?? [];
+    const infos = result?.issues.filter(i => i.level === 'info') ?? [];
+    const totalRows = result ? SAP_OBJECTS.reduce((n, o) => n + result.objects[o.key].length, 0) : 0;
+
+    return (
+        <div className="ers-page-form space-y-6 pb-24 animate-in fade-in duration-300">
+            <div>
+                <Link to="/admin/migration" className="inline-flex items-center gap-1.5 mb-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit py-0.5">
+                    <ArrowLeft size={14} strokeWidth={2.5} /> Back to Migration Center
+                </Link>
+                <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <Database size={22} className="text-primary-600" /> SAP Load Center
+                </h1>
+                <p className="text-slate-500 text-sm mt-1 max-w-2xl">
+                    Moving this register into SAP PM / MM? These are the Migration Cockpit load files — one sheet per object,
+                    SAP field names on row 4, filled from what IREAMS holds today. Load them in order in the Fiori app
+                    <em> Migrate Your Data</em> (LTMC); simulate first, and run ten rows end to end before the full file.
+                </p>
+            </div>
+
+            {/* Target system */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                        <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Settings2 size={16} className="text-slate-400" /> Target system</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                            SAP configuration the files are built against. Company code <b>{params.companyCode}</b>, plant <b>{params.maintenancePlant}</b>,
+                            controlling area <b>{params.controllingArea}</b>, valuation classes <b>{params.valuationClass.SPARE}</b> spares / <b>{params.valuationClass.CONSUMABLE}</b> operating supplies,
+                            price control <b>{params.priceControl}</b>, equipment numbering <b>{params.numbering === 'legacy' ? 'IREAMS numbers kept (external)' : 'SAP assigns (internal)'}</b>.
+                            Remembered in this browser and written into the workbook's Read-me.
+                        </p>
+                    </div>
+                    <button onClick={() => setShowParams(v => !v)} className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2">
+                        {showParams ? 'Hide values' : 'Edit values'}
+                    </button>
+                </div>
+
+                {showParams && (
+                    <div className="mt-5 space-y-5">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <Field label="System / client" hint="Read-me title, e.g. E82 / Client 250">
+                                <input className={inputCls} value={params.systemLabel} onChange={e => set('systemLabel', e.target.value)} placeholder="E82 / Client 250" />
+                            </Field>
+                            <Field label="Company code (BUKRS)"><input className={inputCls} value={params.companyCode} onChange={e => set('companyCode', e.target.value)} /></Field>
+                            <Field label="Controlling area (KOKRS)"><input className={inputCls} value={params.controllingArea} onChange={e => set('controllingArea', e.target.value)} /></Field>
+                            <Field label="Purchasing org (EKORG)"><input className={inputCls} value={params.purchasingOrg} onChange={e => set('purchasingOrg', e.target.value)} /></Field>
+                            <Field label="Maintenance plant (SWERK / WERKS)"><input className={inputCls} value={params.maintenancePlant} onChange={e => set('maintenancePlant', e.target.value)} /></Field>
+                            <Field label="Planning plant (IWERK)"><input className={inputCls} value={params.planningPlant} onChange={e => set('planningPlant', e.target.value)} /></Field>
+                            <Field label="Planner group (INGRP)"><input className={inputCls} value={params.plannerGroup} onChange={e => set('plannerGroup', e.target.value)} /></Field>
+                            <Field label="Equipment numbering" hint="Legacy keeps EQ-NNNNNN as EQUNR; internal leaves it blank">
+                                <select className={inputCls} value={params.numbering} onChange={e => set('numbering', e.target.value as SapTargetParams['numbering'])}>
+                                    <option value="legacy">Keep IREAMS equipment numbers</option>
+                                    <option value="internal">Let SAP assign (internal)</option>
+                                </select>
+                            </Field>
+                            <Field label="FL category (FLTYP)"><input className={inputCls} value={params.flCategory} onChange={e => set('flCategory', e.target.value)} /></Field>
+                            <Field label="Structure indicator (TPLKZ)" hint="Must permit your tag format"><input className={inputCls} value={params.structureIndicator} onChange={e => set('structureIndicator', e.target.value)} /></Field>
+                            <Field label="Equipment category (EQTYP)"><input className={inputCls} value={params.equipmentCategory} onChange={e => set('equipmentCategory', e.target.value)} /></Field>
+                            <Field label="Characteristic prefix (ATNAM)" hint="Create the characteristics in CT04 first"><input className={inputCls} value={params.characteristicPrefix} onChange={e => set('characteristicPrefix', e.target.value)} /></Field>
+                            <Field label="MRP type (DISMM)" hint="Used where a reorder point exists; ND otherwise"><input className={inputCls} value={params.mrpType} onChange={e => set('mrpType', e.target.value)} /></Field>
+                            <Field label="MRP controller (DISPO)"><input className={inputCls} value={params.mrpController} onChange={e => set('mrpController', e.target.value)} /></Field>
+                            <Field label="Purchasing group (EKGRP)"><input className={inputCls} value={params.purchasingGroup} onChange={e => set('purchasingGroup', e.target.value)} /></Field>
+                            <Field label="Price control (VPRSV)">
+                                <select className={inputCls} value={params.priceControl} onChange={e => set('priceControl', e.target.value as 'S' | 'V')}>
+                                    <option value="V">V — moving average (VERPR)</option>
+                                    <option value="S">S — standard price (STPRS)</option>
+                                </select>
+                            </Field>
+                            <Field label="BOM usage (STLAN)"><input className={inputCls} value={params.bomUsage} onChange={e => set('bomUsage', e.target.value)} /></Field>
+                            <Field label="BOM alternative (STLAL)"><input className={inputCls} value={params.bomAlternative} onChange={e => set('bomAlternative', e.target.value)} /></Field>
+                            <Field label="Opening-stock posting date (BUDAT)" hint="DD.MM.YYYY"><input className={inputCls} value={params.postingDate} onChange={e => set('postingDate', e.target.value)} /></Field>
+                            <Field label="Source list valid from (VDATU)" hint="DD.MM.YYYY"><input className={inputCls} value={params.sourceListValidFrom} onChange={e => set('sourceListValidFrom', e.target.value)} /></Field>
+                        </div>
+
+                        <div>
+                            <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">Material types → material group and valuation class</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                {BUCKETS.map(b => (
+                                    <div key={b.key} className="rounded-xl border border-slate-200 p-3">
+                                        <div className="text-sm font-semibold text-slate-700">{b.label} <span className="text-xs text-slate-400 font-normal">→ MTART {b.mtart}</span></div>
+                                        <label className="block mt-2 text-[11px] text-slate-500">Material group (MATKL)
+                                            <input className={inputCls} value={params.materialGroup[b.key]} onChange={e => set('materialGroup', { ...params.materialGroup, [b.key]: e.target.value })} />
+                                        </label>
+                                        <label className="block mt-2 text-[11px] text-slate-500">Valuation class (BKLAS)
+                                            <input className={inputCls} value={params.valuationClass[b.key]} onChange={e => set('valuationClass', { ...params.valuationClass, [b.key]: e.target.value })} />
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {source && source.stores.length > 0 && (
+                            <div>
+                                <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">Stores → SAP storage locations (LGORT, 4 characters)</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    {source.stores.map(st => (
+                                        <label key={st.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                                            <span className="flex-1 text-sm text-slate-700 truncate">{st.name}</span>
+                                            <input
+                                                className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center uppercase"
+                                                maxLength={4}
+                                                value={params.storageLocations[st.id] ?? ''}
+                                                onChange={e => set('storageLocations', { ...params.storageLocations, [st.id]: e.target.value.toUpperCase() })}
+                                            />
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Readiness */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <h3 className="font-semibold text-slate-800">Readiness</h3>
+                    <button onClick={() => void refresh()} disabled={loading} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2 disabled:opacity-50">
+                        {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Re-read the register
+                    </button>
+                </div>
+                {loadError && (
+                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                        <AlertOctagon size={16} className="mt-0.5 shrink-0" /> <span>Could not read the register: {loadError}</span>
+                    </div>
+                )}
+                {loading && !source && <p className="text-sm text-slate-400 mt-3 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Reading assets, materials, BOMs, measuring points, readings and stock…</p>}
+                {result && (
+                    <>
+                        <div className="mt-3 flex items-center gap-4 text-sm flex-wrap">
+                            <span className="text-slate-600"><b>{totalRows.toLocaleString()}</b> load rows across {SAP_OBJECTS.filter(o => result.objects[o.key].length > 0).length} objects</span>
+                            <span className={`flex items-center gap-1 ${errors.length ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                {errors.length ? <AlertOctagon size={14} /> : <CheckCircle2 size={14} />} {errors.length} error{errors.length === 1 ? '' : 's'}
+                            </span>
+                            <span className="flex items-center gap-1 text-amber-700"><AlertTriangle size={14} /> {warnings.length} warning{warnings.length === 1 ? '' : 's'}</span>
+                            <span className="flex items-center gap-1 text-slate-500"><Info size={14} /> {infos.length} note{infos.length === 1 ? '' : 's'}</span>
+                        </div>
+                        {result.issues.length > 0 && (
+                            <ul className="mt-3 divide-y divide-slate-100">
+                                {result.issues.map((i, idx) => (
+                                    <li key={idx} className="py-2 flex items-start gap-2 text-sm">
+                                        {i.level === 'error' ? <AlertOctagon size={14} className="mt-0.5 shrink-0 text-rose-600" />
+                                            : i.level === 'warn' ? <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+                                                : <Info size={14} className="mt-0.5 shrink-0 text-slate-400" />}
+                                        <span className="text-slate-700">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-2">
+                                                {i.object === 'general' ? 'General' : SAP_OBJECTS.find(o => o.key === i.object)?.label}
+                                            </span>
+                                            {i.message}{i.count && i.count > 1 ? ` (${i.count.toLocaleString()} rows)` : ''}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                        {errors.length === 0 && result.issues.length === 0 && (
+                            <p className="mt-3 text-sm text-emerald-700 flex items-center gap-1.5"><CheckCircle2 size={14} /> Nothing to fix — the workbook is load-ready.</p>
+                        )}
+                    </>
+                )}
+            </div>
+
+            {/* Downloads */}
+            <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={downloadAll} disabled={!result || totalRows === 0}
+                    className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2.5 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed">
+                    <Download size={15} /> Download the full SAP load workbook
+                </button>
+                <button onClick={downloadBlank} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-medium px-3 py-2.5">
+                    <FileSpreadsheet size={15} /> Blank templates with examples
+                </button>
+                {errors.length > 0 && <span className="text-xs text-rose-700">Errors listed above will be in the Readiness sheet — fix them, or accept them knowingly.</span>}
+            </div>
+
+            {/* Objects, in load order */}
+            <div className="space-y-3">
+                {SAP_OBJECTS.map(o => {
+                    const n = result?.objects[o.key].length ?? 0;
+                    const skipped = result?.skipped[o.key] ?? 0;
+                    const mine = result?.issues.filter(i => i.object === o.key) ?? [];
+                    const hasError = mine.some(i => i.level === 'error');
+                    return (
+                        <div key={o.key} className={`rounded-2xl border bg-white p-5 ${n > 0 && !hasError ? 'border-emerald-200' : 'border-slate-200'}`}>
+                            <div className="flex items-start gap-4">
+                                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-bold text-sm border
+                                    ${hasError ? 'bg-rose-50 text-rose-600 border-rose-200' : n > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                    {o.order}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className="font-semibold text-slate-800">{o.label}</h3>
+                                        <span className="text-[10px] text-slate-400 font-mono">{o.sheet}</span>
+                                        {result && (
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${n > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                {n > 0 ? `${n.toLocaleString()} rows` : 'Nothing to load'}
+                                            </span>
+                                        )}
+                                        {skipped > 0 && <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">{skipped} skipped</span>}
+                                    </div>
+                                    <p className="text-sm text-slate-500 mt-1">{o.hint}</p>
+                                    <p className="text-xs text-slate-400 mt-1.5 font-mono truncate" title={o.fields.map(f => f.name).join(' · ')}>
+                                        {o.fields.map(f => f.name).join(' · ')}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-3 flex-wrap">
+                                        <button onClick={() => downloadOne(o.key)} disabled={!result || n === 0}
+                                            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                                            <Download size={13} /> Download this sheet
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                <h3 className="font-semibold text-slate-800 mb-1">Not loadable: maintenance history</h3>
+                <p>
+                    Historical work orders{source ? ` (${source.workOrderCount.toLocaleString()} here)` : ''} are not in the workbook.
+                    There is no standard migration object for closed orders, and creating them retrospectively distorts SAP's cost and status
+                    reporting. Keep the history in IREAMS, or hand it over as a report from the Specialist's assessment.
+                </p>
+            </div>
+        </div>
+    );
+};
+
+export default SapLoadCenterPage;
