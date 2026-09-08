@@ -4632,8 +4632,13 @@ export class DatabaseService {
         // owns status / actual_hours once time has been posted; a client copy
         // taken before the posting must not write them back.
         const { data: existingRows } = await supabase.from('job_tasks')
-            .select('id, status, actual_hours, actual_finish_date').eq('wo_id', woId);
+            .select('id, status, actual_hours, actual_finish_date, assigned_user_ids, assigned_org_unit_ids').eq('wo_id', woId);
         const existingById = new Map<string, any>((existingRows || []).map((r: any) => [r.id, r]));
+        const sameSet = (a: unknown, b: unknown) => {
+            const na = Array.isArray(a) ? [...a].map(String).sort() : [];
+            const nb = Array.isArray(b) ? [...b].map(String).sort() : [];
+            return na.length === nb.length && na.every((x, i) => x === nb[i]);
+        };
 
         // 1. Upsert provided tasks
         for (const task of tasks) {
@@ -4646,10 +4651,26 @@ export class DatabaseService {
                 dbRecord.actual_hours = prior.actual_hours;
                 dbRecord.actual_finish_date = prior.actual_finish_date;
             }
+            // Who is on a step is Assign-holders' business (0346). A save that
+            // did not touch the assignees must not carry them: an unchanged
+            // list is dropped from the payload, and a copy that drifted from
+            // the DB (someone else assigned meanwhile) is dropped too rather
+            // than failing a status or observation save with ASSIGN_REQUIRED.
+            if (prior) {
+                if (sameSet(prior.assigned_user_ids, dbRecord.assigned_user_ids)) delete dbRecord.assigned_user_ids;
+                if (sameSet(prior.assigned_org_unit_ids, dbRecord.assigned_org_unit_ids)) delete dbRecord.assigned_org_unit_ids;
+            }
             // console.log('[updateJobTasks] Upserting task:', dbRecord); // Reducing log noise
 
             // We MUST select the returned ID to know what the DB generated for new tasks
-            const { data, error } = await supabase.from('job_tasks').upsert(dbRecord).select('id').single();
+            let { data, error } = await supabase.from('job_tasks').upsert(dbRecord).select('id').single();
+            if (error && /ASSIGN_REQUIRED/.test(error.message || '') && ('assigned_user_ids' in dbRecord || 'assigned_org_unit_ids' in dbRecord)) {
+                // The caller cannot assign — keep the DB's assignee lists and save the rest.
+                console.warn('[updateJobTasks] assignee list dropped from the save (caller holds no Assign):', dbRecord.id);
+                delete dbRecord.assigned_user_ids;
+                delete dbRecord.assigned_org_unit_ids;
+                ({ data, error } = await supabase.from('job_tasks').upsert(dbRecord).select('id').single());
+            }
             if (error) {
                 console.error("[updateJobTasks] Error updating task:", error);
                 throw error;

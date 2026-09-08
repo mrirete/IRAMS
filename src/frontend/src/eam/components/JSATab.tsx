@@ -22,7 +22,20 @@ export const isRealJsaId = (id?: string): id is string =>
 const JSA_SIGNOFF_ROLES = ['Worker', 'Supervisor', 'HSE Officer'] as const;
 
 export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void; dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
-    const { user } = useAuth();
+    const { user, permissions: safetyPerms } = useAuth();
+    // Permit to work follows the safety row of the matrix (0347/0348): raise
+    // needs create; approve / issue / suspend / close need approve and a
+    // different person from the one who raised it (four-eyes); accept and
+    // return belong to the requester or permit holder.
+    const canRaisePermit = safetyPerms?.safety?.create === true;
+    const canEditSafety = safetyPerms?.safety?.edit === true;
+    const canApproveSafety = safetyPerms?.safety?.approve === true;
+    const isMine = (permit: any) => !!user?.id && (permit?.createdBy === user.id || permit?.permitHolderId === user.id || permit?.receiverId === user.id);
+    const raisedByMe = (permit: any) => !!user?.id && permit?.createdBy === user.id;
+    const canApprovePermit = (permit: any) => canApproveSafety && !raisedByMe(permit);
+    const gateBtn = (allowed: boolean, why: string) => allowed ? {} : { disabled: true, title: why, className: 'px-3 py-1 text-xs font-bold rounded bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed' };
+    const WHY_APPROVE = 'Needs Safety · Approve, by someone other than the person who raised the permit';
+    const WHY_RAISE = 'Raising a permit needs Safety · Create';
     const { showToast } = useToast();
     const confirm = useConfirm();
     const promptModal = usePrompt();
@@ -870,7 +883,11 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                         <h3 className="font-bold text-slate-800">Permits to Work</h3>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{permits.length}</span>
                     </div>
-                    <button onClick={(e) => { e.preventDefault(); if (!showCreatePermit) { setNewPermit((prev: any) => ({ ...prev, description: job.description || prev.description })); } setShowCreatePermit(!showCreatePermit); }} className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm">
+                    <button
+                        onClick={(e) => { e.preventDefault(); if (!canRaisePermit) { showToast(WHY_RAISE, 'info'); return; } if (!showCreatePermit) { setNewPermit((prev: any) => ({ ...prev, description: job.description || prev.description })); } setShowCreatePermit(!showCreatePermit); }}
+                        className={canRaisePermit ? 'bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm' : 'bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1.5 rounded text-sm font-bold cursor-not-allowed'}
+                        title={canRaisePermit ? undefined : WHY_RAISE}
+                    >
                         + New Permit
                     </button>
                 </summary>
@@ -978,6 +995,7 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handlePermitStatusChange(permit.id, 'PENDING'); }}
                                             className="px-3 py-1 text-xs font-bold bg-amber-500 text-white rounded hover:bg-amber-600 shadow-sm"
+                                            {...gateBtn(raisedByMe(permit) || canEditSafety, 'Only the person who raised the permit (or a safety editor) can submit it')}
                                         >
                                             Submit for Approval
                                         </button>
@@ -986,6 +1004,7 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handlePermitStatusChange(permit.id, 'ISSUED'); }}
                                             className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-primary-500 shadow-sm"
+                                            {...gateBtn(canApprovePermit(permit), WHY_APPROVE)}
                                         >
                                             Issue Permit
                                         </button>
@@ -994,6 +1013,7 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handlePermitStatusChange(permit.id, 'ACTIVE'); }}
                                             className="px-3 py-1 text-xs font-bold bg-green-600 text-white rounded hover:bg-green-700 shadow-sm"
+                                            {...gateBtn(isMine(permit) || canApproveSafety, 'The permit is accepted by the person who raised it or the permit holder')}
                                         >
                                             Start Work
                                         </button>
@@ -1003,12 +1023,14 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleReturnPermit(permit.id); }}
                                                 className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-primary-500 shadow-sm"
+                                                {...gateBtn(isMine(permit) || canApproveSafety, 'The permit is returned by the person who raised it, the permit holder, or an approver')}
                                             >
                                                 Return Permit
                                             </button>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handlePermitStatusChange(permit.id, 'SUSPENDED'); }}
                                                 className="px-3 py-1 text-xs font-bold bg-red-500 text-white rounded hover:bg-red-600 shadow-sm"
+                                                {...gateBtn(canApproveSafety, 'Suspending a permit needs Safety · Approve')}
                                             >
                                                 Suspend
                                             </button>
@@ -1018,6 +1040,7 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handlePermitStatusChange(permit.id, 'CLOSED'); }}
                                             className="px-3 py-1 text-xs font-bold bg-slate-600 text-white rounded hover:bg-slate-700 shadow-sm"
+                                            {...gateBtn(canApproveSafety, 'Closing a permit needs Safety · Approve')}
                                         >
                                             Close Permit
                                         </button>
@@ -1128,20 +1151,24 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                         </div>
                                                     </div>
                                                     {app.decision === 'PENDING' && permit.status === 'PENDING' && (
-                                                        <div className="flex gap-2">
-                                                            <button
-                                                                onClick={() => handleApprovalDecision(app.id, 'APPROVED')}
-                                                                className="px-3 py-1 text-xs font-bold bg-green-600 text-white rounded hover:bg-green-700"
-                                                            >
-                                                                Approve
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleApprovalDecision(app.id, 'REJECTED')}
-                                                                className="px-3 py-1 text-xs font-bold bg-red-500 text-white rounded hover:bg-red-600"
-                                                            >
-                                                                Reject
-                                                            </button>
-                                                        </div>
+                                                        canApprovePermit(permit) ? (
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => handleApprovalDecision(app.id, 'APPROVED')}
+                                                                    className="px-3 py-1 text-xs font-bold bg-green-600 text-white rounded hover:bg-green-700"
+                                                                >
+                                                                    Approve
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleApprovalDecision(app.id, 'REJECTED')}
+                                                                    className="px-3 py-1 text-xs font-bold bg-red-500 text-white rounded hover:bg-red-600"
+                                                                >
+                                                                    Reject
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-[10px] text-slate-400 italic" title={WHY_APPROVE}>{raisedByMe(permit) ? 'You raised this permit — someone else approves' : 'Awaiting an approver'}</span>
+                                                        )
                                                     )}
                                                 </div>
                                             ))}
@@ -1153,6 +1180,7 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                 <button
                                                     onClick={() => handlePermitStatusChange(permit.id, 'APPROVED')}
                                                     className="px-3 py-1 text-xs font-bold bg-green-600 text-white rounded hover:bg-green-700 shadow-sm"
+                                                    {...gateBtn(canApprovePermit(permit), WHY_APPROVE)}
                                                 >
                                                     Mark as Approved
                                                 </button>

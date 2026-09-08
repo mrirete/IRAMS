@@ -111,8 +111,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         contacts: BASIC_ACCESS,
         vendors: { ...BASIC_ACCESS, approve: true, viewCosts: true },
         taskLibrary: BASIC_ACCESS,
-        // Premium — Blocked
-        finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        // safety: planners prepare the JSA and the permit request with the
+        // plan (create/edit); approving and issuing stays with the supervisor.
+        finops: NO_ACCESS_PERM, safety: BASIC_ACCESS,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
@@ -201,11 +202,12 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         contacts: VIEW_ONLY_PERM,
         vendors: VIEW_ONLY_PERM,
         taskLibrary: VIEW_ONLY_PERM,
-        // safety is VIEW_ONLY, not NO_ACCESS (RF-01): supervisors review their
-        // crew's JSAs and own the LOTO discipline — the same matrix-error class
-        // already corrected for TECHNICIAN. Blocking the reviewer while the
-        // performer can see the assessment was policy drift, not policy.
-        finops: NO_ACCESS_PERM, safety: VIEW_ONLY_PERM,
+        // safety.approve (2026-09-08): the supervisor is the area / operations
+        // authority on a permit to work — they approve, issue, suspend and
+        // close permits and sign off JSAs. Until now the matrix gave every line
+        // role view-only and the PTW screen checked nothing, so a technician
+        // could raise, approve and issue their own permit.
+        finops: NO_ACCESS_PERM, safety: { ...BASIC_ACCESS, approve: true },
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
@@ -324,11 +326,11 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         // Blocked
         purchasing: NO_ACCESS_PERM, analytics: NO_ACCESS_PERM,
         vendors: NO_ACCESS_PERM,
-        // safety is VIEW_ONLY, not NO_ACCESS: a technician completes the JSA on
-        // their own job and performs the lockout/tagout. Withholding it was a
-        // matrix error, not a policy — JSATab, WorkOrders and RecurringWork all
-        // read jsa_assessments from surfaces technicians live on.
-        finops: NO_ACCESS_PERM, safety: VIEW_ONLY_PERM,
+        // safety view + create: a technician completes the JSA on their own
+        // job, raises the permit request for it and accepts / returns the
+        // permit as the performing authority. Approving and issuing need
+        // safety.approve, which technicians never hold (four-eyes).
+        finops: NO_ACCESS_PERM, safety: { ...VIEW_ONLY_PERM, create: true },
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
