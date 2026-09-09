@@ -75,6 +75,34 @@ import { errorLog } from './ErrorLogService';
  * Site-scoping: Application-side via filterAssetsBySiteScope().
  */
 
+/** "4 labour entries on work orders, 1 journal entry" — for the delete-refused message. */
+export function describeUserHistory(refs: { table: string; column: string; rows: number }[]): string {
+    const labels: Record<string, string> = {
+        work_order_labor: 'labour entries on work orders',
+        work_orders: 'work orders created',
+        service_requests: 'service requests raised',
+        journal_entries: 'journal entries',
+        inventory_transactions: 'inventory transactions',
+        entity_files: 'uploaded files',
+        moc_requests: 'MOC requests',
+        production_logs: 'production log entries',
+        audits: 'assessments',
+        audit_assessments: 'assessments',
+        audit_findings: 'assessment findings',
+        audit_corrective_actions: 'corrective actions',
+        audit_responses: 'assessment answers',
+        audit_templates: 'assessment templates',
+        ers_prediction_alerts: 'acknowledged alerts',
+        ers_vision_results: 'reviewed vision results',
+        ers_criticality_assessments: 'criticality assessments',
+        jsa_templates: 'JSA templates',
+    };
+    const byTable = new Map<string, number>();
+    for (const r of refs) byTable.set(r.table, (byTable.get(r.table) || 0) + Number(r.rows || 0));
+    const parts = Array.from(byTable.entries()).map(([t, n]) => `${n} ${labels[t.replace(/^public./, '')] || t.replace(/_/g, ' ')}`);
+    return `has operational history (${parts.join(', ')}) and cannot be deleted. Disable the login instead — the history stays attributable.`;
+}
+
 export class DatabaseService {
     private static instance: DatabaseService;
 
@@ -446,20 +474,21 @@ export class DatabaseService {
             throw new Error('Invalid contact ID format. All records must be synced to Supabase.');
         }
 
-        // 1. Remove any linked login accounts (auth + profile) so deleting a person
-        //    also removes their sign-in — not just unlinks it (fixes "deleted but still logs in").
+        // 1. Remove any linked login (profile + auth) FIRST, and stop if that is
+        //    refused. Deleting the contact regardless is what produced orphan
+        //    "SYS-USER" rows that could never be removed from the directory.
         const { data: linkedUsers } = await supabase.from('users').select('id').eq('contact_id', contactId);
         for (const u of (linkedUsers || [])) {
-            const { error: authErr } = await supabase.rpc('delete_auth_user', { p_user_id: u.id });
-            if (authErr) console.warn('delete_auth_user failed for linked user', u.id, authErr.message);
+            await this.deleteUser(u.id); // throws with the reason (history / permission)
         }
-        // Clean up any profile rows the auth cascade didn't remove.
-        const { error: profErr } = await supabase.from('users').delete().eq('contact_id', contactId);
-        if (profErr) console.warn('Error removing linked user profiles:', profErr.message);
 
-        const { error } = await supabase.from('contacts').delete().eq('id', contactId);
+        // 2. The contact itself. return=minimal hides an RLS refusal as a 0-row
+        //    success, so ask for the deleted id back.
+        const { data: gone, error } = await supabase.from('contacts').delete().eq('id', contactId).select('id');
         if (error) throw new Error(error.message);
-
+        if (!gone || gone.length === 0) {
+            throw new Error('The contact was not deleted — it may belong to another tenant or your role lacks contacts.delete.');
+        }
     }
 
     // --- VENDORS ---
@@ -1581,8 +1610,14 @@ export class DatabaseService {
         console.log('[DatabaseService] updateUser SUCCESS. Rows returned:', data?.length, data);
     }
 
+    /**
+     * Remove a directory login: profile row + auth user, atomically, through the
+     * admin-only delete_directory_user RPC (0353). Throws with a human-readable
+     * reason when the person cannot be deleted — most commonly because they have
+     * work-order labour or other operational history; retire the login with
+     * setUserLoginActive(id, false) instead.
+     */
     public async deleteUser(userId: string): Promise<void> {
-        // Note: This only deletes public.users. Auth user remains unless deleted via Admin API.
 
         // Validate UUID to prevent "invalid input syntax" error for mock data (Cascading Delete Fix)
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1596,13 +1631,17 @@ export class DatabaseService {
             return;
         }
 
-        // Remove the login (auth.users) too — the browser can't delete auth rows, so
-        // use the SECURITY DEFINER RPC. This is what stops a deleted user still signing in.
-        const { error: authErr } = await supabase.rpc('delete_auth_user', { p_user_id: userId });
-        if (authErr) console.warn('delete_auth_user RPC failed (login may persist):', authErr.message);
-
-        const { error } = await supabase.from('users').delete().eq('id', userId);
+        const { data, error } = await supabase.rpc('delete_directory_user', { p_user_id: userId });
         if (error) throw new Error(error.message);
+        const res = (data || {}) as { deleted?: boolean; reason?: string; username?: string; refs?: { table: string; column: string; rows: number }[] };
+        if (res.deleted) return;
+        if (res.reason === 'not_found') return; // already gone — nothing left to remove
+        if (res.reason === 'has_history') {
+            const err: any = new Error(describeUserHistory(res.refs || []));
+            err.code = 'HAS_HISTORY';
+            throw err;
+        }
+        throw new Error('The account was not deleted.');
     }
 
     /** Enable/disable a login without deleting it (bans/unbans the auth user). */

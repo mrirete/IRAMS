@@ -150,7 +150,8 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             }
             showModal('Success', isRealContact ? 'Contact and any linked login removed.' : 'System user and login removed.', 'success');
         } catch (e: any) {
-            showModal('Delete Failed', e.message, 'danger');
+            const msg = e?.code === 'HAS_HISTORY' ? `${deleteModal.contactName} ${e.message}` : e.message;
+            showModal('Delete Failed', msg, 'danger');
         } finally {
             setLoading(false);
             setDeleteModal({ isOpen: false, contactId: null, contactName: '' });
@@ -432,10 +433,13 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
         }
         const db = DatabaseService.getInstance();
         const ids = Array.from(selectedContactIds);
+        const nameOf = (id: string) => mergedContacts.find(c => c.id === id)?.name || id;
         let deleted = 0;
+        const retired: string[] = [];   // login with history: kept, but disabled
+        const failed: string[] = [];    // everything else, with the reason
         for (const id of ids) {
+            const isRealContact = contacts.some(c => c.id === id);
             try {
-                const isRealContact = contacts.some(c => c.id === id);
                 if (isRealContact) {
                     await db.deleteContact(id);
                 } else {
@@ -443,14 +447,32 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                 }
                 deleted++;
             } catch (e: any) {
-                console.warn(`Failed to delete contact ${id}:`, e.message);
+                if (e?.code === 'HAS_HISTORY' && !isRealContact) {
+                    // A login with postings cannot be deleted (its labour and
+                    // records must stay attributable). The closest honest outcome
+                    // is to retire it: no sign-in, marked inactive, history kept.
+                    try {
+                        await db.setUserLoginActive(id, false);
+                        retired.push(`${nameOf(id)} ${e.message}`);
+                    } catch (e2: any) {
+                        failed.push(`${nameOf(id)}: ${e2.message}`);
+                    }
+                } else {
+                    failed.push(`${nameOf(id)}: ${e.message}`);
+                }
             }
         }
         setSelectedContactIds(new Set());
         setBulkDeleteModal(false);
         if (selectedContact && ids.includes(selectedContact.id)) setSelectedContact(null);
         await loadData();
-        showModal('Bulk Delete Complete', `Deleted ${deleted} of ${ids.length} contact(s).`, deleted === ids.length ? 'success' : 'warning');
+        const lines = [`Deleted ${deleted} of ${ids.length}.`];
+        if (retired.length) lines.push('', 'Kept, login disabled:', ...retired.map(r => '• ' + r));
+        if (failed.length) lines.push('', 'Not deleted:', ...failed.map(r => '• ' + r));
+        showModal(
+            deleted === ids.length ? 'Delete Complete' : 'Delete Finished With Exceptions',
+            lines.join('\n'),
+            failed.length ? 'danger' : deleted === ids.length ? 'success' : 'warning');
     };
 
     return (
