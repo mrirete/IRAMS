@@ -23,7 +23,8 @@ import {
   normalizeContext, composeOperatingContext, takeSnapshot,
   type AssetOperatingContext, type ContextSnapshot, type ContextAssetLike,
 } from '../../lib/operatingContext';
-import { getCategory, getClass, getType } from '../../lib/iso14224Taxonomy';
+import { getCategory, getClass, getType, failureScopeFor } from '../../lib/iso14224Taxonomy';
+import { renderFailureCodesForPrompt, type FailureCodeLike } from '../../lib/rcmFailureCodes';
 import { renderBreakdownForPrompt, pinFailureMode, EMPTY_BREAKDOWN, type AssetBreakdown, type BreakdownComponent, type BreakdownPart } from '../../lib/rcmBreakdown';
 
 export type { AIRecommendation } from './rcmPlan';
@@ -1618,6 +1619,21 @@ Rules: 4-8 subunits, 2-6 components each, name what a maintenance technician wou
     return { ok: true, assets: Number(r.assets || 0), bomLines: Number(r.bom_lines || 0) };
   }
 
+  /**
+   * The ISO 14224 failure-mode codes a study's modes may carry: the class's
+   * failure scope (ROTATING, STATIC_PRESSURE, …) plus the generic set. Work
+   * orders are coded with these; a mode that carries one matches exactly.
+   */
+  async failureCodesFor(study: RCMStudy | null | undefined): Promise<FailureCodeLike[]> {
+    const ctx = study?.asset_id ? await this.getAssetContext(study.asset_id) : null;
+    const scope = ctx ? failureScopeFor({ asset_class: ctx.asset_class, asset_type_code: ctx.asset_type_code, asset_category: ctx.asset_category }) : '';
+    let q = supabase.from('reference_codes_effective').select('code, description, category_ref').eq('category', 'FAILURE_MODE').eq('active', true);
+    q = scope ? q.or(`category_ref.eq.${scope},category_ref.is.null`) : q.is('category_ref', null);
+    const { data, error } = await q.order('code');
+    if (error) { console.warn('[RCM] failureCodesFor:', error.message); return []; }
+    return ((data || []) as FailureCodeLike[]).filter(c => c.code);
+  }
+
   /** 0337 — the study's unresolved living-study flags, newest first. */
   async getEvidenceFlags(studyId: string): Promise<RCMEvidenceFlag[]> {
     const { data, error } = await supabase.from('ers_rcm_evidence_flags')
@@ -1918,15 +1934,19 @@ Rules: 4-8 subunits, 2-6 components each, name what a maintenance technician wou
         component?: string;
         /** the BOM part number / description the mode is about, or '' */
         part?: string;
+        /** ISO 14224 failure mode code from the offered list, or '' */
+        code?: string;
       }>;
     }>;
   } | null> {
     if (!isAIAvailable()) return null;
 
     const assetContext = await this.assetContextFor(study);
+    const codesText = renderFailureCodesForPrompt(await this.failureCodesFor(study));
 
     const prompt = `You are performing an RCM study per SAE JA1011.
 ${assetContext}
+${codesText}
 Operating Context: ${study.operating_context || 'General industrial service'}
 Study Type: ${study.study_type}
 
@@ -1948,6 +1968,7 @@ Return ONLY valid JSON with this structure:
       "failure_modes": [
         {
           "description": "Failure mode per ISO 14224",
+          "code": "The ISO 14224 failure mode code from the list above, or empty",
           "cause": "Root cause",
           "effect_local": "Component-level effect",
           "effect_system": "System-level effect",
@@ -2082,14 +2103,17 @@ Rules: pick exactly ONE strategy (there is no combined option - if two tasks are
     occurrence?: number;
     component?: string;
     part?: string;
+    code?: string;
   }> | null> {
     if (!isAIAvailable()) return null;
 
     const assetContext = await this.assetContextFor(study);
     const existing = await this.getFailureModes(fn.id);
+    const codesText = renderFailureCodesForPrompt(await this.failureCodesFor(study));
 
     const prompt = `RCM study per SAE JA1011 — expand ONE function into its failure modes.
 ${assetContext}
+${codesText}
 Operating Context: ${study.operating_context || 'General industrial service'}
 
 Function (${fn.function_number}, ${fn.function_type}): ${fn.function_description}
@@ -2107,6 +2131,7 @@ Return ONLY valid JSON:
   "failure_modes": [
     {
       "description": "Failure mode per ISO 14224",
+      "code": "The ISO 14224 failure mode code from the list above, or empty",
       "cause": "Mechanism / root cause",
       "effect_local": "Component-level effect",
       "effect_system": "System-level effect",

@@ -49,6 +49,7 @@ import { suggestPointsForAsset, type SuggestedPoint } from '../lib/predict/limit
 import type { RCMAssetContext, RCMCoverageRow, RCMMonitoringReality, RCMEvidenceFlag, RCMStudyItem, RCMBreakdownTemplate } from '../eam/services/RCMService';
 import { RCMEquipmentTab } from '../components/rcm/RCMEquipmentTab';
 import { RCMApplyTemplateModal } from '../components/rcm/RCMApplyTemplateModal';
+import { matchFailureCode, acceptFailureCode, type FailureCodeLike } from '../lib/rcmFailureCodes';
 import type { RCMStudyTemplate } from '../eam/services/RCMService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
@@ -150,6 +151,8 @@ export const RCMPage: React.FC = () => {
   // 0352 — spooling a study template onto similar assets; the Specialist proposing items.
   const [showApplyTemplate, setShowApplyTemplate] = useState(false);
   const [suggestingItems, setSuggestingItems] = useState(false);
+  // ISO 14224 failure-mode codes for this asset's class — drafted modes carry one so work orders match exactly.
+  const [failureCodes, setFailureCodes] = useState<FailureCodeLike[]>([]);
   const pointSuggestions = useMemo<SuggestedPoint[]>(() => liveAssetContext
     ? suggestPointsForAsset({ assetClass: liveAssetContext.asset_class, assetCategory: liveAssetContext.asset_category, operatingContext: liveAssetContext.operating_context as any })
     : [], [liveAssetContext]);
@@ -341,6 +344,7 @@ export const RCMPage: React.FC = () => {
     setLiveAssetContext(ctx);
     // 0351: templates for this class/type — offered on the Equipment tab.
     setBreakdownTemplates(await rcmService.listBreakdownTemplates(ctx?.asset_class, ctx?.asset_type_code));
+    setFailureCodes(await rcmService.failureCodesFor(study));
     // 0351: the study's items are the breakdown; the register is what an import could add.
     const [items, reg] = await Promise.all([rcmService.getStudyItems(id), rcmService.getAssetBreakdown(study.asset_id)]);
     setStudyItems(items);
@@ -883,6 +887,7 @@ export const RCMPage: React.FC = () => {
           occurrence: clampScore(m.occurrence),
           data_source: 'ai_generated',
           sort_order: base + i + 1,
+          failure_mode_code: acceptFailureCode(m.code, failureCodes) ?? matchFailureCode(m.description, failureCodes),
           ...linkFor(matchComponent(m.component, breakdown), matchPart(m.part, breakdown)),
         }, breakdown));
       }
@@ -1047,6 +1052,7 @@ export const RCMPage: React.FC = () => {
               // Both columns: end_effect is what the worksheet's End Effect cell reads.
               failure_effect_plant: fm.effect_plant, end_effect: fm.effect_plant,
               data_source: 'ai_generated', sort_order: 0,
+              failure_mode_code: acceptFailureCode(fm.code, failureCodes) ?? matchFailureCode(fm.description, failureCodes),
               ...linkFor(matchComponent(fm.component, breakdown), matchPart(fm.part, breakdown)),
             }, breakdown));
           }
@@ -1237,6 +1243,21 @@ export const RCMPage: React.FC = () => {
     rcmService.getAssetBreakdown(id).then(b => { if (live) setNewStudyBreakdown({ assetId: id, components: b.components.length, parts: b.parts.length }); });
     return () => { live = false; };
   }, [showNewStudy, newStudyForm.asset_id]);
+
+  // ── ISO 14224 codes on modes that have none (legacy rows, or the model returned nothing) ──
+  const uncodedModes = useMemo(() => failureModes.filter(m => !m.failure_mode_code && matchFailureCode(m.failure_mode_description, failureCodes)), [failureModes, failureCodes]);
+  const handleCodeModes = async () => {
+    if (!selectedStudy || uncodedModes.length === 0) return;
+    let n = 0;
+    for (const m of uncodedModes) {
+      const code = matchFailureCode(m.failure_mode_description, failureCodes);
+      if (!code) continue;
+      const saved = await trackSave(rcmService.updateFailureMode(m.id, { failure_mode_code: code }));
+      if (saved) n++;
+    }
+    await loadStudyDetail(selectedStudy.id);
+    showToast(n > 0 ? `${n} failure mode${n !== 1 ? 's' : ''} coded from the wording — check them on the worksheet` : 'No code fitted well enough', n > 0 ? undefined : 'error');
+  };
 
   // ── 0352: Specialist items, register promotion, study templates ──────────
   const handleSuggestItems = async () => {
@@ -1731,6 +1752,8 @@ export const RCMPage: React.FC = () => {
           completableCount={openRows.length}
           specialistLocked={!draftGate.ok}
           specialistBlockedReason={draftGate.reason}
+          uncodedCount={uncodedModes.length}
+          onCodeModes={() => void handleCodeModes()}
         />
         </div>
       )}

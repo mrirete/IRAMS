@@ -405,6 +405,9 @@ export interface RCMFMEATableProps {
   specialistLocked: boolean;
   /** What to say when a locked action is clicked. */
   specialistBlockedReason: string;
+  /** Modes without an ISO 14224 code whose wording fits one — "Code n modes" writes it. */
+  uncodedCount?: number;
+  onCodeModes?: () => void;
 }
 
 const COL_COUNT = 12;
@@ -416,7 +419,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
   onUpdateDecision, onSpecialistSuggestModes, onSpecialistCompleteRow, onBlocked,
   onGoToStrategy,
   onSpecialistDraft, onSpecialistFillGaps, completableCount,
-  specialistLocked, specialistBlockedReason,
+  specialistLocked, specialistBlockedReason, uncodedCount = 0, onCodeModes,
 }) => {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
@@ -584,6 +587,15 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
             >
               <MapPin size={12} />
               {reviewPins ? 'Showing' : 'Review'} {textPins.length} text pin{textPins.length !== 1 ? 's' : ''}
+            </button>
+          )}
+          {uncodedCount > 0 && onCodeModes && (
+            <button
+              onClick={onCodeModes}
+              title="Rows with no ISO 14224 failure-mode code whose wording fits one (bearing → BRG, seal leak → SEL…) — write the code so work orders match exactly"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border bg-white border-slate-200 text-slate-700 hover:border-accent-cyan transition-colors"
+            >
+              <Wand2 size={12} /> Code {uncodedCount} mode{uncodedCount !== 1 ? 's' : ''}
             </button>
           )}
           {autoPins.length > 0 && (
