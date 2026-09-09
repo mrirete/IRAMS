@@ -405,9 +405,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 <NavLink to="/admin/migration" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Migration Center
                                 </NavLink>
-                                <NavLink to="/admin/migration/sap" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    SAP Load Center
-                                </NavLink>
+                                {/* The outbound SAP export (/admin/migration/sap) is reached from the
+                                    Migration Center's "Export to SAP" card, not from here — one migration
+                                    entry point, the reverse direction tucked inside it. */}
                                 <NavLink to="/eam-admin" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Dictionaries & Permissions
                                 </NavLink>

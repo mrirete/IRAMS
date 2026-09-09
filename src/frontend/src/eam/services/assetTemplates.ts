@@ -880,6 +880,44 @@ export interface ParseResult {
     rows: ParsedRow[];
     validCount: number;
     errorCount: number;
+    /** The sheet that was parsed (workbooks can carry several). */
+    sheet?: string;
+    /**
+     * Every sheet in the workbook with the import type it resolves to —
+     * the picker the modal shows when a multi-object workbook (the SAP
+     * Migration Cockpit one: Read-me + eight objects) is dropped whole.
+     */
+    sheets?: { name: string; type: ImportType }[];
+}
+
+/**
+ * A description row — the "REQUIRED — Material number" line the SAP cockpit
+ * workbook (and our own SAP load templates) put under the field names. It is
+ * documentation, never data; left in by mistake it would land as an asset
+ * called "REQUIRED — Functional location label".
+ */
+export function isDescriptionRow(row: unknown[]): boolean {
+    return (row ?? []).some(c => /^\s*required\s*[—–-]/i.test(String(c ?? '')));
+}
+
+/** Resolve which sheet of a workbook to parse, and what every sheet holds. */
+export function resolveWorkbookSheet(
+    wb: XLSX.WorkBook, forceType?: ImportType, sheetName?: string,
+): { sheet: string; sheets: { name: string; type: ImportType }[] } {
+    const sheets = wb.SheetNames.map(name => {
+        const raw: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 });
+        if (raw.length < 2) return { name, type: 'unknown' as ImportType };
+        const hdr = (raw[findHeaderRow(raw)] ?? []).map(h => String(h ?? '').trim().toLowerCase());
+        const profile = resolveSapProfile(hdr);
+        const keys = profile ? hdr.map(h => profile.aliases[h] ?? h) : hdr;
+        return { name, type: profile?.type ?? detectImportType(keys) };
+    });
+    if (sheetName && wb.SheetNames.includes(sheetName)) return { sheet: sheetName, sheets };
+    // First sheet of the wanted type, else the first recognisable one, else sheet 1
+    // (a single-sheet file with odd headers still parses as before).
+    const wanted = forceType ? sheets.find(s => s.type === forceType) : undefined;
+    const known = sheets.find(s => s.type !== 'unknown');
+    return { sheet: (wanted ?? known ?? sheets[0]).name, sheets };
 }
 
 /** Reading types that have seeded reference codes. */
@@ -1142,19 +1180,22 @@ export function detectImportType(headers: string[]): ImportType {
     return 'unknown';
 }
 
-export function parseImportFile(file: File, forceType?: ImportType): Promise<ParseResult> {
+export function parseImportFile(file: File, forceType?: ImportType, sheetName?: string): Promise<ParseResult> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
                 const data = new Uint8Array(e.target!.result as ArrayBuffer);
                 const wb = XLSX.read(data, { type: 'array' });
-                const sheetName = wb.SheetNames[0];
-                const ws = wb.Sheets[sheetName];
+                // Multi-sheet workbooks (SAP cockpit: Read-me first, then one
+                // sheet per object) parse the sheet that matches the import,
+                // not blindly the first one.
+                const { sheet, sheets } = resolveWorkbookSheet(wb, forceType, sheetName);
+                const ws = wb.Sheets[sheet];
                 const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
                 if (rawRows.length < 2) {
-                    resolve({ type: 'unknown', headers: [], rows: [], validCount: 0, errorCount: 0 });
+                    resolve({ type: 'unknown', headers: [], rows: [], validCount: 0, errorCount: 0, sheet, sheets });
                     return;
                 }
 
@@ -1165,14 +1206,20 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
                 // SAP field-name sheets rewrite to canonical headers via profile.
                 const sapProfile = resolveSapProfile(headersLower);
                 const keys = sapProfile ? headersLower.map(h => sapProfile.aliases[h] ?? h) : headersLower;
-                const dataRows = rawRows.slice(headerRowIdx + 1).filter(r => r.some(cell => cell !== undefined && cell !== null && cell !== ''));
+                // Keep the spreadsheet row number with each row: title rows above
+                // the header, blank lines and description rows are all skipped, so
+                // "row 7" in the outcome must mean row 7 in the user's file.
+                const dataRows = rawRows.slice(headerRowIdx + 1)
+                    .map((r, i) => ({ r, sheetRow: headerRowIdx + 2 + i }))
+                    .filter(({ r }) => r.some(cell => cell !== undefined && cell !== null && cell !== ''))
+                    .filter(({ r }) => !isDescriptionRow(r));
 
                 const type = forceType || sapProfile?.type || detectImportType(keys);
                 const requiredFields = REQUIRED_FIELDS[type] || [];
 
                 const seenKeys = new Set<string>(); // For duplicate detection
 
-                const parsedRows: ParsedRow[] = dataRows.map((row, idx) => {
+                const parsedRows: ParsedRow[] = dataRows.map(({ r: row, sheetRow }) => {
                     const rowData: Record<string, string> = {};
                     keys.forEach((h, i) => {
                         const v = String(row[i] ?? '').trim();
@@ -1315,7 +1362,7 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
                     }
 
                     return {
-                        rowIndex: idx + 2,
+                        rowIndex: sheetRow,
                         data: rowData,
                         errors,
                         warnings,
@@ -1329,6 +1376,8 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
                     rows: parsedRows,
                     validCount: parsedRows.filter(r => r.isValid).length,
                     errorCount: parsedRows.filter(r => !r.isValid).length,
+                    sheet,
+                    sheets,
                 });
             } catch (err) {
                 reject(err);

@@ -93,6 +93,8 @@ export default function BulkImportModal({
     const [importError, setImportError] = useState<string | null>(null);
     /** Advisory only: the file's headers look like a different template. */
     const [typeMismatch, setTypeMismatch] = useState<ImportType | null>(null);
+    /** Kept so a different sheet of the same workbook can be re-parsed. */
+    const [lastFile, setLastFile] = useState<File | null>(null);
     const fileRef = useRef<HTMLInputElement>(null);
 
     const reset = () => {
@@ -105,6 +107,7 @@ export default function BulkImportModal({
         setResult(null);
         setImportError(null);
         setTypeMismatch(null);
+        setLastFile(null);
     };
 
     const handleClose = () => { reset(); onClose(); };
@@ -115,11 +118,12 @@ export default function BulkImportModal({
     };
 
     // ── File Upload ──
-    const handleFile = useCallback(async (file: File) => {
+    const handleFile = useCallback(async (file: File, sheet?: string) => {
         setFileName(file.name);
+        setLastFile(file);
         setImportError(null);
         try {
-            const parsed = await parseImportFile(file, selectedType !== 'unknown' ? selectedType : undefined);
+            const parsed = await parseImportFile(file, selectedType !== 'unknown' ? selectedType : undefined, sheet);
             setParseResult(parsed);
             // Detection stays ADVISORY — a user may deliberately import a file
             // with unusual headers as a chosen type. We only warn on mismatch
@@ -356,6 +360,27 @@ export default function BulkImportModal({
                                     <FileCheck size={16} className="text-blue-500" />
                                     <span className="text-xs font-semibold text-blue-700">
                                         Detected: {TYPE_LABELS[parseResult.type]} Import
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* A multi-object workbook (the SAP Migration Cockpit one has a
+                                Read-me plus eight sheets) — say which sheet is being read and
+                                let the user switch. Only importable sheets are offered. */}
+                            {parseResult.sheets && parseResult.sheets.filter(s => s.type !== 'unknown').length > 1 && (
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-3 flex-wrap">
+                                    <span className="text-xs font-semibold text-slate-700">Sheet</span>
+                                    <select
+                                        className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-800"
+                                        value={parseResult.sheet}
+                                        onChange={e => { if (lastFile) handleFile(lastFile, e.target.value); }}
+                                    >
+                                        {parseResult.sheets.filter(s => s.type !== 'unknown').map(s => (
+                                            <option key={s.name} value={s.name}>{s.name} — {TYPE_LABELS[s.type]}</option>
+                                        ))}
+                                    </select>
+                                    <span className="text-[11px] text-slate-500">
+                                        One sheet imports at a time. Load them in workbook order: locations before equipment, materials before BOMs and stock.
                                     </span>
                                 </div>
                             )}

@@ -57,7 +57,7 @@ const PHASES: Phase[] = [
         n: 1, title: 'Assets & hierarchy', icon: <Wrench size={18} />,
         blurb: 'Your functional locations and equipment, as one tree. Everything else hangs off this — do it first.',
         importType: 'asset', count: c => c.assets, unit: 'assets',
-        note: 'Use hierarchyLevel + parentTag in the template so sites, systems and equipment land at the right level. SAP migration sheets (TPLNR/PLTXT functional locations, EQUNR/EQKTX equipment) import directly — the SAP field names auto-translate.',
+        note: 'Use hierarchyLevel + parentTag in the template so sites, systems and equipment land at the right level. SAP migration sheets (TPLNR/PLTXT functional locations, EQUNR/EQKTX equipment) import directly — the SAP field names auto-translate. Drop the whole Migration Cockpit workbook: the right sheet is picked for each step and description rows are skipped.',
     },
     {
         n: 2, title: 'People', icon: <Users size={18} />,
@@ -381,10 +381,12 @@ export const MigrationCenterPage: React.FC = () => {
             >
                 <FileSpreadsheet size={18} className="mt-0.5 text-primary-600 shrink-0" />
                 <span className="flex-1">
-                    <span className="font-semibold text-slate-800">Moving the other way — into SAP?</span>
+                    <span className="font-semibold text-slate-800">Export to SAP — moving the other way?</span>
                     <span className="block text-slate-500 mt-0.5">
-                        The SAP Load Center fills the Migration Cockpit templates (functional locations, equipment, materials, BOMs,
-                        measuring points, readings, source lists, opening stock, open work as notifications) from this register, hands closed history over as a reference extract, and runs a readiness check per object.
+                        Everything above brings data <b>into</b> IREAMS. This is the reverse: it fills SAP's Migration Cockpit
+                        templates (functional locations, equipment, materials, BOMs, measuring points, readings, source lists,
+                        opening stock, open work as notifications) from this register, hands closed history over as a reference
+                        extract, and runs a readiness check per object. Only needed if this register is going into SAP PM / MM.
                     </span>
                 </span>
                 <ArrowRight size={16} className="mt-0.5 text-slate-400 shrink-0" />
