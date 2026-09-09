@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import type { RCMMaintenancePlanProps, RCMFailureMode, ReadingPointSetup } from './types';
 import type { SuggestedPoint } from '../../lib/predict/limitLibrary';
+import { modeOnPart } from '../../lib/rcmBreakdown';
 import { CONSEQUENCE_OPTIONS, strategyLabel, parseConsequenceCodes } from './types';
 import { RCMModeRail, groupModesByFunction, modeTitle, type RailTone } from './RCMModeRail';
 import { IntervalField, SyncedField } from './RCMFields';
@@ -277,7 +278,7 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
   const [pointOpen, setPointOpen] = useState(false);
 
   // ── per-mode state ──
-  const sparesNamed = (m: RCMFailureMode, t?: RCMTaskSummary) => (t?.spares_requirements?.length ?? 0) > 0 || !!m.bom_item_id;
+  const sparesNamed = (m: RCMFailureMode, t?: RCMTaskSummary) => (t?.spares_requirements?.length ?? 0) > 0 || !!m.bom_item_id || !!(breakdown?.parts || []).find(p => modeOnPart(m, p));
   const stepsFor = (m: RCMFailureMode): ImplStep[] => {
     const d = decisions.get(m.id);
     if (!d) return [];
@@ -344,7 +345,7 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
   const interval = parseIntervalText(decision?.task_interval);
   const needsInterval = steps.some(s => s.kind === 'PM' && !s.done) && interval.n === null;
   const needsTask = steps.some(s => s.kind === 'PM' && !s.done) && String(decision?.task_description || '').trim().length < 3;
-  const pinnedPart = fm?.bom_item_id ? breakdown?.parts.find(p => p.id === fm.bom_item_id) : null;
+  const pinnedPart = fm ? breakdown?.parts.find(p => modeOnPart(fm, p)) ?? null : null;
   const gate = fm ? pmGateFor(fm.id) : { ok: false, missing: [], reason: '' };
 
   const stepAction = (s: ImplStep) => {

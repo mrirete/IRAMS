@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { RCMContextualHelp } from './RCMContextualHelp';
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './types';
-import { inferComponentLink, type AssetBreakdown } from '../../lib/rcmBreakdown';
+import { inferComponentLink, type AssetBreakdown, linkFor, modeOnComponent, modeOnPart } from '../../lib/rcmBreakdown';
 import { EVIDENT_CONSEQUENCES, HIDDEN_CONSEQUENCES, CONSEQUENCE_OPTIONS, STRATEGY_LABELS, parseConsequenceCodes } from './types';
 import {
   canSpecialistCompleteRow, canSpecialistExpandFunction, isRowComplete,
@@ -433,13 +433,13 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
   const autoPins = useMemo(() => {
     if (!hasBreakdown) return [] as Array<{ id: string; link: ReturnType<typeof inferComponentLink> }>;
     return failureModes
-      .filter(fm => !fm.component_asset_id && !fm.bom_item_id)
+      .filter(fm => !fm.component_asset_id && !fm.bom_item_id && !fm.study_item_id)
       .map(fm => ({ id: fm.id, link: inferComponentLink([fm.failure_mode_description, fm.failure_cause_description], breakdown) }))
-      .filter(x => x.link.component_asset_id || x.link.bom_item_id);
+      .filter(x => x.link.component_asset_id || x.link.bom_item_id || x.link.study_item_id);
   }, [failureModes, breakdown, hasBreakdown]);
   // A pin inferred from the wording is marked 'text' (0325) until a person confirms it.
   const autoPinAll = () => { for (const { id, link } of autoPins) onUpdateFailureMode(id, { ...link, component_link_source: 'text' }); };
-  const textPins = useMemo(() => failureModes.filter(fm => fm.component_link_source === 'text' && (fm.component_asset_id || fm.bom_item_id)), [failureModes]);
+  const textPins = useMemo(() => failureModes.filter(fm => fm.component_link_source === 'text' && (fm.component_asset_id || fm.bom_item_id || fm.study_item_id)), [failureModes]);
   const [reviewPins, setReviewPins] = useState(false);
   useEffect(() => { if (textPins.length === 0) setReviewPins(false); }, [textPins.length]);
   const confirmPin = (fmId: string) => onUpdateFailureMode(fmId, { component_link_source: 'manual' });
@@ -847,7 +847,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                               />
                               {/* Pin to the register's breakdown (0318): which subunit/component or BOM part this mode is about.
                                   Pinned → the chip-styled picker. Unpinned → a quiet link until clicked. */}
-                              {hasBreakdown && !fm.component_asset_id && !fm.bom_item_id && !pinEditing.has(fm.id) && (
+                              {hasBreakdown && !fm.component_asset_id && !fm.bom_item_id && !fm.study_item_id && !pinEditing.has(fm.id) && (
                                 <button
                                   type="button"
                                   onClick={() => setPinEditing(prev => new Set(prev).add(fm.id))}
@@ -857,16 +857,17 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                   <MapPin size={10} /> Pin to component
                                 </button>
                               )}
-                              {hasBreakdown && (fm.component_asset_id || fm.bom_item_id || pinEditing.has(fm.id)) && (
+                              {hasBreakdown && (fm.component_asset_id || fm.bom_item_id || fm.study_item_id || pinEditing.has(fm.id)) && (
                                 <select
                                   autoFocus={pinEditing.has(fm.id)}
-                                  value={fm.component_asset_id ? `c:${fm.component_asset_id}` : fm.bom_item_id ? `p:${fm.bom_item_id}` : ''}
+                                  value={(() => { const c = breakdown.components.find(x => modeOnComponent(fm, x)); if (c) return `c:${c.id}`; const p = breakdown.parts.find(x => modeOnPart(fm, x)); return p ? `p:${p.id}` : ''; })()}
                                   onChange={e => {
                                     const v = e.target.value;
                                     setPinEditing(prev => { const n = new Set(prev); n.delete(fm.id); return n; });
+                                    // 0351: the option is a study item (or a register row on an old study) — store every link it carries.
+                                    const link = linkFor(v.startsWith('c:') ? breakdown.components.find(c => c.id === v.slice(2)) : null, v.startsWith('p:') ? breakdown.parts.find(p => p.id === v.slice(2)) : null);
                                     onUpdateFailureMode(fm.id, {
-                                      component_asset_id: v.startsWith('c:') ? v.slice(2) : null,
-                                      bom_item_id: v.startsWith('p:') ? v.slice(2) : null,
+                                      ...link,
                                       // A person chose it (or cleared it) — no longer a text guess.
                                       component_link_source: v ? 'manual' : null,
                                     });
@@ -874,7 +875,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                   onBlur={() => setPinEditing(prev => { if (!prev.has(fm.id)) return prev; const n = new Set(prev); n.delete(fm.id); return n; })}
                                   title="Which component or part this failure mode belongs to"
                                   className={`mt-0.5 w-full text-[10px] rounded border px-1 py-0.5 bg-white truncate ${
-                                    fm.component_asset_id || fm.bom_item_id ? 'border-primary-200 text-primary-700' : 'border-primary-300 text-slate-600'
+                                    fm.component_asset_id || fm.bom_item_id || fm.study_item_id ? 'border-primary-200 text-primary-700' : 'border-primary-300 text-slate-600'
                                   }`}
                                 >
                                   <option value="">Whole asset — no component</option>
@@ -895,7 +896,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                 </select>
                               )}
                               {/* 0325: a pin inferred from the wording stays flagged until a person confirms or changes it */}
-                              {hasBreakdown && fm.component_link_source === 'text' && (fm.component_asset_id || fm.bom_item_id) && (
+                              {hasBreakdown && fm.component_link_source === 'text' && (fm.component_asset_id || fm.bom_item_id || fm.study_item_id) && (
                                 <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-amber-700">
                                   <span title="Pinned by matching the failure-mode text to a registered component — not yet confirmed">from text</span>
                                   <span className="text-amber-300">·</span>

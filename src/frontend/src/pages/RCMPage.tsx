@@ -10,7 +10,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Shield, Plus, Search, ArrowLeft, LayoutList, Layers, GitBranch, Wrench,
-  Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle, Unlock, Lock,
+  Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle, Unlock, Lock, Boxes,
 } from 'lucide-react';
 import { ScrollTabStrip } from '../eam/components/ui';
 import { rcmService } from '../eam/services/RCMService';
@@ -46,13 +46,14 @@ import {
 } from '../eam/services/rcmReadiness';
 import { normalizeRecommendation, recommendationToDecisionUpdates, parseIntervalText, intervalDaysFor } from '../eam/services/rcmPlan';
 import { suggestPointsForAsset, type SuggestedPoint } from '../lib/predict/limitLibrary';
-import type { RCMAssetContext, RCMCoverageRow, RCMMonitoringReality, RCMEvidenceFlag } from '../eam/services/RCMService';
+import type { RCMAssetContext, RCMCoverageRow, RCMMonitoringReality, RCMEvidenceFlag, RCMStudyItem, RCMBreakdownTemplate } from '../eam/services/RCMService';
+import { RCMEquipmentTab } from '../components/rcm/RCMEquipmentTab';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
-import { matchComponent, matchPart, pinFailureMode, inferComponentLink, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
+import { matchComponent, matchPart, pinFailureMode, inferComponentLink, linkFor, breakdownFromItems, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
 
 // ── Types ─────────────────────────────────────────────────
-type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
+type RCMTab = 'dashboard' | 'items' | 'functions' | 'decisions' | 'tasks' | 'evidence';
 
 // The three working tabs are a numbered pipeline — the worksheet finds and
 // ranks the failure modes, the strategy tab decides what to do about each
@@ -60,6 +61,7 @@ type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
 // decisions because they are the output of them.
 const RCM_TABS: { id: RCMTab; label: string; icon: React.ReactNode; desc: string }[] = [
   { id: 'dashboard', label: 'Overview', icon: <LayoutList size={16} />, desc: 'Study health' },
+  { id: 'items', label: '0 · Equipment', icon: <Boxes size={16} />, desc: 'What it is made of' },
   { id: 'functions', label: '1 · Worksheet', icon: <Layers size={16} />, desc: 'What can fail (Q1–Q5)' },
   { id: 'decisions', label: '2 · Strategy', icon: <GitBranch size={16} />, desc: 'Prevent it (Q6–Q7)' },
   { id: 'tasks', label: '3 · Maintenance Plan', icon: <Wrench size={16} />, desc: 'The PM program' },
@@ -130,7 +132,14 @@ export const RCMPage: React.FC = () => {
   const [newContextAuto, setNewContextAuto] = useState(false);   // narrative was auto-composed, not typed
   const [liveAssetContext, setLiveAssetContext] = useState<RCMAssetContext | null>(null);
   // 0318 — the asset's registered components + BOM: what modes are pinned to.
-  const [breakdown, setBreakdown] = useState<AssetBreakdown>(EMPTY_BREAKDOWN);
+  // 0351 — the study's own equipment list is the breakdown everything reads.
+  // The register's children/BOM are kept only as what "Import from register" can offer.
+  const [studyItems, setStudyItems] = useState<RCMStudyItem[]>([]);
+  const [registerBreakdown, setRegisterBreakdown] = useState<AssetBreakdown>(EMPTY_BREAKDOWN);
+  const [breakdownTemplates, setBreakdownTemplates] = useState<RCMBreakdownTemplate[]>([]);
+  const breakdown = useMemo<AssetBreakdown>(() => (studyItems.length > 0 ? breakdownFromItems(studyItems) : EMPTY_BREAKDOWN), [studyItems]);
+  // What the register could offer a NEW study — shown on the New Study form.
+  const [newStudyBreakdown, setNewStudyBreakdown] = useState<{ assetId: string; components: number; parts: number } | null>(null);
   // What condition monitoring the asset really has — the plan offers a person
   // to read a point until a feed exists, and the point sheet prefills bands.
   const [monitoring, setMonitoring] = useState<RCMMonitoringReality | null>(null);
@@ -276,6 +285,10 @@ export const RCMPage: React.FC = () => {
     const implementedCount = hasDecisions.filter(d => !!d.recommended_strategy_code).length;
 
     return {
+      items: {
+        text: studyItems.length > 0 ? `${studyItems.length}` : '0',
+        complete: studyItems.length > 0,
+      },
       functions: {
         text: fnsCount > 0 ? `${fnsCount} Fns` : '0',
         complete: fnsCount > 0,
@@ -289,7 +302,7 @@ export const RCMPage: React.FC = () => {
         complete: fmsCount > 0 && implementedCount === fmsCount,
       },
     };
-  }, [functions, failureModes, decisionMap]);
+  }, [functions, failureModes, decisionMap, studyItems.length]);
 
   // ── Load Data ──────────────────────────────────────────
   const loadStudies = useCallback(async () => {
@@ -319,14 +332,23 @@ export const RCMPage: React.FC = () => {
 
     // The asset's CURRENT operating context — the Overview compares it with
     // the study's snapshot and offers a refresh when the register moved on.
-    setLiveAssetContext(study.asset_id ? await rcmService.getAssetContext(study.asset_id) : null);
-    setBreakdown(await rcmService.getAssetBreakdown(study.asset_id));
+    const ctx = study.asset_id ? await rcmService.getAssetContext(study.asset_id) : null;
+    setLiveAssetContext(ctx);
+    // 0351: templates for this class/type — offered on the Equipment tab.
+    setBreakdownTemplates(await rcmService.listBreakdownTemplates(ctx?.asset_class, ctx?.asset_type_code));
+    // 0351: the study's items are the breakdown; the register is what an import could add.
+    const [items, reg] = await Promise.all([rcmService.getStudyItems(id), rcmService.getAssetBreakdown(study.asset_id)]);
+    setStudyItems(items);
+    setRegisterBreakdown(reg);
+    // A study with nothing listed opens on Equipment — "what is it made of?" comes before "what can fail?".
+    if (items.length === 0 && study.status !== 'approved' && study.status !== 'closed') setActiveTab('items');
     setMonitoring(study.asset_id ? await rcmService.getMonitoringReality(study.asset_id) : null);
     setEvidenceFlags(await rcmService.getEvidenceFlags(id));
 
     // Pull the asset's latest saved Weibull fit from Reliability Modelling.
     setLifeEvidence(null);
-    if (study.asset_id) {
+    // A manual tag is not a register id — nothing to look up, and PostgREST would refuse the text as a uuid.
+    if (study.asset_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(study.asset_id)) {
       const fits = await analyzeService.getReliabilityAnalyses(study.asset_id, 'weibull');
       const latest = fits.find(f => f.results?.beta && f.results?.eta);
       if (latest) {
@@ -419,7 +441,13 @@ export const RCMPage: React.FC = () => {
       setShowNewStudy(false);
       setNewStudyForm({ title: '', asset_id: '', operating_context: '', study_type: 'classical' });
       setNewStudyContext(null); setNewContextAuto(false);
-      showToast('RCM Study created successfully');
+      // 0351: the register's children and BOM become the study's first equipment list.
+      if (study.asset_id) {
+        const seeded = await rcmService.importBreakdownFromRegister(study.id, study.asset_id);
+        showToast(seeded.added > 0 ? `RCM study created — ${seeded.added} equipment item${seeded.added !== 1 ? 's' : ''} from the register` : 'RCM study created — list the equipment breakdown first');
+      } else {
+        showToast('RCM study created — list the equipment breakdown first');
+      }
       await loadStudies();
       navigate(`/rcm/${study.id}`);
     } else {
@@ -850,8 +878,7 @@ export const RCMPage: React.FC = () => {
           occurrence: clampScore(m.occurrence),
           data_source: 'ai_generated',
           sort_order: base + i + 1,
-          component_asset_id: matchComponent(m.component, breakdown)?.id ?? null,
-          bom_item_id: matchPart(m.part, breakdown)?.id ?? null,
+          ...linkFor(matchComponent(m.component, breakdown), matchPart(m.part, breakdown)),
         }, breakdown));
       }
       await loadStudyDetail(selectedStudy.id);
@@ -1015,8 +1042,7 @@ export const RCMPage: React.FC = () => {
               // Both columns: end_effect is what the worksheet's End Effect cell reads.
               failure_effect_plant: fm.effect_plant, end_effect: fm.effect_plant,
               data_source: 'ai_generated', sort_order: 0,
-              component_asset_id: matchComponent(fm.component, breakdown)?.id ?? null,
-              bom_item_id: matchPart(fm.part, breakdown)?.id ?? null,
+              ...linkFor(matchComponent(fm.component, breakdown), matchPart(fm.part, breakdown)),
             }, breakdown));
           }
         }
@@ -1141,6 +1167,72 @@ export const RCMPage: React.FC = () => {
    * point exists behind it. Create the reading definition here, named after
    * the failure mode, with the bands left for the Condition Data page.
    */
+  // ── 0351: the equipment breakdown (0 · Equipment) ─────────────────────
+  const refreshItems = async () => { if (selectedStudy) setStudyItems(await rcmService.getStudyItems(selectedStudy.id)); };
+  const handleAddItem = async (item: Partial<RCMStudyItem> & { name: string }) => {
+    if (!selectedStudy) return;
+    const order = (studyItems.filter(i => (i.kind === 'part') === (item.kind === 'part')).reduce((m, i) => Math.max(m, i.sort_order), item.kind === 'part' ? 900 : 100)) + 1;
+    const saved = await trackSave(rcmService.saveStudyItem({ ...item, study_id: selectedStudy.id, sort_order: item.sort_order ?? order }));
+    if (!saved) { showToast('Could not add the item', 'error'); return; }
+    setStudyItems(prev => [...prev, saved]);
+  };
+  const handleUpdateItem = (id: string, patch: Partial<RCMStudyItem>) => {
+    setStudyItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+    debouncedSave(`item-${id}`, async () => {
+      const row = studyItems.find(i => i.id === id);
+      const saved = await trackSave(rcmService.saveStudyItem({ ...(row || {}), ...patch, id, study_id: selectedStudy!.id, name: (patch.name ?? row?.name ?? '').toString() } as Partial<RCMStudyItem> & { study_id: string; name: string }));
+      if (!saved) showToast('Could not save the item', 'error');
+    });
+  };
+  const handleDeleteItem = async (id: string) => {
+    const ok = await trackSave(rcmService.deleteStudyItem(id));
+    if (!ok) { showToast('Could not remove the item', 'error'); return; }
+    setStudyItems(prev => prev.filter(i => i.id !== id));
+  };
+  const handleImportRegister = async () => {
+    if (!selectedStudy?.asset_id) return;
+    const r = await trackSave(rcmService.importBreakdownFromRegister(selectedStudy.id, selectedStudy.asset_id));
+    await refreshItems();
+    showToast(r.added > 0 ? `${r.added} item${r.added !== 1 ? 's' : ''} added from the register` : 'Nothing new in the register — every child and BOM line is already listed');
+  };
+  const handleApplyTemplate = async (t: RCMBreakdownTemplate) => {
+    if (!selectedStudy) return;
+    const n = await trackSave(rcmService.applyBreakdownTemplate(selectedStudy.id, t));
+    await refreshItems();
+    showToast(n > 0 ? `${n} item${n !== 1 ? 's' : ''} added from "${t.name}"` : `Everything in "${t.name}" is already listed`);
+  };
+  const handleSaveTemplate = async (name: string) => {
+    if (!selectedStudy) return;
+    const t = await trackSave(rcmService.saveBreakdownTemplate(selectedStudy.id, name, liveAssetContext?.asset_class ?? null, liveAssetContext?.asset_type_code ?? null));
+    if (!t) { showToast('Could not save the template', 'error'); return; }
+    setBreakdownTemplates(prev => [t, ...prev]);
+    showToast(`Template "${name}" saved — offered to the next study on ${[liveAssetContext?.asset_class, liveAssetContext?.asset_type_code].filter(Boolean).join(' / ') || 'this class'}`);
+  };
+  const handlePasteItems = async (lines: string[], kind: RCMStudyItem['kind']) => {
+    if (!selectedStudy) return;
+    // "TAG: Name *" — tag before a colon, a trailing asterisk marks critical
+    const base = studyItems.filter(i => (i.kind === 'part') === (kind === 'part')).reduce((m, i) => Math.max(m, i.sort_order), kind === 'part' ? 900 : 100);
+    const rows = lines.map((l, n) => {
+      const critical = /\*\s*$/.test(l);
+      const clean = l.replace(/\*\s*$/, '').trim();
+      const m = clean.match(/^([A-Za-z0-9._\-/]{1,24}):\s*(.+)$/);
+      return { study_id: selectedStudy.id, kind, tag: m ? m[1] : null, name: m ? m[2].trim() : clean, critical, source: 'manual' as const, sort_order: base + n + 1 };
+    }).filter(r => r.name);
+    const saved = await trackSave(rcmService.saveStudyItems(rows));
+    if (saved.length === 0) { showToast('Nothing was added', 'error'); return; }
+    setStudyItems(prev => [...prev, ...saved]);
+    showToast(`${saved.length} item${saved.length !== 1 ? 's' : ''} added`);
+  };
+
+  // What the register could offer a NEW study — read when the asset is picked.
+  useEffect(() => {
+    const id = newStudyForm.asset_id;
+    if (!showNewStudy || !id || !/^[0-9a-f-]{36}$/i.test(id)) { setNewStudyBreakdown(null); return; }
+    let live = true;
+    rcmService.getAssetBreakdown(id).then(b => { if (live) setNewStudyBreakdown({ assetId: id, components: b.components.length, parts: b.parts.length }); });
+    return () => { live = false; };
+  }, [showNewStudy, newStudyForm.asset_id]);
+
   // 0336 — who carries a decision into Work Management, by when. The freeze
   // exempts these columns, so an approved plan can still be assigned.
   const handleAssignOwner = async (failureModeId: string, patch: { ownerContactId?: string | null; ownerName?: string | null; dueDate?: string | null }) => {
@@ -1428,7 +1520,7 @@ export const RCMPage: React.FC = () => {
         <ScrollTabStrip activeId={activeTab} className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
           {RCM_TABS.map(tab => {
             const isActive = activeTab === tab.id;
-            const progress = tab.id !== 'dashboard' ? tabProgress[tab.id as 'functions' | 'decisions' | 'tasks'] : null;
+            const progress = tab.id !== 'dashboard' ? tabProgress[tab.id as 'items' | 'functions' | 'decisions' | 'tasks'] : null;
 
             return (
               <button
@@ -1515,6 +1607,28 @@ export const RCMPage: React.FC = () => {
               showToast('Failed to duplicate the study', 'error');
             }
           }}
+        />
+      )}
+
+      {/* 0 · Equipment — what the asset is made of (0351) */}
+      {activeTab === 'items' && selectedStudy && (
+        <RCMEquipmentTab
+          items={studyItems}
+          locked={selectedStudy.status === 'approved' || readOnly}
+          registerCounts={selectedStudy.asset_id ? { components: registerBreakdown.components.length, parts: registerBreakdown.parts.length } : null}
+          templates={breakdownTemplates}
+          assetLabel={liveAssetContext ? `${liveAssetContext.tag} — ${liveAssetContext.name}` : selectedStudy.asset_id || null}
+          assetClass={liveAssetContext?.asset_class ?? null}
+          assetType={liveAssetContext?.asset_type_code ?? null}
+          saving={pendingSaves > 0}
+          onAdd={item => void handleAddItem(item)}
+          onUpdate={handleUpdateItem}
+          onDelete={id => void handleDeleteItem(id)}
+          onImportRegister={() => void handleImportRegister()}
+          onApplyTemplate={t => void handleApplyTemplate(t)}
+          onSaveTemplate={name => void handleSaveTemplate(name)}
+          onPasteList={(lines, kind) => void handlePasteItems(lines, kind)}
+          onGoToWorksheet={() => setActiveTab('functions')}
         />
       )}
 
@@ -1714,6 +1828,17 @@ export const RCMPage: React.FC = () => {
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-accent-cyan placeholder:text-slate-400" />
                 )}
               </div>
+              {/* 0351 — what the study will start with on its Equipment tab */}
+              {newStudyForm.asset_id && (
+                <p className="text-[11px] text-slate-500 -mt-1 flex items-center gap-1.5">
+                  <Boxes size={12} className="text-slate-400 shrink-0" />
+                  {newStudyBreakdown && newStudyBreakdown.assetId === newStudyForm.asset_id
+                    ? (newStudyBreakdown.components + newStudyBreakdown.parts > 0
+                        ? <>Equipment breakdown: <strong className="text-slate-700">{newStudyBreakdown.components} component{newStudyBreakdown.components !== 1 ? 's' : ''} · {newStudyBreakdown.parts} BOM line{newStudyBreakdown.parts !== 1 ? 's' : ''}</strong> from the register — the study starts with these; add or edit them on 0 · Equipment.</>
+                        : <>The register lists no components or BOM for this asset — the study opens on <strong className="text-slate-700">0 · Equipment</strong> so you can type them, paste a list, or start from a template.</>)
+                    : <>A manual tag — the study opens on <strong className="text-slate-700">0 · Equipment</strong> so you can list what the equipment is made of.</>}
+                </p>
+              )}
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Operating Context</label>

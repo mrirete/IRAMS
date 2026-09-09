@@ -147,6 +147,8 @@ export interface RCMFailureMode {
   bom_item_id?: string | null;
   /** 0325 — how the pin was made; 'text' = inferred from the wording, not yet confirmed */
   component_link_source?: 'manual' | 'specialist' | 'text' | 'import' | null;
+  /** 0351 — the study item (subunit / component / part) this mode belongs to */
+  study_item_id?: string | null;
   created_at: string;
   updated_at: string;
   // Nested
@@ -264,6 +266,57 @@ export interface RCMCoverageRow {
   next_due_date?: string | null;
   /** 0337 — unresolved living-study flags (failures the study did not predict, points in alarm). */
   evidence_flag_count?: number;
+}
+
+/** 0351 — a maintainable item of the study: subunit, component or part. */
+export interface RCMStudyItem {
+  id: string;
+  study_id: string;
+  parent_item_id: string | null;
+  kind: 'subunit' | 'component' | 'part';
+  tag: string | null;
+  name: string;
+  critical: boolean;
+  qty: number | null;
+  uom: string | null;
+  replacement_interval_days: number | null;
+  asset_id: string | null;
+  bom_item_id: string | null;
+  inventory_item_id: string | null;
+  source: 'register' | 'bom' | 'manual' | 'template' | 'specialist';
+  template_id: string | null;
+  sort_order: number;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** 0351 — a breakdown saved by class/type and offered to the next study on that class. */
+export interface RCMBreakdownTemplateItem {
+  key: string;
+  parent_key: string | null;
+  kind: 'subunit' | 'component' | 'part';
+  tag: string | null;
+  name: string;
+  critical: boolean;
+  qty: number | null;
+  uom: string | null;
+  replacement_interval_days: number | null;
+  notes: string | null;
+}
+export interface RCMBreakdownTemplate {
+  id: string;
+  name: string;
+  asset_class: string | null;
+  asset_type_code: string | null;
+  items: RCMBreakdownTemplateItem[];
+  scope: 'tenant' | 'library';
+  from_study_id: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  company_id: string | null;
 }
 
 /** 0337 — what the asset did after approval that the study did not foresee. Raised by the daily sweep, cleared by Revise. */
@@ -630,6 +683,22 @@ class RCMServiceImpl {
     ]);
     const decByFm = new Map(decs.map(d => [d.failure_mode_id, d]));
 
+    // 0351: the breakdown travels with the study; pins are remapped onto the copies.
+    const itemMap = new Map<string, string>();
+    const srcItems = await this.getStudyItems(id);
+    if (srcItems.length > 0) {
+      const copies = await this.saveStudyItems(srcItems.map(i => ({
+        study_id: copy.id, kind: i.kind, tag: i.tag, name: i.name, critical: i.critical, qty: i.qty, uom: i.uom,
+        replacement_interval_days: i.replacement_interval_days, asset_id: i.asset_id, bom_item_id: i.bom_item_id,
+        inventory_item_id: i.inventory_item_id, source: i.source, template_id: i.template_id, sort_order: i.sort_order, notes: i.notes,
+      })));
+      srcItems.forEach((i, n) => { if (copies[n]) itemMap.set(i.id, copies[n].id); });
+      for (const i of srcItems) {
+        const mine = itemMap.get(i.id), parent = i.parent_item_id ? itemMap.get(i.parent_item_id) : null;
+        if (mine && parent) await supabase.from('ers_rcm_study_items').update({ parent_item_id: parent }).eq('id', mine);
+      }
+    }
+
     for (const fn of fns) {
       const newFn = await this.createFunction({
         study_id: copy.id,
@@ -662,6 +731,10 @@ class RCMServiceImpl {
           detection: fm.detection,
           data_source: fm.data_source,
           sort_order: fm.sort_order,
+          component_asset_id: fm.component_asset_id ?? null,
+          bom_item_id: fm.bom_item_id ?? null,
+          component_link_source: fm.component_link_source ?? null,
+          study_item_id: fm.study_item_id ? itemMap.get(fm.study_item_id) ?? null : null,
         })))
         .select();
       if (fmErr || !newFms) { console.error('[RCM] duplicateStudy modes error:', fmErr); continue; }
@@ -1245,6 +1318,120 @@ class RCMServiceImpl {
   }
 
   /** Get task recommendation summary for output tab */
+  // ─── 0351: the study's equipment breakdown ──────────────────────────────
+
+  async getStudyItems(studyId: string): Promise<RCMStudyItem[]> {
+    const { data, error } = await supabase.from('ers_rcm_study_items').select('*').eq('study_id', studyId).order('sort_order').order('name');
+    if (error) { if (!/ers_rcm_study_items/.test(error.message || '')) console.warn('[RCM] getStudyItems:', error.message); return []; }
+    return (data || []) as RCMStudyItem[];
+  }
+
+  async saveStudyItem(item: Partial<RCMStudyItem> & { study_id: string; name: string }): Promise<RCMStudyItem | null> {
+    const payload = { ...item };
+    if (!payload.id) delete payload.id;
+    const { data, error } = await supabase.from('ers_rcm_study_items').upsert(payload, { onConflict: 'id' }).select().single();
+    if (error) { console.error('[RCM] saveStudyItem:', error.message); return null; }
+    return data as RCMStudyItem;
+  }
+
+  async saveStudyItems(items: Array<Partial<RCMStudyItem> & { study_id: string; name: string }>): Promise<RCMStudyItem[]> {
+    if (items.length === 0) return [];
+    const { data, error } = await supabase.from('ers_rcm_study_items').insert(items).select();
+    if (error) { console.error('[RCM] saveStudyItems:', error.message); return []; }
+    return (data || []) as RCMStudyItem[];
+  }
+
+  async deleteStudyItem(id: string): Promise<boolean> {
+    const { error } = await supabase.from('ers_rcm_study_items').delete().eq('id', id);
+    if (error) { console.error('[RCM] deleteStudyItem:', error.message); return false; }
+    return true;
+  }
+
+  /**
+   * Seed or refresh the study's items from the register: child assets (≤3
+   * levels) become subunits / components, BOM lines become parts. Merged by
+   * register link, so a second import adds what is new and never duplicates.
+   */
+  async importBreakdownFromRegister(studyId: string, assetId: string | null | undefined): Promise<{ added: number; existing: number }> {
+    const reg = await this.getAssetBreakdown(assetId);
+    const current = await this.getStudyItems(studyId);
+    const haveAsset = new Set(current.map(i => i.asset_id).filter(Boolean));
+    const haveBom = new Set(current.map(i => i.bom_item_id).filter(Boolean));
+    const rows: Array<Partial<RCMStudyItem> & { study_id: string; name: string }> = [];
+    for (const c of reg.components) {
+      if (haveAsset.has(c.id)) continue;
+      rows.push({ study_id: studyId, kind: String(c.level || '').toUpperCase() === 'SUBUNIT' ? 'subunit' : 'component', tag: c.tag, name: c.name, critical: String(c.criticality || '').toUpperCase() === 'A', asset_id: c.id, source: 'register', sort_order: c.depth * 100 });
+    }
+    for (const p of reg.parts) {
+      if (haveBom.has(p.id)) continue;
+      rows.push({ study_id: studyId, kind: 'part', tag: p.partNumber || null, name: p.description || p.partNumber || 'Part', critical: p.critical, qty: p.qty, uom: p.uom, replacement_interval_days: p.replacementIntervalDays ?? null, bom_item_id: p.id, inventory_item_id: p.inventoryItemId ?? null, source: 'bom', sort_order: 900 });
+    }
+    const added = await this.saveStudyItems(rows);
+    // parents: a register child's parent item is the item of its parent asset
+    const all = [...current, ...added];
+    const byAsset = new Map(all.filter(i => i.asset_id).map(i => [i.asset_id as string, i.id]));
+    for (const c of reg.components) {
+      const me = all.find(i => i.asset_id === c.id);
+      const parent = c.parentId ? byAsset.get(c.parentId) : null;
+      if (me && parent && me.parent_item_id !== parent) await supabase.from('ers_rcm_study_items').update({ parent_item_id: parent }).eq('id', me.id);
+    }
+    return { added: added.length, existing: current.length };
+  }
+
+  /** Templates for this class/type: the tenant's own first, then the library; exact type before class-only. */
+  async listBreakdownTemplates(assetClass: string | null | undefined, assetType: string | null | undefined): Promise<RCMBreakdownTemplate[]> {
+    const { data, error } = await supabase.from('ers_rcm_breakdown_templates').select('*').order('updated_at', { ascending: false });
+    if (error) { if (!/ers_rcm_breakdown_templates/.test(error.message || '')) console.warn('[RCM] listBreakdownTemplates:', error.message); return []; }
+    const cls = String(assetClass || '').toUpperCase(), typ = String(assetType || '').toUpperCase();
+    const rank = (t: RCMBreakdownTemplate) => {
+      const tc = String(t.asset_class || '').toUpperCase(), tt = String(t.asset_type_code || '').toUpperCase();
+      let r = 0;
+      if (cls && tc === cls) r += 2;
+      if (typ && tt === typ) r += 4;
+      if (t.scope === 'tenant') r += 1;
+      return r;
+    };
+    return ((data || []) as RCMBreakdownTemplate[]).filter(t => !cls || !t.asset_class || String(t.asset_class).toUpperCase() === cls).sort((a, b) => rank(b) - rank(a));
+  }
+
+  /** Save this study's items as a template for its class/type. Register links are dropped; the shape travels. */
+  async saveBreakdownTemplate(studyId: string, name: string, assetClass: string | null, assetType: string | null): Promise<RCMBreakdownTemplate | null> {
+    const items = await this.getStudyItems(studyId);
+    if (items.length === 0) return null;
+    const key = new Map(items.map((i, n) => [i.id, `i${n + 1}`]));
+    const tpl: RCMBreakdownTemplateItem[] = items.map(i => ({
+      key: key.get(i.id)!, parent_key: i.parent_item_id ? key.get(i.parent_item_id) ?? null : null,
+      kind: i.kind, tag: i.tag, name: i.name, critical: !!i.critical, qty: i.qty, uom: i.uom,
+      replacement_interval_days: i.replacement_interval_days, notes: i.notes,
+    }));
+    const { data, error } = await supabase.from('ers_rcm_breakdown_templates')
+      .insert({ name, asset_class: assetClass, asset_type_code: assetType, items: tpl, scope: 'tenant', from_study_id: studyId })
+      .select().single();
+    if (error) { console.error('[RCM] saveBreakdownTemplate:', error.message); return null; }
+    return data as RCMBreakdownTemplate;
+  }
+
+  /** Apply a template's items to a study (added to what is there; the template's parent links are kept). */
+  async applyBreakdownTemplate(studyId: string, template: RCMBreakdownTemplate): Promise<number> {
+    const current = await this.getStudyItems(studyId);
+    const have = new Set(current.map(i => `${i.kind}|${String(i.name).trim().toLowerCase()}`));
+    const fresh = template.items.filter(t => !have.has(`${t.kind}|${String(t.name).trim().toLowerCase()}`));
+    if (fresh.length === 0) return 0;
+    const inserted = await this.saveStudyItems(fresh.map((t, n) => ({
+      study_id: studyId, kind: t.kind, tag: t.tag, name: t.name, critical: !!t.critical, qty: t.qty, uom: t.uom,
+      replacement_interval_days: t.replacement_interval_days, notes: t.notes, source: 'template', template_id: template.id,
+      sort_order: (t.kind === 'part' ? 900 : 100) + n,
+    })));
+    // parents by template key
+    const idByKey = new Map<string, string>();
+    fresh.forEach((t, n) => { if (inserted[n]) idByKey.set(t.key, inserted[n].id); });
+    for (let n = 0; n < fresh.length; n++) {
+      const t = fresh[n]; const row = inserted[n]; const parent = t.parent_key ? idByKey.get(t.parent_key) : null;
+      if (row && parent) await supabase.from('ers_rcm_study_items').update({ parent_item_id: parent }).eq('id', row.id);
+    }
+    return inserted.length;
+  }
+
   /** 0337 — the study's unresolved living-study flags, newest first. */
   async getEvidenceFlags(studyId: string): Promise<RCMEvidenceFlag[]> {
     const { data, error } = await supabase.from('ers_rcm_evidence_flags')

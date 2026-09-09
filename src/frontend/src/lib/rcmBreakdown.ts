@@ -26,6 +26,10 @@ export interface BreakdownComponent {
   parentId?: string | null;
   /** depth under the study asset: 1 = direct child */
   depth: number;
+  /** 0351 — the study item this row is (when the breakdown is the study's own list) */
+  itemId?: string | null;
+  /** 0351 — the register asset behind it, if any (a manual item has none) */
+  assetId?: string | null;
 }
 
 export interface BreakdownPart {
@@ -38,6 +42,10 @@ export interface BreakdownPart {
   /** linked material master, when the BOM line is a stocked item */
   inventoryItemId?: string | null;
   replacementIntervalDays?: number | null;
+  /** 0351 — the study item this row is */
+  itemId?: string | null;
+  /** 0351 — the asset_bom line behind it, if any */
+  bomItemId?: string | null;
 }
 
 export interface AssetBreakdown {
@@ -46,6 +54,70 @@ export interface AssetBreakdown {
 }
 
 export const EMPTY_BREAKDOWN: AssetBreakdown = { components: [], parts: [] };
+
+// ── 0351: the study's own item list as a breakdown ──────────────────────────
+
+/** The row shape of ers_rcm_study_items, as much of it as the breakdown needs. */
+export interface StudyItemLike {
+  id: string;
+  parent_item_id?: string | null;
+  kind: 'subunit' | 'component' | 'part';
+  tag?: string | null;
+  name: string;
+  critical?: boolean | null;
+  qty?: number | string | null;
+  uom?: string | null;
+  replacement_interval_days?: number | null;
+  asset_id?: string | null;
+  bom_item_id?: string | null;
+  inventory_item_id?: string | null;
+  sort_order?: number | null;
+}
+
+/**
+ * Items → breakdown. A component row's `id` is the study item id (what the
+ * pin stores in study_item_id); `assetId` carries the register link when the
+ * item came from there. Depth follows parent_item_id. Parts likewise.
+ */
+export function breakdownFromItems(items: StudyItemLike[] | null | undefined): AssetBreakdown {
+  const list = [...(items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.tag || a.name).localeCompare(String(b.tag || b.name)));
+  const byId = new Map(list.map(i => [i.id, i]));
+  const depthOf = (i: StudyItemLike): number => {
+    let d = 1; let p = i.parent_item_id ? byId.get(i.parent_item_id) : undefined; const seen = new Set<string>([i.id]);
+    while (p && !seen.has(p.id) && d < 6) { d++; seen.add(p.id); p = p.parent_item_id ? byId.get(p.parent_item_id) : undefined; }
+    return d;
+  };
+  const components: BreakdownComponent[] = list.filter(i => i.kind !== 'part').map(i => ({
+    id: i.id, itemId: i.id, assetId: i.asset_id ?? null,
+    tag: i.tag || '', name: i.name, level: i.kind === 'subunit' ? 'SUBUNIT' : 'COMPONENT',
+    criticality: i.critical ? 'A' : null, parentId: i.parent_item_id ?? null, depth: depthOf(i),
+  }));
+  const parts: BreakdownPart[] = list.filter(i => i.kind === 'part').map(i => ({
+    id: i.id, itemId: i.id, bomItemId: i.bom_item_id ?? null,
+    partNumber: i.tag || '', description: i.name, qty: Number(i.qty) || 1, uom: i.uom || 'EA',
+    critical: !!i.critical, inventoryItemId: i.inventory_item_id ?? null, replacementIntervalDays: i.replacement_interval_days ?? null,
+  }));
+  return { components, parts };
+}
+
+/** The three link columns a failure mode stores for a component / part it is pinned to. */
+export function linkFor(c: BreakdownComponent | null | undefined, p: BreakdownPart | null | undefined): { component_asset_id: string | null; bom_item_id: string | null; study_item_id: string | null } {
+  if (c) return { component_asset_id: c.itemId ? (c.assetId ?? null) : c.id, bom_item_id: null, study_item_id: c.itemId ?? null };
+  if (p) return { component_asset_id: null, bom_item_id: p.itemId ? (p.bomItemId ?? null) : p.id, study_item_id: p.itemId ?? null };
+  return { component_asset_id: null, bom_item_id: null, study_item_id: null };
+}
+
+/** Does this failure mode point at this component (by study item, or by the register link)? */
+export function modeOnComponent(fm: ComponentLinkLike, c: BreakdownComponent): boolean {
+  if (c.itemId && fm.study_item_id) return fm.study_item_id === c.itemId;
+  const target = c.itemId ? c.assetId : c.id;
+  return !!target && fm.component_asset_id === target;
+}
+export function modeOnPart(fm: ComponentLinkLike, p: BreakdownPart): boolean {
+  if (p.itemId && fm.study_item_id) return fm.study_item_id === p.itemId;
+  const target = p.itemId ? p.bomItemId : p.id;
+  return !!target && fm.bom_item_id === target;
+}
 
 export function isEmptyBreakdown(b: AssetBreakdown | null | undefined): boolean {
   return !b || (b.components.length === 0 && b.parts.length === 0);
@@ -62,6 +134,8 @@ export type ComponentLinkSource = 'manual' | 'specialist' | 'text' | 'import';
 export interface ComponentLinkLike {
   component_asset_id?: string | null;
   bom_item_id?: string | null;
+  /** 0351 — the study item (subunit / component / part) the mode belongs to */
+  study_item_id?: string | null;
   component_link_source?: ComponentLinkSource | null;
 }
 
@@ -113,18 +187,19 @@ export interface BreakdownCoverage {
 
 export function breakdownCoverage(b: AssetBreakdown | null | undefined, failureModes: ComponentLinkLike[]): BreakdownCoverage {
   const comps = b?.components || [];
-  const counts = new Map<string, number>();
+  const parts = b?.parts || [];
   const partIds = new Set<string>();
   let unpinned = 0;
   for (const fm of failureModes) {
-    if (fm.component_asset_id) counts.set(fm.component_asset_id, (counts.get(fm.component_asset_id) || 0) + 1);
-    else if (!fm.bom_item_id) unpinned++;
-    if (fm.bom_item_id) partIds.add(fm.bom_item_id);
+    const onComp = comps.some(c => modeOnComponent(fm, c));
+    const part = parts.find(p => modeOnPart(fm, p));
+    if (part) partIds.add(part.id);
+    else if (!onComp && !fm.component_asset_id && !fm.bom_item_id && !fm.study_item_id) unpinned++;
   }
   const covered: ComponentCoverage[] = [];
   const uncovered: BreakdownComponent[] = [];
   for (const c of comps) {
-    const n = counts.get(c.id) || 0;
+    const n = failureModes.filter(fm => modeOnComponent(fm, c)).length;
     if (n > 0) covered.push({ component: c, modeCount: n }); else uncovered.push(c);
   }
   const pct = comps.length === 0 ? 0 : Math.round((covered.length / comps.length) * 100);
@@ -187,14 +262,10 @@ export function matchPart(text: string | null | undefined, b: AssetBreakdown | n
 /** Display label for a pinned failure mode. */
 export function componentLabel(fm: ComponentLinkLike, b: AssetBreakdown | null | undefined): string {
   if (!b) return '';
-  if (fm.component_asset_id) {
-    const c = b.components.find(x => x.id === fm.component_asset_id);
-    if (c) return `${c.tag} — ${c.name}`;
-  }
-  if (fm.bom_item_id) {
-    const p = b.parts.find(x => x.id === fm.bom_item_id);
-    if (p) return `${p.partNumber ? p.partNumber + ' — ' : ''}${p.description}`;
-  }
+  const c = b.components.find(x => modeOnComponent(fm, x));
+  if (c) return `${c.tag ? c.tag + ' — ' : ''}${c.name}`;
+  const p = b.parts.find(x => modeOnPart(fm, x));
+  if (p) return `${p.partNumber ? p.partNumber + ' — ' : ''}${p.description}`;
   return '';
 }
 
@@ -226,29 +297,29 @@ function mentions(hay: string, needle: string): boolean {
 export function inferComponentLink(
   texts: Array<string | null | undefined>,
   b: AssetBreakdown | null | undefined,
-): { component_asset_id: string | null; bom_item_id: string | null } {
-  const none = { component_asset_id: null, bom_item_id: null };
+): { component_asset_id: string | null; bom_item_id: string | null; study_item_id: string | null } {
+  const none = linkFor(null, null);
   if (isEmptyBreakdown(b)) return none;
   const hay = texts.map(t => norm(t)).filter(Boolean).join(' \n ');
   if (!hay) return none;
 
-  let best: { id: string; len: number } | null = null;
+  let bestC: { c: BreakdownComponent; len: number } | null = null;
   for (const c of b!.components) {
     for (const key of [...nameKeys(c.name), norm(c.tag)]) {
-      if (key.length < 4 || (best && key.length <= best.len)) continue;
-      if (mentions(hay, key)) best = { id: c.id, len: key.length };
+      if (key.length < 4 || (bestC && key.length <= bestC.len)) continue;
+      if (mentions(hay, key)) bestC = { c, len: key.length };
     }
   }
-  if (best) return { component_asset_id: best.id, bom_item_id: null };
+  if (bestC) return linkFor(bestC.c, null);
 
-  best = null;
+  let bestP: { p: BreakdownPart; len: number } | null = null;
   for (const p of b!.parts) {
     for (const key of [norm(p.description), norm(p.partNumber)]) {
-      if (key.length < 4 || (best && key.length <= best.len)) continue;
-      if (mentions(hay, key)) best = { id: p.id, len: key.length };
+      if (key.length < 4 || (bestP && key.length <= bestP.len)) continue;
+      if (mentions(hay, key)) bestP = { p, len: key.length };
     }
   }
-  return best ? { component_asset_id: null, bom_item_id: best.id } : none;
+  return bestP ? linkFor(null, bestP.p) : none;
 }
 
 /**
@@ -260,11 +331,11 @@ export function pinFailureMode<T extends ComponentLinkLike & { failure_mode_desc
   b: AssetBreakdown | null | undefined,
   explicitSource: ComponentLinkSource = 'specialist',
 ): T & ComponentLinkLike {
-  if (fm.component_asset_id || fm.bom_item_id) {
+  if (fm.component_asset_id || fm.bom_item_id || fm.study_item_id) {
     return fm.component_link_source ? fm : { ...fm, component_link_source: explicitSource };
   }
   const link = inferComponentLink([fm.failure_mode_description, fm.failure_cause_description], b);
-  if (!link.component_asset_id && !link.bom_item_id) return fm;
+  if (!link.component_asset_id && !link.bom_item_id && !link.study_item_id) return fm;
   // Inferred from the wording, not chosen — marked so the worksheet can offer it for review.
   return { ...fm, ...link, component_link_source: 'text' };
 }

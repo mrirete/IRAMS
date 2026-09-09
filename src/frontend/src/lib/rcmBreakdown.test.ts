@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   renderBreakdownForPrompt, breakdownCoverage, matchComponent, matchPart, componentLabel, isEmptyBreakdown,
-  inferComponentLink, pinFailureMode,
+  inferComponentLink, pinFailureMode, breakdownFromItems, linkFor,
   type AssetBreakdown,
 } from './rcmBreakdown';
 
@@ -95,6 +95,30 @@ describe('matching the Specialist answer back', () => {
     expect(inferComponentLink(['HP turbine blades liberated'], G).component_asset_id).toBe('hpt');
     expect(inferComponentLink(['Lube oil pump cavitation'], G).component_asset_id).toBeNull();
   });
+  it('0351: the study items make a breakdown; pins store the item and the register link; matching reads both', () => {
+    const items = [
+      { id: 'i1', kind: 'subunit' as const, tag: 'DGS', name: 'Dry gas seal system', critical: true, asset_id: 'a-dgs', sort_order: 1 },
+      { id: 'i2', kind: 'component' as const, tag: null, name: 'Seal gas panel', parent_item_id: 'i1', sort_order: 2 },
+      { id: 'i3', kind: 'part' as const, tag: 'FLT-9', name: 'Seal gas filter element', qty: 2, uom: 'EA', bom_item_id: 'bom-9', sort_order: 3 },
+    ];
+    const b = breakdownFromItems(items);
+    expect(b.components.map(c => [c.id, c.assetId, c.depth])).toEqual([['i1', 'a-dgs', 1], ['i2', null, 2]]);
+    expect(b.parts[0]).toMatchObject({ id: 'i3', itemId: 'i3', bomItemId: 'bom-9', partNumber: 'FLT-9', qty: 2 });
+    // a register-backed item pins by item AND keeps the asset link; a manual one by item only
+    expect(linkFor(b.components[0], null)).toEqual({ component_asset_id: 'a-dgs', bom_item_id: null, study_item_id: 'i1' });
+    expect(linkFor(b.components[1], null)).toEqual({ component_asset_id: null, bom_item_id: null, study_item_id: 'i2' });
+    expect(linkFor(null, b.parts[0])).toEqual({ component_asset_id: null, bom_item_id: 'bom-9', study_item_id: 'i3' });
+    expect(inferComponentLink(['Seal gas panel supply valve stuck'], b).study_item_id).toBe('i2');
+    expect(inferComponentLink(['Seal gas filter element blocked'], b)).toEqual({ component_asset_id: null, bom_item_id: 'bom-9', study_item_id: 'i3' });
+    // an old mode pinned before 0351 (asset link only) still counts against its component
+    const cov = breakdownCoverage(b, [{ study_item_id: 'i2' }, { component_asset_id: 'a-dgs' }, {}]);
+    expect(cov.covered.map(c => c.component.id)).toEqual(['i1', 'i2']);
+    expect(cov.unpinned).toBe(1);
+    expect(componentLabel({ study_item_id: 'i2' }, b)).toBe('Seal gas panel');
+    expect(componentLabel({ component_asset_id: 'a-dgs' }, b)).toBe('DGS — Dry gas seal system');
+    // legacy register breakdown (no itemId): links are the register ids, as before
+    expect(inferComponentLink(['thrust bearing overheats'], B)).toEqual({ component_asset_id: 'c1', bom_item_id: null, study_item_id: null });
+  });
   it('labels a pinned mode', () => {
     expect(componentLabel({ component_asset_id: 'c2' }, B)).toBe('GT-301-LUBE — Lube oil system');
     expect(componentLabel({ bom_item_id: 'p2' }, B)).toBe('Synthetic turbine oil ISO VG 32');
@@ -125,14 +149,14 @@ describe('inferring the pin from the failure mode text', () => {
   });
   it('does not match inside longer words, short names, or empty breakdowns', () => {
     expect(inferComponentLink(['Valves galore'], G).component_asset_id).toBeNull();
-    expect(inferComponentLink(['Shaft seal leaking'], G)).toEqual({ component_asset_id: null, bom_item_id: null });
-    expect(inferComponentLink(['Fuel control valve stuck'], { components: [], parts: [] })).toEqual({ component_asset_id: null, bom_item_id: null });
-    expect(inferComponentLink([null, undefined], G)).toEqual({ component_asset_id: null, bom_item_id: null });
+    expect(inferComponentLink(['Shaft seal leaking'], G)).toEqual({ component_asset_id: null, bom_item_id: null, study_item_id: null });
+    expect(inferComponentLink(['Fuel control valve stuck'], { components: [], parts: [] })).toEqual({ component_asset_id: null, bom_item_id: null, study_item_id: null });
+    expect(inferComponentLink([null, undefined], G)).toEqual({ component_asset_id: null, bom_item_id: null, study_item_id: null });
   });
   it('falls back to a BOM line, and components win over parts', () => {
     expect(inferComponentLink(['Air inlet filter blocked'], G).bom_item_id).toBe('p1');
     expect(inferComponentLink(['FLT-0023 torn'], G).bom_item_id).toBe('p1');
-    expect(inferComponentLink(['Fuel nozzle blocked by air inlet filter debris'], G)).toEqual({ component_asset_id: 'noz', bom_item_id: null });
+    expect(inferComponentLink(['Fuel nozzle blocked by air inlet filter debris'], G)).toEqual({ component_asset_id: 'noz', bom_item_id: null, study_item_id: null });
   });
   it('pinFailureMode keeps an explicit pin and only fills an empty one, recording where the pin came from', () => {
     const explicit = pinFailureMode({ failure_mode_description: 'Ignitor plug failure', component_asset_id: 'v' }, G);

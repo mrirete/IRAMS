@@ -32,7 +32,7 @@ interface RCMStudyOverviewProps {
   evidenceFlags?: RCMEvidenceFlag[];
   canRevise?: boolean;
   onRevise?: () => void;
-  onNavigate: (tab: 'functions' | 'decisions' | 'tasks' | 'evidence') => void;
+  onNavigate: (tab: 'items' | 'functions' | 'decisions' | 'tasks' | 'evidence') => void;
   onInviteTeam: () => void;
   onEditStudy: () => void;
   /** The asset's CURRENT register context (0317) — compared with the study's snapshot. */
@@ -349,7 +349,7 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
           )}
           <p className="text-[11px] text-slate-500 mt-2.5">
             {coverage.uncovered.length > 0
-              ? <>{coverage.uncovered.length} component{coverage.uncovered.length !== 1 ? 's' : ''} without a failure mode — JA1011 asks whether every reasonably likely mode was identified. Pin modes on the <button onClick={() => onNavigate('functions')} className="font-bold text-accent-cyan hover:underline">Worksheet</button>, or let the Specialist draft through the breakdown.</>
+              ? <>{coverage.uncovered.length} component{coverage.uncovered.length !== 1 ? 's' : ''} without a failure mode — JA1011 asks whether every reasonably likely mode was identified. Pin modes on the <button onClick={() => onNavigate('functions')} className="font-bold text-accent-cyan hover:underline">Worksheet</button>, let the Specialist draft through the breakdown, or change the list on <button onClick={() => onNavigate('items')} className="font-bold text-accent-cyan hover:underline">Equipment</button>.</>
               : coverage.unpinned > 0
                 ? <>{coverage.unpinned} failure mode{coverage.unpinned !== 1 ? 's' : ''} not pinned to a component — pin them on the <button onClick={() => onNavigate('functions')} className="font-bold text-accent-cyan hover:underline">Worksheet</button> so the study reads per component.</>
                 : breakdown!.parts.length > 0 && coverage.partsReferenced === 0

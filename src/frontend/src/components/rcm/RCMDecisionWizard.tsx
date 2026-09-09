@@ -537,7 +537,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                         <SparesPicker
                           spares={decision?.spares_requirements || []}
                           parts={breakdown?.parts || []}
-                          pinnedPartId={fm.bom_item_id || null}
+                          pinnedPartId={(breakdown?.parts || []).find(p => (p.itemId && fm.study_item_id ? p.itemId === fm.study_item_id : (p.itemId ? p.bomItemId : p.id) === fm.bom_item_id))?.id || null}
                           onChange={next => { if (!locked) onUpdateDecision(fm.id, { spares_requirements: next }); }}
                         />
                       )}
