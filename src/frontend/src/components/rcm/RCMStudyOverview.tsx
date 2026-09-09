@@ -32,6 +32,10 @@ interface RCMStudyOverviewProps {
   evidenceFlags?: RCMEvidenceFlag[];
   canRevise?: boolean;
   onRevise?: () => void;
+  /** 0352 — a derived study: the facilitator confirms the per-asset review; an approved study can be kept as a template. */
+  canConfirmReview?: boolean;
+  onConfirmReview?: () => void;
+  onSaveStudyTemplate?: (name: string) => void;
   onNavigate: (tab: 'items' | 'functions' | 'decisions' | 'tasks' | 'evidence') => void;
   onInviteTeam: () => void;
   onEditStudy: () => void;
@@ -72,7 +76,7 @@ const Chip: React.FC<{ tone?: 'muted' | 'warn' | 'danger'; children: React.React
 export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
   study, functions, failureModes, decisions, taskSummaries, collaborators,
   onNavigate, onInviteTeam, onEditStudy, liveContext, onRefreshContext, breakdown,
-  evidenceFlags = [], canRevise = false, onRevise,
+  evidenceFlags = [], canRevise = false, onRevise, canConfirmReview = false, onConfirmReview, onSaveStudyTemplate,
 }) => {
   // Physical-breakdown coverage (0318): which registered components have a failure mode
   const coverage = useMemo(() => breakdownCoverage(breakdown, failureModes), [breakdown, failureModes]);
@@ -145,6 +149,34 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
+      {/* Derived study (0352) — spooled from a template; approval waits for the per-asset review */}
+      {study.derived_from_template_id && study.template_review_status !== 'reviewed' && (
+        <div className="flex items-start gap-3 px-3.5 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-amber-800">Spooled from a study template — review it for this asset before approving</p>
+            <p className="text-[11px] text-amber-700 mt-0.5">The breakdown, functions, failure modes and decisions are defaults from a similar asset. Confirm the operating context below, then each consequence (Q5) and strategy on the Worksheet and Strategy tabs. Approval is refused until this review is confirmed.</p>
+          </div>
+          {canConfirmReview && onConfirmReview && (
+            <button onClick={onConfirmReview} className="shrink-0 px-3 py-2 text-[10px] font-bold text-white bg-amber-600 rounded-lg hover:bg-amber-500" title="I have reviewed the context, consequences and strategies for this asset">
+              Confirm review
+            </button>
+          )}
+        </div>
+      )}
+      {study.status === 'approved' && onSaveStudyTemplate && (
+        <div className="flex items-center gap-3 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl">
+          <FileText size={14} className="text-slate-400 shrink-0" />
+          <p className="flex-1 text-[11px] text-slate-600 min-w-0">Keep this study as a template for the next {study.asset_tag ? 'asset of the same class' : 'similar asset'} — breakdown, worksheet and decisions as defaults, applied from the RCM landing.</p>
+          <button
+            onClick={() => { const name = window.prompt('Template name', `${study.title} — template`); if (name && name.trim()) onSaveStudyTemplate(name.trim()); }}
+            className="shrink-0 px-3 py-1.5 text-[10px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100"
+          >
+            Save as study template
+          </button>
+        </div>
+      )}
+
       {/* Living study (0337) — what the asset did after approval that the study did not foresee */}
       {evidenceFlags.length > 0 && (
         <div className="flex items-start gap-3 px-3.5 py-3 bg-red-50 border border-red-200 rounded-xl">

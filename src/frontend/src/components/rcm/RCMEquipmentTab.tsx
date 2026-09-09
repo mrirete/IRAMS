@@ -11,7 +11,7 @@
  * One quiet table. No wizard.
  */
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Download, Save, ClipboardPaste, Boxes, Lock, ChevronRight, Star } from 'lucide-react';
+import { Plus, Trash2, Download, Save, ClipboardPaste, Boxes, Lock, ChevronRight, Star, Sparkles, Upload } from 'lucide-react';
 import type { RCMStudyItem, RCMBreakdownTemplate } from '../../eam/services/RCMService';
 
 export interface RCMEquipmentTabProps {
@@ -32,6 +32,12 @@ export interface RCMEquipmentTabProps {
   onSaveTemplate: (name: string) => void;
   onPasteList: (lines: string[], kind: RCMStudyItem['kind']) => void;
   onGoToWorksheet: () => void;
+  /** 0352 — the Specialist proposes the items from the asset context (undefined = AI not available). */
+  onSuggest?: () => void;
+  suggesting?: boolean;
+  /** 0352 — typed items become register children / BOM lines (undefined = no register asset behind the study). */
+  onPromote?: () => void;
+  promotable?: number;
 }
 
 const KIND_LABEL: Record<RCMStudyItem['kind'], string> = { subunit: 'Subunit', component: 'Component', part: 'Part' };
@@ -43,6 +49,7 @@ const sel = 'text-[11px] bg-white border border-slate-200 rounded-md px-1.5 py-1
 export const RCMEquipmentTab: React.FC<RCMEquipmentTabProps> = ({
   items, locked = false, registerCounts, templates, assetLabel, assetClass, assetType, saving,
   onAdd, onUpdate, onDelete, onImportRegister, onApplyTemplate, onSaveTemplate, onPasteList, onGoToWorksheet,
+  onSuggest, suggesting, onPromote, promotable = 0,
 }) => {
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<RCMStudyItem['kind']>('component');
@@ -114,6 +121,16 @@ export const RCMEquipmentTab: React.FC<RCMEquipmentTabProps> = ({
           {!locked && (
             <button type="button" onClick={() => setPasteOpen(o => !o)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-slate-200 text-slate-700 hover:border-accent-cyan" title="One item per line">
               <ClipboardPaste size={12} /> Paste a list
+            </button>
+          )}
+          {!locked && onSuggest && (
+            <button type="button" onClick={onSuggest} disabled={!!suggesting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 disabled:opacity-60" title="The Reliability Specialist proposes the ISO 14224 subunits and maintainable items from the asset context — added as drafts you can edit">
+              <Sparkles size={12} className={suggesting ? 'animate-pulse' : ''} /> {suggesting ? 'Specialist thinking…' : 'Suggest with the Specialist'}
+            </button>
+          )}
+          {!locked && onPromote && promotable > 0 && (
+            <button type="button" onClick={onPromote} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-slate-200 text-slate-700 hover:border-accent-cyan" title="Typed subunits and components become child assets under this asset in the register; parts become BOM lines. The items and their failure modes gain the register links.">
+              <Upload size={12} /> Save {promotable} to register
             </button>
           )}
           {items.length > 0 && (

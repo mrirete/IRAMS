@@ -81,7 +81,7 @@ export interface RCMStudy {
   approved_by: string | null;
   approved_at: string | null;
   criticality_rank: string | null;
-  rcm_source: 'new' | 'imported_fmea' | 'ai_generated';
+  rcm_source: 'new' | 'imported_fmea' | 'ai_generated' | 'template';
   ai_confidence: number | null;
   notes: string | null;
   /** What the study assumed about the asset's operating context (0317, SAE JA1011 §5.1). */
@@ -94,6 +94,9 @@ export interface RCMStudy {
   created_by?: string | null;
   /** 0335 — auth.uid() of the approver (trigger-stamped); approved_by keeps the display name. */
   approved_by_user_id?: string | null;
+  /** 0352 — spooled from a study template; stays 'unreviewed' until the facilitator confirms context + consequences for THIS asset. */
+  derived_from_template_id?: string | null;
+  template_review_status?: 'unreviewed' | 'reviewed' | null;
   created_at: string;
   updated_at: string;
   // Joined fields (not in DB)
@@ -310,6 +313,40 @@ export interface RCMBreakdownTemplate {
   asset_class: string | null;
   asset_type_code: string | null;
   items: RCMBreakdownTemplateItem[];
+  scope: 'tenant' | 'library';
+  from_study_id: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  company_id: string | null;
+}
+
+/** 0352 — a whole study saved by class/type: breakdown, worksheet, decisions as defaults. */
+export interface RCMStudyTemplatePayload {
+  items: RCMBreakdownTemplateItem[];
+  operating_context_hint: string | null;
+  functions: Array<{
+    number: string; description: string; type: string; performance_standard: string | null; functional_failure: string | null; failure_code: string | null; sort_order: number;
+    failure_modes: Array<{
+      failure_mode_code: string | null; description: string; cause_code: string | null; cause: string | null;
+      effect_local: string | null; effect_system: string | null; effect_plant: string | null; end_effect: string | null;
+      severity: number | null; occurrence: number | null; detection: number | null; sort_order: number;
+      item_key: string | null;
+      decision: null | {
+        is_hidden_failure: boolean | null; consequence_code: string | null; recommended_strategy_code: string | null;
+        task_type_code: string | null; task_description: string | null; task_interval: string | null; task_owner_craft: string | null;
+        justification: string | null; on_condition_technology: string | null; spares_requirements: unknown;
+      };
+    }>;
+  }>;
+}
+export interface RCMStudyTemplate {
+  id: string;
+  name: string;
+  asset_class: string | null;
+  asset_type_code: string | null;
+  payload: RCMStudyTemplatePayload;
   scope: 'tenant' | 'library';
   from_study_id: string | null;
   version: number;
@@ -1430,6 +1467,155 @@ class RCMServiceImpl {
       if (row && parent) await supabase.from('ers_rcm_study_items').update({ parent_item_id: parent }).eq('id', row.id);
     }
     return inserted.length;
+  }
+
+  // ─── 0352: Phase 2 — Specialist items, study templates, register promotion ──
+
+  /** The Specialist proposes the maintainable items from the asset context (ISO 14224 subunit → component). */
+  async aiSuggestItems(study: RCMStudy, existing: RCMStudyItem[]): Promise<Array<{ kind: 'subunit' | 'component' | 'part'; name: string; parent: string | null; critical: boolean }> | null> {
+    if (!isAIAvailable()) return null;
+    const assetCtx = await this.assetContextFor(study);
+    const have = existing.map(i => `${i.kind}: ${i.name}`).join('; ');
+    const prompt = `List the maintainable items of this equipment for an RCM study, following ISO 14224 Annex A (subunits, then the components / maintainable items under each).
+${assetCtx}
+Operating context: ${study.operating_context || 'General industrial service'}
+${have ? `Already listed (do not repeat): ${have}` : ''}
+Return ONLY valid JSON: {"items":[{"kind":"subunit|component|part","name":"...","parent":"<subunit name or null>","critical":true|false}]}
+Rules: 4-8 subunits, 2-6 components each, name what a maintenance technician would recognise on this specific equipment (its seal type, bearing type, drive), no generic filler, no duplicates, no parts unless a specific consumable is obvious.`;
+    try {
+      const raw = await callRCMGemini(prompt, 0.2);
+      const m = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      const parsed = JSON.parse(m[0]) as { items?: Array<{ kind?: string; name?: string; parent?: string | null; critical?: boolean }> };
+      return (parsed.items || []).filter(i => i && i.name).map(i => ({
+        kind: (['subunit', 'component', 'part'].includes(String(i.kind)) ? i.kind : 'component') as 'subunit' | 'component' | 'part',
+        name: String(i.name).trim().slice(0, 120), parent: i.parent ? String(i.parent).trim() : null, critical: !!i.critical,
+      }));
+    } catch (e) { console.error('[RCM] aiSuggestItems:', e); return null; }
+  }
+
+  /** Save an approved study as a whole-study template for its class/type. Register links and implementation links are dropped. */
+  async saveStudyTemplate(studyId: string, name: string, assetClass: string | null, assetType: string | null): Promise<RCMStudyTemplate | null> {
+    const [study, items, fns, fms, decs] = await Promise.all([this.getStudy(studyId), this.getStudyItems(studyId), this.getFunctions(studyId), this.getFailureModesByStudy(studyId), this.getDecisions(studyId)]);
+    if (!study || fns.length === 0) return null;
+    const key = new Map(items.map((i, n) => [i.id, `i${n + 1}`]));
+    const decByFm = new Map(decs.map(d => [d.failure_mode_id, d]));
+    const payload: RCMStudyTemplatePayload = {
+      items: items.map(i => ({ key: key.get(i.id)!, parent_key: i.parent_item_id ? key.get(i.parent_item_id) ?? null : null, kind: i.kind, tag: i.tag, name: i.name, critical: !!i.critical, qty: i.qty, uom: i.uom, replacement_interval_days: i.replacement_interval_days, notes: i.notes })),
+      operating_context_hint: study.operating_context,
+      functions: fns.map(f => ({
+        number: f.function_number, description: f.function_description, type: f.function_type, performance_standard: f.performance_standard ?? null, functional_failure: f.functional_failure ?? null, failure_code: f.failure_code ?? null, sort_order: f.sort_order,
+        failure_modes: fms.filter(m => m.function_id === f.id).map(m => {
+          const d = decByFm.get(m.id);
+          return {
+            failure_mode_code: m.failure_mode_code ?? null, description: m.failure_mode_description, cause_code: m.failure_cause_code ?? null, cause: m.failure_cause_description ?? null,
+            effect_local: m.failure_effect_local ?? null, effect_system: m.failure_effect_system ?? null, effect_plant: m.failure_effect_plant ?? null, end_effect: m.end_effect ?? null,
+            severity: m.severity, occurrence: m.occurrence, detection: m.detection, sort_order: m.sort_order,
+            item_key: m.study_item_id ? key.get(m.study_item_id) ?? null : null,
+            decision: d ? {
+              is_hidden_failure: d.is_hidden_failure ?? null, consequence_code: d.consequence_code ?? null, recommended_strategy_code: d.recommended_strategy_code ?? null,
+              task_type_code: d.task_type_code ?? null, task_description: d.task_description ?? null, task_interval: d.task_interval ?? null, task_owner_craft: d.task_owner_craft ?? null,
+              justification: d.justification ?? null, on_condition_technology: d.on_condition_technology ?? null, spares_requirements: d.spares_requirements ?? [],
+            } : null,
+          };
+        }),
+      })),
+    };
+    const { data, error } = await supabase.from('ers_rcm_study_templates')
+      .insert({ name, asset_class: assetClass, asset_type_code: assetType, payload, scope: 'tenant', from_study_id: studyId }).select().single();
+    if (error) { console.error('[RCM] saveStudyTemplate:', error.message); return null; }
+    return data as RCMStudyTemplate;
+  }
+
+  async listStudyTemplates(assetClass?: string | null): Promise<RCMStudyTemplate[]> {
+    const { data, error } = await supabase.from('ers_rcm_study_templates').select('*').order('updated_at', { ascending: false });
+    if (error) { if (!/ers_rcm_study_templates/.test(error.message || '')) console.warn('[RCM] listStudyTemplates:', error.message); return []; }
+    const cls = String(assetClass || '').toUpperCase();
+    return ((data || []) as RCMStudyTemplate[]).filter(t => !cls || !t.asset_class || String(t.asset_class).toUpperCase() === cls);
+  }
+
+  /** Register assets of a class (and optionally type) that have no RCM study yet — the candidates for "Apply to similar assets". */
+  async listAssetsWithoutStudy(assetClass: string | null, assetType?: string | null): Promise<Array<{ id: string; tag: string; name: string; criticality: string | null; asset_type_code: string | null }>> {
+    if (!assetClass) return [];
+    let q = supabase.from('assets').select('id, tag, name, criticality, asset_type_code').eq('asset_class', assetClass).order('tag');
+    if (assetType) q = q.eq('asset_type_code', assetType);
+    const { data } = await q;
+    const { data: studies } = await supabase.from('ers_rcm_studies').select('asset_id');
+    const have = new Set((studies || []).map(s => s.asset_id));
+    return ((data || []) as Array<{ id: string; tag: string; name: string; criticality: string | null; asset_type_code: string | null }>).filter(a => !have.has(a.id));
+  }
+
+  /**
+   * Spool a study template onto register assets: one study per asset, with the
+   * breakdown, worksheet and decisions as defaults. Each lands in draft, with
+   * its own operating context snapshot, marked derived + unreviewed. Nothing
+   * about implementation (PMs, points, owners) or the team is copied.
+   */
+  async applyStudyTemplateToAssets(template: RCMStudyTemplate, assetIds: string[], facilitator: string | null): Promise<Array<{ assetId: string; studyId: string | null; error?: string }>> {
+    const out: Array<{ assetId: string; studyId: string | null; error?: string }> = [];
+    for (const assetId of assetIds) {
+      try {
+        const ctx = await this.getAssetContext(assetId);
+        const study = await this.createStudy({
+          title: `RCM — ${ctx?.tag || assetId}${ctx?.name ? ` ${ctx.name}` : ''} (from ${template.name})`,
+          asset_id: assetId, study_type: 'streamlined', status: 'draft', facilitator,
+          operating_context: ctx?.narrative || template.payload.operating_context_hint || null,
+          rcm_source: 'template', derived_from_template_id: template.id, template_review_status: 'unreviewed',
+        } as Partial<RCMStudy>);
+        if (!study) { out.push({ assetId, studyId: null, error: 'study not created' }); continue; }
+        // items: template first, then whatever the register adds (merged by link)
+        const itemIdByKey = new Map<string, string>();
+        if (template.payload.items.length > 0) {
+          const inserted = await this.saveStudyItems(template.payload.items.map((t, n) => ({
+            study_id: study.id, kind: t.kind, tag: t.tag, name: t.name, critical: !!t.critical, qty: t.qty, uom: t.uom,
+            replacement_interval_days: t.replacement_interval_days, notes: t.notes, source: 'template', template_id: template.id,
+            sort_order: (t.kind === 'part' ? 900 : 100) + n,
+          })));
+          template.payload.items.forEach((t, n) => { if (inserted[n]) itemIdByKey.set(t.key, inserted[n].id); });
+          for (let n = 0; n < template.payload.items.length; n++) {
+            const t = template.payload.items[n]; const mine = itemIdByKey.get(t.key); const parent = t.parent_key ? itemIdByKey.get(t.parent_key) : null;
+            if (mine && parent) await supabase.from('ers_rcm_study_items').update({ parent_item_id: parent }).eq('id', mine);
+          }
+        }
+        await this.importBreakdownFromRegister(study.id, assetId);
+        // worksheet + decisions
+        for (const f of template.payload.functions) {
+          const fn = await this.createFunction({ study_id: study.id, function_number: f.number, function_description: f.description, function_type: f.type as RCMFunction['function_type'], performance_standard: f.performance_standard, functional_failure: f.functional_failure, failure_code: f.failure_code, sort_order: f.sort_order });
+          if (!fn || f.failure_modes.length === 0) continue;
+          const { data: modes, error } = await supabase.from('ers_rcm_failure_modes').insert(f.failure_modes.map(m => ({
+            function_id: fn.id, failure_mode_code: m.failure_mode_code, failure_mode_description: m.description, failure_cause_code: m.cause_code, failure_cause_description: m.cause,
+            failure_effect_local: m.effect_local, failure_effect_system: m.effect_system, failure_effect_plant: m.effect_plant, end_effect: m.end_effect,
+            severity: m.severity, occurrence: m.occurrence, detection: m.detection, data_source: 'manual', sort_order: m.sort_order,
+            study_item_id: m.item_key ? itemIdByKey.get(m.item_key) ?? null : null, component_link_source: m.item_key ? 'import' : null,
+          }))).select();
+          if (error || !modes) { console.error('[RCM] applyStudyTemplate modes:', error?.message); continue; }
+          const decPayload = (modes as RCMFailureMode[]).flatMap((nm, i) => {
+            const d = f.failure_modes[i]?.decision;
+            return d ? [{ failure_mode_id: nm.id, ...d }] : [];
+          });
+          if (decPayload.length) await supabase.from('ers_rcm_decisions').upsert(decPayload, { onConflict: 'failure_mode_id' });
+        }
+        out.push({ assetId, studyId: study.id });
+      } catch (e) {
+        out.push({ assetId, studyId: null, error: String((e as Error)?.message || e) });
+      }
+    }
+    return out;
+  }
+
+  /** The facilitator confirms the per-asset review of a derived study (context + consequences) — unlocks approval. */
+  async markTemplateReviewed(studyId: string): Promise<boolean> {
+    const { error } = await supabase.from('ers_rcm_studies').update({ template_review_status: 'reviewed' }).eq('id', studyId);
+    if (error) { console.error('[RCM] markTemplateReviewed:', error.message); return false; }
+    return true;
+  }
+
+  /** Typed items become child assets and BOM lines under the study's register asset (0352 RPC). */
+  async promoteItemsToRegister(studyId: string): Promise<{ ok: true; assets: number; bomLines: number } | { ok: false; reason: string }> {
+    const { data, error } = await supabase.rpc('rcm_promote_items_to_register', { p_study: studyId });
+    if (error) return { ok: false, reason: String(error.message || '').replace(/^RCM_[A-Z_]+_DENIED:\s*/, '') };
+    const r = (data || {}) as { assets?: number; bom_lines?: number };
+    return { ok: true, assets: Number(r.assets || 0), bomLines: Number(r.bom_lines || 0) };
   }
 
   /** 0337 — the study's unresolved living-study flags, newest first. */

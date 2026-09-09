@@ -48,6 +48,8 @@ import { normalizeRecommendation, recommendationToDecisionUpdates, parseInterval
 import { suggestPointsForAsset, type SuggestedPoint } from '../lib/predict/limitLibrary';
 import type { RCMAssetContext, RCMCoverageRow, RCMMonitoringReality, RCMEvidenceFlag, RCMStudyItem, RCMBreakdownTemplate } from '../eam/services/RCMService';
 import { RCMEquipmentTab } from '../components/rcm/RCMEquipmentTab';
+import { RCMApplyTemplateModal } from '../components/rcm/RCMApplyTemplateModal';
+import type { RCMStudyTemplate } from '../eam/services/RCMService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
 import { matchComponent, matchPart, pinFailureMode, inferComponentLink, linkFor, breakdownFromItems, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
@@ -145,6 +147,9 @@ export const RCMPage: React.FC = () => {
   const [monitoring, setMonitoring] = useState<RCMMonitoringReality | null>(null);
   // Living-study flags (0337): raised by the daily sweep, cleared by Revise.
   const [evidenceFlags, setEvidenceFlags] = useState<RCMEvidenceFlag[]>([]);
+  // 0352 — spooling a study template onto similar assets; the Specialist proposing items.
+  const [showApplyTemplate, setShowApplyTemplate] = useState(false);
+  const [suggestingItems, setSuggestingItems] = useState(false);
   const pointSuggestions = useMemo<SuggestedPoint[]>(() => liveAssetContext
     ? suggestPointsForAsset({ assetClass: liveAssetContext.asset_class, assetCategory: liveAssetContext.asset_category, operatingContext: liveAssetContext.operating_context as any })
     : [], [liveAssetContext]);
@@ -1233,6 +1238,60 @@ export const RCMPage: React.FC = () => {
     return () => { live = false; };
   }, [showNewStudy, newStudyForm.asset_id]);
 
+  // ── 0352: Specialist items, register promotion, study templates ──────────
+  const handleSuggestItems = async () => {
+    if (!selectedStudy) return;
+    setSuggestingItems(true);
+    try {
+      const proposed = await rcmService.aiSuggestItems(selectedStudy, studyItems);
+      if (!proposed) { showToast('The Specialist could not propose the items — AI unavailable or nothing returned', 'error'); return; }
+      const have = new Set(studyItems.map(i => i.name.trim().toLowerCase()));
+      const fresh = proposed.filter(p => !have.has(p.name.trim().toLowerCase()));
+      if (fresh.length === 0) { showToast('Everything the Specialist proposed is already listed'); return; }
+      const base = studyItems.reduce((m, i) => Math.max(m, i.sort_order), 100);
+      const subunits = fresh.filter(p => p.kind === 'subunit');
+      const savedSub = await rcmService.saveStudyItems(subunits.map((p, n) => ({ study_id: selectedStudy.id, kind: 'subunit' as const, name: p.name, critical: p.critical, source: 'specialist' as const, sort_order: base + n + 1 })));
+      const subIdByName = new Map<string, string>([...studyItems.filter(i => i.kind === 'subunit'), ...savedSub].map(i => [i.name.trim().toLowerCase(), i.id]));
+      const rest = fresh.filter(p => p.kind !== 'subunit');
+      const savedRest = await rcmService.saveStudyItems(rest.map((p, n) => ({
+        study_id: selectedStudy.id, kind: p.kind, name: p.name, critical: p.critical, source: 'specialist' as const,
+        parent_item_id: p.kind === 'part' ? null : (p.parent ? subIdByName.get(p.parent.trim().toLowerCase()) ?? null : null),
+        sort_order: (p.kind === 'part' ? 900 : base + subunits.length) + n + 1,
+      })));
+      setStudyItems(prev => [...prev, ...savedSub, ...savedRest]);
+      showToast(`Specialist proposed ${savedSub.length + savedRest.length} item${savedSub.length + savedRest.length !== 1 ? 's' : ''} — edit or remove freely`);
+    } finally { setSuggestingItems(false); }
+  };
+  const handlePromoteItems = async () => {
+    if (!selectedStudy) return;
+    const r = await trackSave(rcmService.promoteItemsToRegister(selectedStudy.id));
+    if (!r.ok) { showToast(r.reason, 'error'); return; }
+    await refreshItems();
+    setRegisterBreakdown(await rcmService.getAssetBreakdown(selectedStudy.asset_id));
+    showToast(`${r.assets} child asset${r.assets !== 1 ? 's' : ''} and ${r.bomLines} BOM line${r.bomLines !== 1 ? 's' : ''} created in the register`);
+  };
+  const handleSaveStudyTemplate = async (name: string) => {
+    if (!selectedStudy) return;
+    const t = await trackSave(rcmService.saveStudyTemplate(selectedStudy.id, name, liveAssetContext?.asset_class ?? null, liveAssetContext?.asset_type_code ?? null));
+    if (!t) { showToast('Could not save the study template', 'error'); return; }
+    showToast(`Study template "${name}" saved — apply it to similar assets from the RCM landing`);
+  };
+  const handleConfirmReview = async () => {
+    if (!selectedStudy) return;
+    const ok = await trackSave(rcmService.markTemplateReviewed(selectedStudy.id));
+    if (!ok) { showToast('Could not record the review', 'error'); return; }
+    setSelectedStudy(prev => (prev ? { ...prev, template_review_status: 'reviewed' } : prev));
+    showToast('Review confirmed — the study can be approved');
+  };
+  const handleApplyStudyTemplate = async (template: RCMStudyTemplate, assetIds: string[]) => {
+    const results = await rcmService.applyStudyTemplateToAssets(template, assetIds, profile?.name || profile?.full_name || user?.user_metadata?.full_name || user?.email || null);
+    const made = results.filter(r => r.studyId).length;
+    const failed = results.filter(r => !r.studyId);
+    setShowApplyTemplate(false);
+    await loadStudies();
+    showToast(made > 0 ? `${made} stud${made === 1 ? 'y' : 'ies'} created from "${template.name}" — each opens in draft for its own review${failed.length ? ` (${failed.length} failed)` : ''}` : `No studies created${failed[0]?.error ? ` — ${failed[0].error}` : ''}`, made > 0 ? undefined : 'error');
+  };
+
   // 0336 — who carries a decision into Work Management, by when. The freeze
   // exempts these columns, so an approved plan can still be assigned.
   const handleAssignOwner = async (failureModeId: string, patch: { ownerContactId?: string | null; ownerName?: string | null; dueDate?: string | null }) => {
@@ -1401,6 +1460,11 @@ export const RCMPage: React.FC = () => {
                   className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 focus:border-accent-cyan placeholder:text-slate-400 w-full md:w-64"
                 />
               </div>
+              {canCreateStudy && (
+                <button onClick={() => setShowApplyTemplate(true)} className="flex items-center gap-2 px-3 py-2.5 bg-white border border-slate-200 hover:border-accent-cyan text-slate-700 font-semibold rounded-lg text-sm transition-colors shrink-0" title="Spool a saved study template onto the register assets of the same class that have no study yet">
+                  <Layers size={16} /> <span className="hidden sm:inline">Apply to similar assets</span><span className="sm:hidden">Apply template</span>
+                </button>
+              )}
               {canCreateStudy && (
                 <button onClick={() => setShowNewStudy(true)} className="flex items-center gap-2 px-3 md:px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] shrink-0">
                   <Plus size={16} /> <span className="hidden sm:inline">New RCM Study</span><span className="sm:hidden">New Study</span>
@@ -1576,6 +1640,9 @@ export const RCMPage: React.FC = () => {
           evidenceFlags={evidenceFlags}
           canRevise={canApprove && selectedStudy.status === 'approved'}
           onRevise={() => void handleReviseStudy()}
+          canConfirmReview={canEdit}
+          onConfirmReview={() => void handleConfirmReview()}
+          onSaveStudyTemplate={canEdit ? name => void handleSaveStudyTemplate(name) : undefined}
         />
       )}
 
@@ -1629,6 +1696,10 @@ export const RCMPage: React.FC = () => {
           onSaveTemplate={name => void handleSaveTemplate(name)}
           onPasteList={(lines, kind) => void handlePasteItems(lines, kind)}
           onGoToWorksheet={() => setActiveTab('functions')}
+          onSuggest={() => void handleSuggestItems()}
+          suggesting={suggestingItems}
+          onPromote={selectedStudy.asset_id && /^[0-9a-f-]{36}$/i.test(selectedStudy.asset_id) ? () => void handlePromoteItems() : undefined}
+          promotable={studyItems.filter(i => !i.asset_id && !i.bom_item_id).length}
         />
       )}
 
@@ -2068,6 +2139,9 @@ export const RCMPage: React.FC = () => {
           onCreate={handleCreateFunction}
         />
       )}
+
+      {/* ═══ Apply a study template to similar assets (0352) ═══ */}
+      <RCMApplyTemplateModal open={showApplyTemplate} onClose={() => setShowApplyTemplate(false)} onApply={handleApplyStudyTemplate} />
 
       {/* ═══ Team Panel ═══ */}
       {showTeamPanel && (
