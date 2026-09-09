@@ -384,7 +384,7 @@ export const MigrationCenterPage: React.FC = () => {
                     <span className="font-semibold text-slate-800">Moving the other way — into SAP?</span>
                     <span className="block text-slate-500 mt-0.5">
                         The SAP Load Center fills the Migration Cockpit templates (functional locations, equipment, materials, BOMs,
-                        measuring points, readings, source lists, opening stock) from this register, with a readiness check per object.
+                        measuring points, readings, source lists, opening stock, open work as notifications) from this register, hands closed history over as a reference extract, and runs a readiness check per object.
                     </span>
                 </span>
                 <ArrowRight size={16} className="mt-0.5 text-slate-400 shrink-0" />

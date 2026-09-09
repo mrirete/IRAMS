@@ -23,7 +23,9 @@ export type SapObjectKey =
     | 'measuringPoint'
     | 'measurementDoc'
     | 'sourceList'
-    | 'inventoryBalance';
+    | 'inventoryBalance'
+    | 'orderHistory'
+    | 'openNotification';
 
 export interface SapField {
     /** SAP field name — the row-4 header the cockpit keys on. */
@@ -39,8 +41,14 @@ export interface SapField {
 
 export interface SapObjectSpec {
     key: SapObjectKey;
-    /** Load order (1..8) — each depends on those above it. */
+    /** Load order (1..10) — each depends on those above it. */
     order: number;
+    /**
+     * cockpit  = a standard Migration Cockpit object (default).
+     * handover = a reference extract in SAP field names that is NOT loaded —
+     *            it exists so the question "what about our history?" has a file.
+     */
+    kind?: 'cockpit' | 'handover';
     /** Sheet name, ≤31 chars. */
     sheet: string;
     /** Row 1. */
@@ -264,6 +272,97 @@ export const SAP_OBJECTS: SapObjectSpec[] = [
         examples: [
             ['FLT-0023', '102A', '0001', '', '', 8, 'EA', '17.08.2026', '561'],
             ['1000000001', '102A', '0001', 'REFURB', '', 3, 'EA', '17.08.2026', '561'],
+        ],
+    },
+    {
+        key: 'orderHistory', order: 9, sheet: '9 OrderHistory', label: 'Order History (hand-over)', kind: 'handover',
+        title: 'Order history — hand-over extract (reference, not a load file)',
+        hint: 'Closed and cancelled orders in SAP field names. Not loaded: S/4HANA 2021+ has a Maintenance order migration object, but it carries estimated costs and settlement rules only — recreating closed orders with actual cost distorts cost and status reporting. Keep this beside the load as the record of what the plant did.',
+        fields: [
+            F('AUFNR', 'Legacy order number (the IREAMS work-order number)', { required: true, width: 16 }),
+            F('AUART', 'Order type the order would carry (mapped from the IREAMS work type)', { required: true, width: 8, maxLength: 4 }),
+            F('KTEXT', 'Short text', { required: true, width: 34, maxLength: 40 }),
+            F('EQUNR', 'Equipment number', { width: 14, maxLength: 18 }),
+            F('TIDNR', 'Technical identification number — the field tag', { width: 14, maxLength: 25 }),
+            F('TPLNR', 'Functional location', { width: 20, maxLength: 30 }),
+            F('PRIOK', 'Priority (1 = highest)', { width: 8, maxLength: 1 }),
+            F('LEGACY_STATUS', 'Status as recorded in IREAMS', { width: 12 }),
+            F('STTXT', 'System status SAP would show — TECO, CLSD, or DLFL for cancelled', { width: 8 }),
+            F('ERDAT', 'Created on (DD.MM.YYYY)', { width: 12 }),
+            F('GSTRP', 'Basic start date (DD.MM.YYYY)', { width: 12 }),
+            F('GLTRP', 'Basic finish date (DD.MM.YYYY)', { width: 12 }),
+            F('GETRI', 'Actual finish date (DD.MM.YYYY)', { width: 12 }),
+            F('MSAUS', 'Breakdown indicator — X = function lost, blank = not recorded', { width: 8 }),
+            F('AUSVN', 'Start of malfunction — date', { width: 12 }),
+            F('AUZTV', 'Start of malfunction — time', { width: 10 }),
+            F('AUSBS', 'End of malfunction — date', { width: 12 }),
+            F('AUZTB', 'End of malfunction — time', { width: 10 }),
+            F('AUSZT', 'Breakdown duration (hours)', { width: 10 }),
+            F('ISMNW', 'Actual work (hours)', { width: 10 }),
+            F('KOSTL', 'Cost centre', { width: 12, maxLength: 10 }),
+            F('GEWRK', 'Main work centre', { width: 12, maxLength: 8 }),
+            F('FEGRP', 'Damage code group', { width: 10, maxLength: 8 }),
+            F('FECOD', 'Damage code (failure mode) — the IREAMS code as recorded; SAP catalog codes are 4 characters, map them in QS41', { width: 12 }),
+            F('OTGRP', 'Object part code group', { width: 10, maxLength: 8 }),
+            F('OTEIL', 'Object part code — as recorded', { width: 12 }),
+            F('URGRP', 'Cause code group', { width: 10, maxLength: 8 }),
+            F('URCOD', 'Cause code — as recorded', { width: 12 }),
+            F('MNGRP', 'Activity code group', { width: 10, maxLength: 8 }),
+            F('MNCOD', 'Activity code (remedy) — as recorded', { width: 12 }),
+            F('COST_LABOR', 'Actual labour cost (IREAMS ledger, posted)', { width: 12 }),
+            F('COST_MATERIAL', 'Actual material cost (IREAMS ledger, posted)', { width: 12 }),
+            F('COST_TOTAL', 'Total actual cost', { width: 12 }),
+            F('WAERS', 'Currency', { width: 8, maxLength: 5 }),
+            F('QMNAM', 'Reported by', { width: 12, maxLength: 12 }),
+            F('PARENT_AUFNR', 'Legacy number of the parent order (follow-up chain)', { width: 16 }),
+            F('CAUSED_BY_AUFNR', 'Legacy number of the order whose work caused this one (secondary failure)', { width: 16 }),
+        ],
+        examples: [
+            ['WO-2025-00412', 'PM01', 'Pump seal leak - replace mechanical seal', 'EQ-000101', 'PMP-101A', 'SITE-HOU-U300', '1', 'CLOSED', 'CLSD', '03.02.2025', '03.02.2025', '05.02.2025', '11.02.2025', 'X', '03.02.2025', '06:40:00', '03.02.2025', '13:10:00', 6.5, 9, 'MNT-300', 'MECH-01', 'YB-DAM', 'LEAK', '', '', 'YB-CAU', 'WEAR', 'YB-ACT', 'REPL', 850, 400, 1250, 'USD', 'j.tech', '', ''],
+            ['WO-2025-00488', 'PM02', '6-monthly service - lube oil and filters', 'EQ-000103', 'CMP-201', 'SITE-HOU-U300', '3', 'TECO', 'TECO', '14.03.2025', '14.03.2025', '14.03.2025', '14.03.2025', '', '', '', '', '', '', 4, 'MNT-300', 'MECH-01', '', '', '', '', '', '', '', '', 320, 0, 320, 'USD', 'j.tech', '', ''],
+        ],
+    },
+    {
+        key: 'openNotification', order: 10, sheet: '10 OpenNotifications', label: 'Open Work at Cutover',
+        title: 'Migration object: Maintenance Notification — open work at cutover',
+        hint: 'Standard object PM - Maintenance notification (alias EAM_NOTIF, staging table, S/4HANA 2021+; internal numbering only). One row per open order — the backlog SAP must own from day one. The cockpit template keeps item, cause and activity on their own sheets keyed by the legacy number; these columns copy across. Convert to orders in SAP under your own order types.',
+        fields: [
+            F('LEGACY_NOTIF', 'Legacy notification number — technical key (the IREAMS work-order number)', { required: true, width: 16 }),
+            F('NOTIF_TYPE', 'Notification type (M1 request, M2 malfunction report, M3 activity report)', { required: true, width: 8, maxLength: 2 }),
+            F('SHORT_TEXT', 'Short text', { required: true, width: 34, maxLength: 40 }),
+            F('LONG_TEXT', 'Long text — the IREAMS description', { width: 40 }),
+            F('EQUIPMENT', 'Equipment number (EQUNR)', { width: 14, maxLength: 18 }),
+            F('FUNCT_LOC', 'Functional location (TPLNR)', { width: 20, maxLength: 30 }),
+            F('PRIORITY', 'Priority (PRIOK, 1 = highest)', { width: 8, maxLength: 1 }),
+            F('NOTIF_DATE', 'Date of notification (DD.MM.YYYY)', { width: 12 }),
+            F('NOTIFTIME', 'Notification time (HH:MM:SS)', { width: 10 }),
+            F('REPORTEDBY', 'Name of declarant', { width: 12, maxLength: 12 }),
+            F('DESSTDATE', 'Required start date (DD.MM.YYYY)', { width: 12 }),
+            F('DESENDDATE', 'Required end date (DD.MM.YYYY)', { width: 12 }),
+            F('BREAKDOWN', 'Breakdown indicator — X', { width: 8 }),
+            F('STRMLFNDATE', 'Start of malfunction — date', { width: 12 }),
+            F('STRMLFNTIME', 'Start of malfunction — time', { width: 10 }),
+            F('ENDMLFNDATE', 'End of malfunction — date', { width: 12 }),
+            F('ENDMLFNTIME', 'End of malfunction — time', { width: 10 }),
+            F('PLANPLANT', 'Planning plant', { required: true, width: 10 }),
+            F('PLANGROUP', 'Planner group', { width: 10, maxLength: 3 }),
+            F('MAINTPLANT', 'Maintenance plant', { width: 10 }),
+            F('MAINTLOC', 'Location', { width: 12, maxLength: 10 }),
+            F('PM_WKCTR', 'Main work centre — code; the cockpit value-maps it to the object ID', { width: 12, maxLength: 8 }),
+            F('D_CODEGRP', 'Damage code group (item)', { width: 10, maxLength: 8 }),
+            F('D_CODE', 'Damage code (item)', { width: 10, maxLength: 4 }),
+            F('DL_CODEGRP', 'Object part code group (item)', { width: 10, maxLength: 8 }),
+            F('DL_CODE', 'Object part code (item)', { width: 10, maxLength: 4 }),
+            F('CAUSE_CODEGRP', 'Cause code group', { width: 10, maxLength: 8 }),
+            F('CAUSE_CODE', 'Cause code', { width: 10, maxLength: 4 }),
+            F('ACT_CODEGRP', 'Activity code group', { width: 10, maxLength: 8 }),
+            F('ACT_CODE', 'Activity code', { width: 10, maxLength: 4 }),
+            F('LEGACY_STATUS', 'Status as recorded in IREAMS', { width: 12 }),
+            F('LEGACY_ORDER_TYPE', 'Order type the follow-on order should carry', { width: 10, maxLength: 4 }),
+        ],
+        examples: [
+            ['WO-2026-01002', 'M2', 'Motor tripping on overload - investigate', 'Trips within 10 min of start under load.', 'EQ-000105', 'SITE-HOU-U300', '1', '09.06.2026', '07:15:00', 'j.tech', '09.06.2026', '11.06.2026', 'X', '09.06.2026', '06:50:00', '', '', '102A', '', '102A', 'Block 300', 'ELEC-01', 'YB-DAM', 'TRIP', '', '', '', '', '', '', 'WIP', 'PM01'],
+            ['WO-2026-01031', 'M1', 'Quarterly lube - conveyor drive gearbox', '', 'EQ-000106', 'SITE-HOU-U300', '3', '01.09.2026', '08:00:00', 'planner', '15.09.2026', '19.09.2026', '', '', '', '', '', '102A', '', '102A', '', 'MECH-01', '', '', '', '', '', '', '', '', 'OPEN', 'PM02'],
         ],
     },
 ];

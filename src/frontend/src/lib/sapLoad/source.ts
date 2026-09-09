@@ -35,7 +35,8 @@ async function fetchOptional<T>(table: string, select: string, order: string): P
 export async function loadSapSource(): Promise<SapLoadSource> {
     const [
         assets, assetFinancials, inventoryItems, stock, stores, bomLines,
-        readingDefinitions, readingLogs, vendors, costCenters, companies, workCenters, woCount,
+        readingDefinitions, readingLogs, vendors, costCenters, companies, workCenters,
+        workOrders, woFailureData, users,
     ] = await Promise.all([
         fetchAll<SapLoadSource['assets'][number]>('assets',
             'id, tag, name, parent_id, hierarchy_level, criticality, equipment_number, company_id, cost_center_id, responsible_work_center_id, manufacturer, model, serial_number, asset_class, asset_type_code, status_code, properties',
@@ -57,14 +58,19 @@ export async function loadSapSource(): Promise<SapLoadSource> {
             'reading_date'),
         fetchOptional<SapLoadSource['vendors'][number]>('vendors', 'id, code, name', 'name'),
         fetchOptional<SapLoadSource['costCenters'][number]>('cost_centers', 'id, code, company_code, controlling_area', 'code'),
-        fetchOptional<SapLoadSource['companies'][number]>('companies', 'id, code, name', 'code'),
+        fetchOptional<SapLoadSource['companies'][number]>('companies', 'id, code, name, currency', 'code'),
         fetchOptional<SapLoadSource['workCenters'][number]>('work_centers', 'id, code', 'code'),
-        Promise.resolve(supabase.from('work_orders').select('id', { count: 'exact', head: true })).then(r => r.count ?? 0).catch(() => 0),
+        fetchAll<SapLoadSource['workOrders'][number]>('work_orders',
+            'id, wo_number, title, description, status, type, priority_code, asset_id, work_center_id, cost_center_id, created_at, closed_at, due_date, date_due_start, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs, actual_duration_hrs, breakdown, malfunction_start, malfunction_end, created_by, parent_wo_id',
+            'created_at'),
+        fetchOptional<SapLoadSource['woFailureData'][number]>('wo_failure_data', 'wo_id, failure_mode_code, failure_cause_code, remedy_code, object_part, caused_by_wo_id', 'wo_id'),
+        // Names for "reported by". RLS may hide other users from a non-admin; the field then stays blank.
+        fetchOptional<SapLoadSource['users'][number]>('users', 'id, username, email', 'username'),
     ]);
 
     return {
         assets, assetFinancials, inventoryItems, stock, stores, bomLines,
         readingDefinitions, readingLogs, vendors, costCenters, companies, workCenters,
-        workOrderCount: woCount,
+        workOrders, woFailureData, users,
     };
 }

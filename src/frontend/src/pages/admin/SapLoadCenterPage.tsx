@@ -2,7 +2,7 @@
  * SapLoadCenterPage — the Migration Center's outbound side: IREAMS → SAP.
  *
  * A plant leaving IREAMS for SAP PM/MM (or running both) needs Migration
- * Cockpit load files. This page fills the consultant's eight-object workbook
+ * Cockpit load files. This page fills the consultant's workbook (eight cockpit objects, plus open work as notifications and closed history as a hand-over)
  * from the live register, shows what is ready and what will break a load, and
  * hands over one workbook — or one sheet at a time in load order.
  *
@@ -40,6 +40,9 @@ function loadParams(): SapTargetParams {
             materialGroup: { ...base.materialGroup, ...(saved.materialGroup ?? {}) },
             valuationClass: { ...base.valuationClass, ...(saved.valuationClass ?? {}) },
             storageLocations: { ...(saved.storageLocations ?? {}) },
+            orderTypes: { ...base.orderTypes, ...(saved.orderTypes ?? {}) },
+            notificationTypes: { ...base.notificationTypes, ...(saved.notificationTypes ?? {}) },
+            codeGroups: { ...base.codeGroups, ...(saved.codeGroups ?? {}) },
         };
     } catch { return base; }
 }
@@ -101,7 +104,7 @@ export const SapLoadCenterPage: React.FC = () => {
         if (!result) return [];
         return [
             ['Filled from IREAMS', `${new Date().toLocaleString()} — ${SAP_OBJECTS.map(o => `${o.label}: ${result.objects[o.key].length}`).join(', ')}.`],
-            ['Readiness', `${result.issues.filter(i => i.level === 'error').length} error(s), ${result.issues.filter(i => i.level === 'warn').length} warning(s) — see sheet "9 Readiness".`],
+            ['Readiness', `${result.issues.filter(i => i.level === 'error').length} error(s), ${result.issues.filter(i => i.level === 'warn').length} warning(s) — see sheet "Readiness".`],
         ];
     }, [result]);
 
@@ -214,6 +217,25 @@ export const SapLoadCenterPage: React.FC = () => {
                             </div>
                         </div>
 
+                        <div>
+                            <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">Work orders → order types, notification types and catalog code groups</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <Field label="Corrective order type (AUART)"><input className={inputCls} value={params.orderTypes.corrective} onChange={e => set('orderTypes', { ...params.orderTypes, corrective: e.target.value })} /></Field>
+                                <Field label="Preventive order type"><input className={inputCls} value={params.orderTypes.preventive} onChange={e => set('orderTypes', { ...params.orderTypes, preventive: e.target.value })} /></Field>
+                                <Field label="Predictive order type"><input className={inputCls} value={params.orderTypes.predictive} onChange={e => set('orderTypes', { ...params.orderTypes, predictive: e.target.value })} /></Field>
+                                <Field label="Notification types" hint="corrective / preventive">
+                                    <div className="flex gap-2">
+                                        <input className={inputCls} value={params.notificationTypes.corrective} onChange={e => set('notificationTypes', { ...params.notificationTypes, corrective: e.target.value })} />
+                                        <input className={inputCls} value={params.notificationTypes.preventive} onChange={e => set('notificationTypes', { ...params.notificationTypes, preventive: e.target.value })} />
+                                    </div>
+                                </Field>
+                                <Field label="Damage code group (QPGR)"><input className={inputCls} value={params.codeGroups.damage} onChange={e => set('codeGroups', { ...params.codeGroups, damage: e.target.value })} /></Field>
+                                <Field label="Object part code group"><input className={inputCls} value={params.codeGroups.objectPart} onChange={e => set('codeGroups', { ...params.codeGroups, objectPart: e.target.value })} /></Field>
+                                <Field label="Cause code group"><input className={inputCls} value={params.codeGroups.cause} onChange={e => set('codeGroups', { ...params.codeGroups, cause: e.target.value })} /></Field>
+                                <Field label="Activity code group" hint="Create the catalog codes in QS41 first"><input className={inputCls} value={params.codeGroups.activity} onChange={e => set('codeGroups', { ...params.codeGroups, activity: e.target.value })} /></Field>
+                            </div>
+                        </div>
+
                         {source && source.stores.length > 0 && (
                             <div>
                                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">Stores → SAP storage locations (LGORT, 4 characters)</h4>
@@ -314,6 +336,11 @@ export const SapLoadCenterPage: React.FC = () => {
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <h3 className="font-semibold text-slate-800">{o.label}</h3>
                                         <span className="text-[10px] text-slate-400 font-mono">{o.sheet}</span>
+                                        {o.kind === 'handover' && (
+                                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-500" title="A reference extract in SAP field names. It is not a Migration Cockpit object and is not loaded.">
+                                                Reference extract — not loaded
+                                            </span>
+                                        )}
                                         {result && (
                                             <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${n > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                                                 {n > 0 ? `${n.toLocaleString()} rows` : 'Nothing to load'}
@@ -339,11 +366,13 @@ export const SapLoadCenterPage: React.FC = () => {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                <h3 className="font-semibold text-slate-800 mb-1">Not loadable: maintenance history</h3>
+                <h3 className="font-semibold text-slate-800 mb-1">Work orders: what moves and what stays</h3>
                 <p>
-                    Historical work orders{source ? ` (${source.workOrderCount.toLocaleString()} here)` : ''} are not in the workbook.
-                    There is no standard migration object for closed orders, and creating them retrospectively distorts SAP's cost and status
-                    reporting. Keep the history in IREAMS, or hand it over as a report from the Specialist's assessment.
+                    Open work{result ? ` (${result.objects.openNotification.length.toLocaleString()} order${result.objects.openNotification.length === 1 ? '' : 's'})` : ''} goes to SAP as
+                    maintenance notifications on sheet 10, using the standard <em>PM - Maintenance notification</em> object, so the backlog is owned by SAP from day one.
+                    Closed and cancelled orders{result ? ` (${result.objects.orderHistory.length.toLocaleString()})` : ''} are handed over on sheet 9 as a reference extract in SAP field names.
+                    They are not loaded: S/4HANA's Maintenance order object carries estimated cost and settlement rules only, and recreating closed orders with actual cost
+                    distorts cost and status reporting. The reliability history, and everything computed from it, stays in IREAMS.
                 </p>
             </div>
         </div>

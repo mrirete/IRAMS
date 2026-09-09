@@ -21,9 +21,15 @@
  *    reported, not silently dropped. Measurement range (MRMIN/MRMAX) is left
  *    blank on purpose: a range rejects readings, an alarm flags them.
  *  - Opening stock is one 561 line per store that actually holds quantity.
+ *  - Work orders split on the canonical state (lib/woState): done and void
+ *    orders go to the hand-over extract (sheet 9, never loaded); open orders
+ *    become maintenance notifications (sheet 10, standard object EAM_NOTIF)
+ *    so SAP owns the backlog from day one. Unknown statuses count as open,
+ *    as everywhere else in IREAMS, and are reported.
  */
 import * as XLSX from 'xlsx';
 import { objectClassOf } from '../../eam/services/hierarchyModel';
+import { classifyWoStatus, normalizeStatus } from '../woState';
 import {
     SAP_OBJECTS, SAP_OBJECT_BY_KEY, ROW3_INSTRUCTION, fieldDescription,
     type SapObjectKey, type SapObjectSpec,
@@ -126,8 +132,46 @@ export interface SrcReadingLog {
 
 export interface SrcVendor { id: string; code?: string | null; name: string }
 export interface SrcCostCenter { id: string; code: string; company_code?: string | null; controlling_area?: string | null }
-export interface SrcCompany { id: string; code: string; name: string }
+export interface SrcCompany { id: string; code: string; name: string; currency?: string | null }
 export interface SrcWorkCenter { id: string; code: string }
+export interface SrcUser { id: string; username?: string | null; email?: string | null }
+
+export interface SrcWorkOrder {
+    id: string;
+    wo_number: string;
+    title: string;
+    description?: string | null;
+    status?: string | null;
+    type?: string | null;
+    priority_code?: string | null;
+    asset_id?: string | null;
+    work_center_id?: string | null;
+    cost_center_id?: string | null;
+    created_at?: string | null;
+    closed_at?: string | null;
+    due_date?: string | null;
+    date_due_start?: string | null;
+    frozen_labor_cost?: number | string | null;
+    frozen_material_cost?: number | string | null;
+    total_actual_cost?: number | string | null;
+    actual_downtime_hrs?: number | string | null;
+    actual_duration_hrs?: number | string | null;
+    breakdown?: boolean | null;
+    malfunction_start?: string | null;
+    malfunction_end?: string | null;
+    created_by?: string | null;
+    parent_wo_id?: string | null;
+}
+
+export interface SrcWoFailure {
+    wo_id: string;
+    failure_mode_code?: string | null;
+    failure_cause_code?: string | null;
+    remedy_code?: string | null;
+    object_part?: string | null;
+    /** The order whose work caused this failure (secondary failure) — lives on wo_failure_data, not work_orders. */
+    caused_by_wo_id?: string | null;
+}
 
 export interface SapLoadSource {
     assets: SrcAsset[];
@@ -142,8 +186,9 @@ export interface SapLoadSource {
     costCenters: SrcCostCenter[];
     companies: SrcCompany[];
     workCenters: SrcWorkCenter[];
-    /** For the "not loadable" note only — orders never become load rows. */
-    workOrderCount: number;
+    workOrders: SrcWorkOrder[];
+    woFailureData: SrcWoFailure[];
+    users: SrcUser[];
 }
 
 // ── Target-system parameters ────────────────────────────────────────────────
@@ -180,6 +225,34 @@ export interface SapTargetParams {
     postingDate: string;
     /** DD.MM.YYYY */
     sourceListValidFrom: string;
+    /** SAP order types (AUART) the IREAMS work types map onto. */
+    orderTypes: Record<WorkBucket, string>;
+    /** Notification types for open work: corrective → malfunction report, preventive → request. */
+    notificationTypes: { corrective: string; preventive: string };
+    /** Catalog code groups the IREAMS failure codes are filed under in SAP (QPGR). */
+    codeGroups: { damage: string; objectPart: string; cause: string; activity: string };
+}
+
+export type WorkBucket = 'corrective' | 'preventive' | 'predictive';
+
+/** IREAMS work types collapse onto the three buckets SAP order types are keyed by. Null = not recognised. */
+export function workBucket(type: string | null | undefined): WorkBucket | null {
+    const t = String(type ?? '').trim().toUpperCase();
+    if (!t) return null;
+    if (['CM', 'EM', 'CORRECTIVE', 'EMERGENCY', 'BREAKDOWN', 'REPAIR', 'REACTIVE'].includes(t)) return 'corrective';
+    if (['PM', 'PREVENTIVE', 'INSPECTION', 'CALIBRATION', 'ROUTINE', 'SERVICE', 'STATUTORY'].includes(t)) return 'preventive';
+    if (['PDM', 'PREDICTIVE', 'CBM', 'CONDITION', 'MONITORING'].includes(t)) return 'predictive';
+    return null;
+}
+
+/** IREAMS priority vocabularies → SAP PRIOK (1 = highest). Blank when unrecognised. */
+export function sapPriority(code: string | null | undefined): string {
+    const c = String(code ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+    if (['1', 'P1', 'EMERGENCY', 'URGENT', 'CRITICAL', 'VERY_HIGH', 'IMMEDIATE'].includes(c)) return '1';
+    if (['2', 'P2', 'HIGH'].includes(c)) return '2';
+    if (['3', 'P3', 'MEDIUM', 'NORMAL', 'STANDARD'].includes(c)) return '3';
+    if (['4', 'P4', 'LOW', 'MINOR'].includes(c)) return '4';
+    return '';
 }
 
 export function todaySapDate(d = new Date()): string {
@@ -214,6 +287,9 @@ export function defaultParams(): SapTargetParams {
         bomAlternative: '01',
         postingDate: todaySapDate(),
         sourceListValidFrom: todaySapDate(),
+        orderTypes: { corrective: 'PM01', preventive: 'PM02', predictive: 'PM03' },
+        notificationTypes: { corrective: 'M2', preventive: 'M1' },
+        codeGroups: { damage: 'YB-DAM', objectPart: 'YB-OBJ', cause: 'YB-CAU', activity: 'YB-ACT' },
     };
 }
 
@@ -286,10 +362,15 @@ const num = (v: unknown): number | '' => {
 };
 
 /** Clip to the SAP field length and record the clip once per field. */
+/** Catalog code fields on the LOAD sheet: SAP's 4-character limit is real there, and the fix is a mapping, not a shorter name. */
+const CATALOG_CODE_FIELDS = new Set(['D_CODE', 'DL_CODE', 'CAUSE_CODE', 'ACT_CODE']);
+
 function clipper(issues: IssueBook, object: SapObjectKey) {
     return (value: string, fieldName: string, max?: number): string => {
         if (!max || value.length <= max) return value;
-        issues.add(object, 'warn', `${fieldName} longer than SAP's ${max} characters — clipped; check the clipped values read sensibly`);
+        issues.add(object, 'warn', CATALOG_CODE_FIELDS.has(fieldName)
+            ? `${fieldName} longer than SAP's ${max} characters — clipped; define 4-character catalog codes in QS41 and map the IREAMS codes to them in the cockpit's value mapping (the full codes are on the Order History sheet)`
+            : `${fieldName} longer than SAP's ${max} characters — clipped; check the clipped values read sensibly`);
         return value.slice(0, max);
     };
 }
@@ -308,6 +389,12 @@ export function toSapTime(t: string | null | undefined): string {
     const parts = v.split(':');
     while (parts.length < 3) parts.push('00');
     return parts.slice(0, 3).map(p => p.padStart(2, '0')).join(':');
+}
+
+/** Time part of an ISO timestamp → HH:MM:SS. Blank when there is none. */
+export function isoTime(iso: string | null | undefined): string {
+    const m = /T(\d{2}:\d{2}(?::\d{2})?)/.exec(s(iso));
+    return m ? toSapTime(m[1]) : '';
 }
 
 function yearOf(iso: string | null | undefined): string {
@@ -712,9 +799,142 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
         if (unknownStores.size) issues.add(spec.key, 'warn', `${unknownStores.size} store(s) referenced by stock are not in the store list — their LGORT cannot be set`, false);
     }
 
-    // ── General ────────────────────────────────────────────────────────────
-    if (src.workOrderCount > 0) {
-        issues.add('general', 'info', `${src.workOrderCount.toLocaleString()} work order(s) are not in this workbook — historical maintenance orders have no standard migration object, and creating them retrospectively distorts cost and status reporting. Keep the history in IREAMS or hand it over as a report.`, false);
+    // ── 9 + 10. Work orders: closed history as a hand-over, open work as notifications ──
+    {
+        const hist = SAP_OBJECT_BY_KEY.orderHistory;
+        const open = SAP_OBJECT_BY_KEY.openNotification;
+        const clipH = clipper(issues, hist.key);
+        const clipO = clipper(issues, open.key);
+        const failureByWo = new Map(src.woFailureData.map(f => [f.wo_id, f]));
+        const userById = new Map(src.users.map(u => [u.id, u]));
+        const woNumberById = new Map(src.workOrders.map(w => [w.id, s(w.wo_number)]));
+        const companyById = new Map(src.companies.map(c => [c.id, c]));
+        const defaultCurrency = s(src.companies.find(c => s(c.currency))?.currency);
+        const reporter = (id: string | null | undefined): string => {
+            const u = id ? userById.get(id) : undefined;
+            return s(u?.username) || s(u?.email).split('@')[0];
+        };
+        // Where the order sits: equipment carries EQUNR + TIDNR and its position; a
+        // functional-location order carries only the position.
+        const refsOf = (a: SrcAsset | undefined) => {
+            if (!a) return { equnr: '', tidnr: '', tplnr: '' };
+            if (isEq(a)) return { equnr: eqRef(a), tidnr: s(a.tag), tplnr: s(flocAbove(a)?.tag) };
+            return { equnr: '', tidnr: '', tplnr: s(a.tag) };
+        };
+        const sttxt = (status: string | null | undefined, state: ReturnType<typeof classifyWoStatus>): string => {
+            if (state === 'void') return 'DLFL';
+            return ['CLOSED', 'CLSD', 'CLOSE', 'SETTLED'].includes(normalizeStatus(status)) ? 'CLSD' : 'TECO';
+        };
+
+        let unknownStatus = 0, openWithCost = 0, noAsset = 0, unmappedType = 0, breakdownUnrecorded = 0;
+        const sorted = [...src.workOrders].sort((x, y) => s(x.created_at).localeCompare(s(y.created_at)) || s(x.wo_number).localeCompare(s(y.wo_number)));
+        for (const w of sorted) {
+            const num_ = s(w.wo_number);
+            if (!num_) { skipped[hist.key] += 1; continue; }
+            const state = classifyWoStatus(w.status);
+            if (state === 'unknown') unknownStatus += 1;
+            const a = w.asset_id ? assetById.get(w.asset_id) : undefined;
+            if (!a) noAsset += 1;
+            const refs = refsOf(a);
+            const bucket = workBucket(w.type) ?? 'corrective';
+            if (!workBucket(w.type)) unmappedType += 1;
+            const f = failureByWo.get(w.id);
+            const labor = num(w.frozen_labor_cost), material = num(w.frozen_material_cost);
+            const total = num(w.total_actual_cost) !== '' ? num(w.total_actual_cost)
+                : (labor === '' && material === '' ? '' : Number(labor || 0) + Number(material || 0));
+            const currency = s(a?.company_id ? companyById.get(a.company_id)?.currency : '') || defaultCurrency;
+            const priok = sapPriority(w.priority_code);
+
+            if (state === 'done' || state === 'void') {
+                if (w.breakdown == null) breakdownUnrecorded += 1;
+                objects[hist.key].push([
+                    num_,
+                    clipH(s(p.orderTypes[bucket]), 'AUART', 4),
+                    clipH(s(w.title) || num_, 'KTEXT', 40),
+                    clipH(refs.equnr, 'EQUNR', 18),
+                    clipH(refs.tidnr, 'TIDNR', 25),
+                    clipH(refs.tplnr, 'TPLNR', 30),
+                    priok,
+                    s(w.status),
+                    sttxt(w.status, state),
+                    toSapDate(w.created_at),
+                    toSapDate(w.date_due_start),
+                    toSapDate(w.due_date),
+                    toSapDate(w.closed_at),
+                    w.breakdown === true ? 'X' : '',
+                    toSapDate(w.malfunction_start),
+                    isoTime(w.malfunction_start),
+                    toSapDate(w.malfunction_end),
+                    isoTime(w.malfunction_end),
+                    num(w.actual_downtime_hrs),
+                    num(w.actual_duration_hrs),
+                    costCenterCode(w.cost_center_id),
+                    workCenterCode(w.work_center_id),
+                    s(f?.failure_mode_code) ? clipH(s(p.codeGroups.damage), 'FEGRP', 8) : '',
+                    s(f?.failure_mode_code).toUpperCase(),
+                    s(f?.object_part) ? clipH(s(p.codeGroups.objectPart), 'OTGRP', 8) : '',
+                    s(f?.object_part).toUpperCase(),
+                    s(f?.failure_cause_code) ? clipH(s(p.codeGroups.cause), 'URGRP', 8) : '',
+                    s(f?.failure_cause_code).toUpperCase(),
+                    s(f?.remedy_code) ? clipH(s(p.codeGroups.activity), 'MNGRP', 8) : '',
+                    s(f?.remedy_code).toUpperCase(),
+                    labor,
+                    material,
+                    total,
+                    clipH(currency, 'WAERS', 5),
+                    clipH(reporter(w.created_by), 'QMNAM', 12),
+                    w.parent_wo_id ? s(woNumberById.get(w.parent_wo_id)) : '',
+                    f?.caused_by_wo_id ? s(woNumberById.get(f.caused_by_wo_id)) : '',
+                ]);
+            } else {
+                if (total !== '' && Number(total) > 0) openWithCost += 1;
+                const notifType = w.breakdown === true || bucket === 'corrective' ? p.notificationTypes.corrective : p.notificationTypes.preventive;
+                objects[open.key].push([
+                    num_,
+                    clipO(s(notifType), 'NOTIF_TYPE', 2),
+                    clipO(s(w.title) || num_, 'SHORT_TEXT', 40),
+                    s(w.description),
+                    clipO(refs.equnr, 'EQUIPMENT', 18),
+                    clipO(refs.tplnr, 'FUNCT_LOC', 30),
+                    priok,
+                    toSapDate(w.created_at),
+                    isoTime(w.created_at),
+                    clipO(reporter(w.created_by), 'REPORTEDBY', 12),
+                    toSapDate(w.date_due_start),
+                    toSapDate(w.due_date),
+                    w.breakdown === true ? 'X' : '',
+                    toSapDate(w.malfunction_start),
+                    isoTime(w.malfunction_start),
+                    toSapDate(w.malfunction_end),
+                    isoTime(w.malfunction_end),
+                    p.planningPlant,
+                    p.plannerGroup,
+                    p.maintenancePlant,
+                    a ? clipO(locationOf(a), 'MAINTLOC', 10) : '',
+                    clipO(workCenterCode(w.work_center_id) || (a ? workCenterCode(a.responsible_work_center_id) : ''), 'PM_WKCTR', 8),
+                    s(f?.failure_mode_code) ? clipO(s(p.codeGroups.damage), 'D_CODEGRP', 8) : '',
+                    clipO(s(f?.failure_mode_code).toUpperCase(), 'D_CODE', 4),
+                    s(f?.object_part) ? clipO(s(p.codeGroups.objectPart), 'DL_CODEGRP', 8) : '',
+                    clipO(s(f?.object_part).toUpperCase(), 'DL_CODE', 4),
+                    s(f?.failure_cause_code) ? clipO(s(p.codeGroups.cause), 'CAUSE_CODEGRP', 8) : '',
+                    clipO(s(f?.failure_cause_code).toUpperCase(), 'CAUSE_CODE', 4),
+                    s(f?.remedy_code) ? clipO(s(p.codeGroups.activity), 'ACT_CODEGRP', 8) : '',
+                    clipO(s(f?.remedy_code).toUpperCase(), 'ACT_CODE', 4),
+                    s(w.status),
+                    clipO(s(p.orderTypes[bucket]), 'LEGACY_ORDER_TYPE', 4),
+                ]);
+            }
+        }
+        const nHist = objects[hist.key].length, nOpen = objects[open.key].length;
+        if (nHist) issues.add(hist.key, 'info', `${nHist.toLocaleString()} closed or cancelled order(s) are a reference extract, not a load — S/4HANA's Maintenance order object carries estimated cost only, and recreating closed orders distorts cost and status reporting. The reliability history stays in IREAMS.`, false);
+        if (nOpen) issues.add(open.key, 'info', `${nOpen.toLocaleString()} open order(s) go to SAP as maintenance notifications — convert them to orders under your own order types after the load; SAP assigns the numbers (internal numbering only).`, false);
+        if (openWithCost) issues.add(open.key, 'warn', `${openWithCost} open order(s) already carry posted cost in IREAMS — cost does not travel with a notification; settle or write it off here before cutover, or accept that SAP starts those orders at zero`, false);
+        if (unknownStatus) issues.add(open.key, 'info', `${unknownStatus} order(s) have a status IREAMS does not recognise — counted as open (work that cannot be proven finished is still owed) and exported as notifications; check them`, false);
+        if (noAsset) issues.add('general', 'warn', `${noAsset} work order(s) have no asset in the register — exported without equipment or functional location`, false);
+        if (unmappedType) issues.add('general', 'info', `${unmappedType} work order(s) have a work type outside CM / PM / PdM — treated as corrective for order and notification types`, false);
+        const longCodes = objects[open.key].filter(r => [r[23], r[25], r[27], r[29]].some(c => String(c).length === 4 && false)).length; // placeholder removed below
+        void longCodes;
+        if (breakdownUnrecorded) issues.add(hist.key, 'info', `${breakdownUnrecorded} closed order(s) never recorded a breakdown indicator — MSAUS left blank rather than guessed from the work type`, false);
     }
 
     return { objects, issues: issues.list(), skipped };
@@ -760,15 +980,16 @@ export function readmeRows(p: SapTargetParams, mode: RenderOptions['mode'], extr
             : 'Load files shaped to SAP field names, filled from the IREAMS / ERS register. One sheet per Migration Cockpit object.'],
         ['How to use', mode === 'template'
             ? 'Row 4 holds the SAP field name — keep it. Row 5 describes the field. Row 6 onward is example data. Delete rows 5 and 6, then paste your data starting at row 5.'
-            : 'Row 4 holds the SAP field name — keep it. Data starts at row 5. Check the "9 Readiness" sheet before loading anything.'],
+            : 'Row 4 holds the SAP field name — keep it. Data starts at row 5. Check the "Readiness" sheet before loading anything.'],
         ['Required fields', 'A row-5 description that starts with REQUIRED marks a mandatory field. The rest are optional.'],
-        ['Load order', 'Functional Location, Equipment, Material, Equipment BOM, Measuring Point, Measurement Document, Source List, Inventory Balance. Each depends on those above it.'],
+        ['Load order', 'Functional Location, Equipment, Material, Equipment BOM, Measuring Point, Measurement Document, Source List, Inventory Balance, then Open Work at Cutover (maintenance notifications). Each depends on those above it. Sheet 9, Order History, is a reference extract and is not loaded.'],
         ['Where to load', "Fiori app 'Migrate Your Data', or transaction LTMC. Simulate before posting. Run ten rows end to end before the full file."],
         ['Target values', `Company code ${p.companyCode}, maintenance plant ${p.maintenancePlant}, planning plant ${p.planningPlant}, controlling area ${p.controllingArea}, valuation classes ${p.valuationClass.SPARE} spares and ${p.valuationClass.CONSUMABLE} operating supplies, price control ${p.priceControl}, purchasing organisation ${p.purchasingOrg}. Confirm the controlling area before loading.`],
         ['Equipment numbering', p.numbering === 'legacy'
             ? 'EQUNR carries the IREAMS equipment number (external numbering). Dependent sheets reference equipment by the same value. TIDNR carries the field tag.'
             : 'EQUNR is blank — SAP assigns numbers on load (internal numbering). Dependent sheets reference equipment by tag; map them to the assigned numbers after the equipment load, or key on TIDNR.'],
-        ['Not loadable', 'Historical maintenance orders. There is no standard migration object and creating them retrospectively distorts cost and status reporting.'],
+        ['Not loadable', 'Closed maintenance orders. S/4HANA 2021+ offers a Maintenance order migration object, but it carries estimated costs and settlement rules only — recreating closed orders with actual cost distorts cost and status reporting. Sheet 9 hands the history over in SAP field names as a reference extract; sheet 10 loads the open backlog as maintenance notifications (standard object PM - Maintenance notification, alias EAM_NOTIF).'],
+        ['Work-order mapping', `Order types: corrective ${p.orderTypes.corrective}, preventive ${p.orderTypes.preventive}, predictive ${p.orderTypes.predictive}. Notification types: corrective ${p.notificationTypes.corrective}, preventive ${p.notificationTypes.preventive}. IREAMS failure codes are filed under code groups ${p.codeGroups.damage} (damage), ${p.codeGroups.cause} (cause), ${p.codeGroups.activity} (activity) — create the catalog codes in QS41 first.`],
         ['Before you start', 'Check the target system has transport routes configured, so configuration can be preserved if a load goes wrong. Raise that with the technical team first.'],
     ];
     if (extra.length) rows.push([''], ...extra);
@@ -803,7 +1024,7 @@ export function buildSapWorkbook(result: SapLoadResult | null, p: SapTargetParam
         ];
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         ws['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 14 }, { wch: 120 }];
-        XLSX.utils.book_append_sheet(wb, ws, '9 Readiness');
+        XLSX.utils.book_append_sheet(wb, ws, 'Readiness');
     }
     return wb;
 }

@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import { parseImportFile } from '../../eam/services/assetTemplates';
 import {
     buildSapLoad, buildSapWorkbook, defaultParams, suggestStorageLocations, materialBucket,
-    toSapDate, toSapTime, type SapLoadSource, type SapTargetParams,
+    toSapDate, toSapTime, isoTime, workBucket, sapPriority, type SapLoadSource, type SapTargetParams,
 } from './build';
 import { SAP_OBJECTS, SAP_OBJECT_BY_KEY, fieldDescription } from './spec';
 
@@ -24,7 +24,7 @@ const col = (key: keyof typeof SAP_OBJECT_BY_KEY, name: string): number => {
 
 function fixture(): SapLoadSource {
     return {
-        companies: [{ id: 'co1', code: '1030', name: 'Relantern Energy' }],
+        companies: [{ id: 'co1', code: '1030', name: 'Relantern Energy', currency: 'USD' }],
         costCenters: [{ id: 'cc1', code: 'MNT-300', company_code: '1030', controlling_area: 'A000' }],
         workCenters: [{ id: 'wc1', code: 'MECH-01' }],
         vendors: [{ id: 'v1', code: '1000020', name: 'KSB Service' }, { id: 'v2', code: null, name: 'No-code Supplies' }],
@@ -61,7 +61,20 @@ function fixture(): SapLoadSource {
             { id: 'l2', definition_id: 'd2', asset_id: 'pump', reading_date: '2026-02-14', reading_time: '09:15:00', reading_value: 4.2, comments: 'Route 12 DE bearing' },
             { id: 'l3', definition_id: 'd1', asset_id: 'pump', reading_date: '2025-12-31', reading_value: 47600, is_active: false },
         ],
-        workOrderCount: 1234,
+        users: [{ id: 'u1', username: 'j.tech', email: 'j.tech@example.com' }, { id: 'u2', email: 'planner.person@example.com' }],
+        workOrders: [
+            { id: 'w1', wo_number: 'WO-2025-00412', title: 'Pump seal leak - replace mechanical seal', status: 'CLOSED', type: 'CM', priority_code: 'EMERGENCY', asset_id: 'pump', work_center_id: 'wc1', cost_center_id: 'cc1', created_at: '2025-02-03T05:00:00Z', date_due_start: '2025-02-03', due_date: '2025-02-05', closed_at: '2025-02-11T16:00:00Z', frozen_labor_cost: 850, frozen_material_cost: 400, total_actual_cost: 1250, actual_downtime_hrs: 6.5, actual_duration_hrs: 9, breakdown: true, malfunction_start: '2025-02-03T06:40:00Z', malfunction_end: '2025-02-03T13:10:00Z', created_by: 'u1' },
+            { id: 'w2', wo_number: 'WO-2025-00488', title: '6-monthly service', status: 'TECO', type: 'PM', priority_code: 'LOW', asset_id: 'pump', created_at: '2025-03-14T08:00:00Z', closed_at: '2025-03-14T12:00:00Z', frozen_labor_cost: 320, actual_duration_hrs: 4, created_by: 'u2' },
+            { id: 'w3', wo_number: 'WO-2025-00500', title: 'Duplicate request', status: 'CANCELLED', type: 'CM', asset_id: 'pump', created_at: '2025-04-01T08:00:00Z' },
+            { id: 'w4', wo_number: 'WO-2026-01002', title: 'Motor tripping on overload - investigate the drive and the protection relay settings', description: 'Trips within 10 min of start.', status: 'WIP', type: 'CM', priority_code: 'HIGH', asset_id: 'motor', created_at: '2026-06-09T07:15:00Z', date_due_start: '2026-06-09', due_date: '2026-06-11', total_actual_cost: 120, breakdown: true, malfunction_start: '2026-06-09T06:50:00Z', created_by: 'u1', parent_wo_id: 'w1' },
+            { id: 'w5', wo_number: 'WO-2026-01031', title: 'Quarterly lube - conveyor drive gearbox', status: 'OPEN', type: 'INSPECTION', priority_code: 'P3', asset_id: 'loose', created_at: '2026-09-01T08:00:00Z', due_date: '2026-09-19' },
+            { id: 'w6', wo_number: 'WO-2026-01040', title: 'Status nobody recognises', status: 'FOOBAR', type: 'ODDJOB', asset_id: null, created_at: '2026-09-02T08:00:00Z' },
+        ],
+        woFailureData: [
+            { wo_id: 'w1', failure_mode_code: 'LEAK', failure_cause_code: 'WEAR', remedy_code: 'REPLACED', object_part: 'SEAL' },
+            { wo_id: 'w4', failure_mode_code: 'TRIP', caused_by_wo_id: 'w1' },
+            { wo_id: 'w3', caused_by_wo_id: 'w1' },
+        ],
     };
 }
 
@@ -78,10 +91,10 @@ function params(over: Partial<SapTargetParams> = {}): SapTargetParams {
 }
 
 describe('spec — the workbook shape', () => {
-    it('has the eight objects in load order with unique sheet names ≤ 31 chars', () => {
-        expect(SAP_OBJECTS.map(o => o.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    it('has the ten objects in load order with unique sheet names ≤ 31 chars', () => {
+        expect(SAP_OBJECTS.map(o => o.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         const names = SAP_OBJECTS.map(o => o.sheet);
-        expect(new Set(names).size).toBe(8);
+        expect(new Set(names).size).toBe(10);
         names.forEach(n => expect(n.length).toBeLessThanOrEqual(31));
     });
     it('every example row has exactly one cell per field', () => {
@@ -100,6 +113,19 @@ describe('helpers', () => {
         expect(toSapDate(null)).toBe('');
         expect(toSapTime('23:59')).toBe('23:59:00');
         expect(toSapTime('9:15:00')).toBe('09:15:00');
+        expect(isoTime('2025-02-03T06:40:00Z')).toBe('06:40:00');
+        expect(isoTime('2025-02-03')).toBe('');
+    });
+    it('work types and priorities collapse onto SAP vocabularies', () => {
+        expect(workBucket('CM')).toBe('corrective');
+        expect(workBucket('INSPECTION')).toBe('preventive');
+        expect(workBucket('PdM')).toBe('predictive');
+        expect(workBucket('ODDJOB')).toBeNull();
+        expect(sapPriority('EMERGENCY')).toBe('1');
+        expect(sapPriority('High')).toBe('2');
+        expect(sapPriority('P3')).toBe('3');
+        expect(sapPriority('LOW')).toBe('4');
+        expect(sapPriority('whatever')).toBe('');
     });
     it('storage locations: own short code first, then 0001…', () => {
         const map = suggestStorageLocations([{ id: 'a', name: 'Main Store' }, { id: 'b', name: 'Spares Container A', code: 'CNTA' }, { id: 'c', name: 'Yard', code: 'TOO-LONG' }]);
@@ -273,8 +299,84 @@ describe('buildSapLoad — mapping', () => {
             .toEqual(['inventoryBalance', 'material']);
     });
 
-    it('work orders are named as not loadable, with the count', () => {
-        expect(res.issues.find(i => i.object === 'general' && /work order/.test(i.message))?.message).toContain('1,234');
+    it('order history: done and void orders only, in SAP field names, with codes filed under the configured groups', () => {
+        const rows = res.objects.orderHistory;
+        expect(rows.map(r => r[col('orderHistory', 'AUFNR')])).toEqual(['WO-2025-00412', 'WO-2025-00488', 'WO-2025-00500']);
+        const w1 = rows[0], w2 = rows[1], w3 = rows[2];
+        expect(w1[col('orderHistory', 'AUART')]).toBe('PM01');
+        expect(w1[col('orderHistory', 'EQUNR')]).toBe('EQ-000101');
+        expect(w1[col('orderHistory', 'TIDNR')]).toBe('PMP-101A');
+        expect(w1[col('orderHistory', 'TPLNR')]).toBe('SITE-HOU-U300');
+        expect(w1[col('orderHistory', 'PRIOK')]).toBe('1');
+        expect(w1[col('orderHistory', 'LEGACY_STATUS')]).toBe('CLOSED');
+        expect(w1[col('orderHistory', 'STTXT')]).toBe('CLSD');
+        expect(w1[col('orderHistory', 'ERDAT')]).toBe('03.02.2025');
+        expect(w1[col('orderHistory', 'GETRI')]).toBe('11.02.2025');
+        expect(w1[col('orderHistory', 'MSAUS')]).toBe('X');
+        expect(w1[col('orderHistory', 'AUSVN')]).toBe('03.02.2025');
+        expect(w1[col('orderHistory', 'AUZTV')]).toBe('06:40:00');
+        expect(w1[col('orderHistory', 'AUZTB')]).toBe('13:10:00');
+        expect(w1[col('orderHistory', 'AUSZT')]).toBe(6.5);
+        expect(w1[col('orderHistory', 'ISMNW')]).toBe(9);
+        expect(w1[col('orderHistory', 'KOSTL')]).toBe('MNT-300');
+        expect(w1[col('orderHistory', 'GEWRK')]).toBe('MECH-01');
+        expect(w1[col('orderHistory', 'FEGRP')]).toBe('YB-DAM');
+        expect(w1[col('orderHistory', 'FECOD')]).toBe('LEAK');
+        expect(w1[col('orderHistory', 'OTEIL')]).toBe('SEAL');
+        expect(w1[col('orderHistory', 'URCOD')]).toBe('WEAR');
+        expect(w1[col('orderHistory', 'MNCOD')]).toBe('REPLACED');      // the extract keeps the full IREAMS code
+        expect(w1[col('orderHistory', 'COST_TOTAL')]).toBe(1250);
+        expect(w1[col('orderHistory', 'WAERS')]).toBe('USD');
+        expect(w1[col('orderHistory', 'QMNAM')]).toBe('j.tech');
+        expect(w2[col('orderHistory', 'AUART')]).toBe('PM02');
+        expect(w2[col('orderHistory', 'STTXT')]).toBe('TECO');
+        expect(w2[col('orderHistory', 'PRIOK')]).toBe('4');
+        expect(w2[col('orderHistory', 'MSAUS')]).toBe('');
+        expect(w2[col('orderHistory', 'FEGRP')]).toBe('');
+        expect(w2[col('orderHistory', 'COST_TOTAL')]).toBe(320);       // labour + material when no total is stored
+        expect(w2[col('orderHistory', 'QMNAM')]).toBe('planner.pers');  // email local part, clipped to 12
+        expect(w3[col('orderHistory', 'STTXT')]).toBe('DLFL');
+        expect(w3[col('orderHistory', 'CAUSED_BY_AUFNR')]).toBe('WO-2025-00412');
+        expect(res.issues.some(i => i.object === 'orderHistory' && /reference extract/.test(i.message))).toBe(true);
+    });
+
+    it('open notifications: open and unknown-status orders, typed by breakdown and work type, with the follow-on order type', () => {
+        const rows = res.objects.openNotification;
+        expect(rows.map(r => r[col('openNotification', 'LEGACY_NOTIF')])).toEqual(['WO-2026-01002', 'WO-2026-01031', 'WO-2026-01040']);
+        const w4 = rows[0], w5 = rows[1], w6 = rows[2];
+        expect(w4[col('openNotification', 'NOTIF_TYPE')]).toBe('M2');
+        expect(w4[col('openNotification', 'SHORT_TEXT')]).toHaveLength(40);
+        expect(w4[col('openNotification', 'LONG_TEXT')]).toBe('Trips within 10 min of start.');
+        expect(w4[col('openNotification', 'EQUIPMENT')]).toBe('EQ-000102');
+        expect(w4[col('openNotification', 'FUNCT_LOC')]).toBe('SITE-HOU-U300');
+        expect(w4[col('openNotification', 'PRIORITY')]).toBe('2');
+        expect(w4[col('openNotification', 'NOTIF_DATE')]).toBe('09.06.2026');
+        expect(w4[col('openNotification', 'NOTIFTIME')]).toBe('07:15:00');
+        expect(w4[col('openNotification', 'BREAKDOWN')]).toBe('X');
+        expect(w4[col('openNotification', 'STRMLFNDATE')]).toBe('09.06.2026');
+        expect(w4[col('openNotification', 'PLANPLANT')]).toBe('102A');
+        expect(w4[col('openNotification', 'D_CODEGRP')]).toBe('YB-DAM');
+        expect(w4[col('openNotification', 'D_CODE')]).toBe('TRIP');
+        // the LOAD sheet clips to SAP's 4-character catalog code and says how to map
+        const r3 = buildSapLoad({ ...fixture(), woFailureData: [{ wo_id: 'w4', failure_mode_code: 'OVERLOAD_TRIP' }] }, params());
+        expect(r3.objects.openNotification[0][col('openNotification', 'D_CODE')]).toBe('OVER');
+        expect(r3.issues.some(i => i.object === 'openNotification' && /QS41/.test(i.message))).toBe(true);
+        expect(w4[col('openNotification', 'LEGACY_ORDER_TYPE')]).toBe('PM01');
+        expect(w5[col('openNotification', 'NOTIF_TYPE')]).toBe('M1');
+        expect(w5[col('openNotification', 'PRIORITY')]).toBe('3');
+        expect(w5[col('openNotification', 'LEGACY_ORDER_TYPE')]).toBe('PM02');
+        expect(w5[col('openNotification', 'FUNCT_LOC')]).toBe('');                 // CMP-201 has no position
+        expect(w6[col('openNotification', 'EQUIPMENT')]).toBe('');
+        expect(w6[col('openNotification', 'LEGACY_STATUS')]).toBe('FOOBAR');
+        expect(res.issues.some(i => i.object === 'openNotification' && i.level === 'warn' && /posted cost/.test(i.message))).toBe(true);
+        expect(res.issues.some(i => i.object === 'openNotification' && /does not recognise/.test(i.message))).toBe(true);
+        expect(res.issues.some(i => i.object === 'general' && /no asset/.test(i.message))).toBe(true);
+    });
+
+    it('order and notification types follow the parameters', () => {
+        const r2 = buildSapLoad(fixture(), params({ orderTypes: { corrective: 'YA01', preventive: 'YA02', predictive: 'YA03' }, notificationTypes: { corrective: 'Y1', preventive: 'Y2' } }));
+        expect(r2.objects.orderHistory[0][col('orderHistory', 'AUART')]).toBe('YA01');
+        expect(r2.objects.openNotification[1][col('openNotification', 'NOTIF_TYPE')]).toBe('Y2');
     });
 
     it('every exported row has exactly one cell per field', () => {
@@ -299,11 +401,11 @@ describe('workbook rendering', () => {
     it('filled mode puts data on row 5 and adds a readiness sheet', () => {
         const res = buildSapLoad(fixture(), params());
         const wb = buildSapWorkbook(res, params(), { mode: 'filled' });
-        expect(wb.SheetNames[wb.SheetNames.length - 1]).toBe('9 Readiness');
+        expect(wb.SheetNames[wb.SheetNames.length - 1]).toBe('Readiness');
         const eq = XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets['2 Equipment'], { header: 1 });
         expect(eq[3][0]).toBe('EQUNR');
         expect(eq.slice(4).map(r => r[col('equipment', 'TIDNR')]).sort()).toEqual(['CMP-201', 'PMP-101A', 'PMP-101A-M']);
-        const ready = XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets['9 Readiness'], { header: 1 });
+        const ready = XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets['Readiness'], { header: 1 });
         expect(ready[3]).toEqual(['Object', 'Level', 'Rows affected', 'Finding']);
         expect(ready.length).toBeGreaterThan(5);
     });
