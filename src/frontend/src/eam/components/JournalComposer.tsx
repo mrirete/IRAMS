@@ -1,12 +1,13 @@
 /**
  * JournalComposer — the one way a person writes into a work order's journal.
  *
- * Used by Analysis & History (free type: Note / Observation / Handover /
- * Safety / Close-out, plus the Follow-up action) and by the Complete modal
- * (type fixed to Close-out, submitted with the completion). Same look, same
- * author line, same types, so "close-out note" and "journal" are one thing.
+ * Lives under Journals & Notes on Analysis & History (types Note /
+ * Observation / Handover / Close-out / Safety, plus the Follow-up action).
+ * The Complete form does not compose: it checks that a Close-out entry
+ * exists and hands the person here with the type preset and the box
+ * focused (`focusKey`). One journal, one place to write it.
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ArrowRight, GitPullRequest } from 'lucide-react';
 
 /** Entry types a person can pick. Follow-up is an action, SYSTEM is written by the app. */
@@ -41,20 +42,28 @@ interface Props {
     /** Current type; ignored when `fixedType` is set. */
     type?: string;
     onTypeChange?: (t: string) => void;
-    /** Lock the type (the Complete modal writes Close-out). */
+    /** Lock the type (for a caller that only ever writes one kind of entry). */
     fixedType?: string;
     author?: string;
-    /** Adds the entry now. Omit when a parent action submits it (the Complete button). */
+    /** Adds the entry now. Omit when a parent action submits it. */
     onSubmit?: () => void;
     /** Adds the same text as a Follow-up entry — an action, shown beside the composer. */
     onFollowUp?: () => void;
     required?: boolean;
     hint?: string;
     className?: string;
+    /** Change this value to focus the box (the Complete form hands off here). */
+    focusKey?: number;
 }
 
-export const JournalComposer: React.FC<Props> = ({ value, onChange, type = 'Note', onTypeChange, fixedType, author, onSubmit, onFollowUp, required, hint, className = '' }) => {
+export const JournalComposer: React.FC<Props> = ({ value, onChange, type = 'Note', onTypeChange, fixedType, author, onSubmit, onFollowUp, required, hint, className = '', focusKey }) => {
     const t = fixedType || type;
+    const boxRef = useRef<HTMLTextAreaElement>(null);
+    useEffect(() => {
+        if (!focusKey) return;
+        boxRef.current?.focus();
+        boxRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, [focusKey]);
     return (
         <div className={className}>
             <div className="flex items-center gap-2 mb-1.5">
@@ -75,6 +84,7 @@ export const JournalComposer: React.FC<Props> = ({ value, onChange, type = 'Note
             </div>
             <div className="relative">
                 <textarea
+                    ref={boxRef}
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     className={`w-full border border-slate-300 rounded-lg p-2 md:p-3 text-xs ${fixedType ? 'h-24' : 'h-16'} focus:ring-1 focus:ring-primary-500 ${onSubmit ? 'pr-12' : ''} resize-none`}

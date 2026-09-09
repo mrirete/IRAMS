@@ -62,7 +62,7 @@ import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { FilesTab } from '../components/FilesTab';
 import { AuditTrail } from '../components/AuditTrail';
 import { WoStatusTimeline } from '../components/WoStatusTimeline';
-import { JournalComposer, JournalRecent, JOURNAL_TYPE_COLORS, JOURNAL_TYPE_LABEL } from '../components/JournalComposer';
+import { JournalComposer, JOURNAL_TYPE_COLORS, JOURNAL_TYPE_LABEL } from '../components/JournalComposer';
 import { AroundThisFailure } from '../components/AroundThisFailure';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // Added import
 import { NotificationService } from '../services/NotificationService';
@@ -1109,7 +1109,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [modalFailureMode, setModalFailureMode] = useState('');
     const [modalFailureCause, setModalFailureCause] = useState('');
     const [modalRemedy, setModalRemedy] = useState('');
-    const [modalJournalNote, setModalJournalNote] = useState('');
+    // The journal has one composer (Journals & Notes). The form only checks a
+    // Close-out entry exists and, if not, sends the person there with the type preset.
+    const [journalPreset, setJournalPreset] = useState<{ type: string; nonce: number } | null>(null);
     // Completion actuals (0283) — the equipment-event data reliability math runs on
     const [modalActualHours, setModalActualHours] = useState('');
     const [modalFinishedAt, setModalFinishedAt] = useState(''); // local datetime — the SAP 'reference time' of completion
@@ -1124,7 +1126,6 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             setModalFailureMode('');
             setModalFailureCause('');
             setModalRemedy('');
-            setModalJournalNote('');
             setModalActualHours('');
             setModalFinishedAt('');
             setModalMalfStart('');
@@ -1268,7 +1269,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // lines are not documentation. Preventive work may lean on any human note.
     const hasCloseoutEntry = (localJob.journals || []).some((j: any) => j.type === 'Closeout' && !j.isSystem);
     const hasHumanJournal = (localJob.journals || []).some((j: any) => !j.isSystem && j.type !== 'SYSTEM');
-    const modalJournalsMet = hasCloseoutEntry || modalJournalNote.trim().length >= 10 || (isPreventiveType && hasHumanJournal);
+    const modalJournalsMet = hasCloseoutEntry || (isPreventiveType && hasHumanJournal);
     const modalCanComplete = modalFailureModeMet && modalJournalsMet;
     const [defectFound, setDefectFound] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
@@ -1784,16 +1785,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         // Same shape as every other journal writer (entry/createdBy/createdAt) —
         // this writer used author/date/comments, so TECO notes rendered blank in
         // the timeline (which reads j.entry).
-        const finalJournals = modalJournalNote.trim()
-            ? [{
-                id: `inst-${Date.now()}`,
-                type: 'Closeout',
-                createdBy: (user as any)?.username || 'unknown',
-                createdAt: new Date().toISOString(),
-                entry: modalJournalNote.trim(),
-                isSystem: false
-              }, ...(localJob.journals || [])]
-            : (localJob.journals || []);
+        const finalJournals = (localJob.journals || []);
         // The transition itself belongs in the record. The direct write below
         // bypasses updateJob's auto-journal, so the stamp is added here.
         const tecoStamp = {
@@ -1826,11 +1818,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
         const finalHasFailureMode = !!finalFailureData?.failureMode;
         const finalFailureCodingMet = !requiresFailureCoding || finalHasFailureMode;
-        const finalHasNote = hasCloseoutEntry || modalJournalNote.trim().length >= 10 || (isPreventiveType && hasHumanJournal);
+        const finalHasNote = hasCloseoutEntry || (isPreventiveType && hasHumanJournal);
         const finalCanComplete = finalFailureCodingMet && finalHasNote;
 
         if (!finalCanComplete) {
-            showToast('Completion requirements not met: failure mode and a close-out note (at least a sentence).', 'warning');
+            showToast('Completion requirements not met: failure mode, and a Close-out entry under Journals & Notes.', 'warning');
             return;
         }
 
@@ -2326,7 +2318,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     {activeTab === 'resources' && <ResourcesTab job={localJob} users={users} contacts={contacts} onNavigateToTask={(taskId) => { setActiveTab('tasks'); }} dictionaries={dictionaries} />}
                     {activeTab === 'cost' && <CostTab job={localJob} refreshKey={costRefreshKey} />}
                     {activeTab === 'files' && <FilesTab job={localJob} onUpdate={updateJob} tasks={localJob.tasks || []} />}
-                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} bomItems={bomItems} registeredSubunits={registeredSubunits} />}
+                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} bomItems={bomItems} registeredSubunits={registeredSubunits} journalPreset={journalPreset} />}
                     {activeTab === 'discussion' && localJob.id && (
                         <div className="h-[60vh] border border-slate-200 rounded-xl overflow-hidden">
                             <ThreadPanel threadType="work_order" threadId={localJob.id} threadLabel={localJob.woNumber || 'this work order'} />
@@ -2393,7 +2385,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-600" />
                                     <div>
                                         <span className="font-bold text-amber-900 block mb-0.5">Missing Completion Details</span>
-                                        <p>Please enter the required failure coding or journal notes below to complete this work order.</p>
+                                        <p>Failure coding below, and a Close-out entry under Journals &amp; Notes, are needed before this work order can be completed.</p>
                                     </div>
                                 </div>
                             )}
@@ -2479,22 +2471,39 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     </div>
                                 )}
 
-                                {/* Journal — the same composer as Journals & Notes, type fixed to Close-out */}
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Journal</span>
-                                        {hasCloseoutEntry && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Close-out already written</span>}
-                                    </div>
-                                    <JournalRecent journals={localJob.journals || []} limit={3} />
-                                    <JournalComposer
-                                        fixedType="Closeout"
-                                        required={!hasCloseoutEntry && !(isPreventiveType && hasHumanJournal)}
-                                        value={modalJournalNote}
-                                        onChange={setModalJournalNote}
-                                        author={(user as any)?.username || user?.email}
-                                        hint={hasCloseoutEntry ? 'Add another close-out entry if there is more to say.' : 'Written into the journal with the completion. Status lines do not count as documentation.'}
-                                    />
-                                </div>
+                                {/* Close-out lives in the journal (Journals & Notes). Here: is it written? */}
+                                {(() => {
+                                    const closeout = (localJob.journals || []).find((j: any) => j.type === 'Closeout' && !j.isSystem);
+                                    const goWrite = () => {
+                                        setShowCompleteModal(false);
+                                        setActiveTab('analysis');
+                                        setJournalPreset({ type: 'Closeout', nonce: Date.now() });
+                                    };
+                                    return (
+                                        <div className={`p-4 rounded-xl border space-y-2 ${closeout ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">Close-out</span>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${closeout ? 'text-emerald-700 bg-white border-emerald-200' : 'text-amber-800 bg-white border-amber-300'}`}>
+                                                    {closeout ? 'Written' : (isPreventiveType && hasHumanJournal ? 'Recommended' : 'Required')}
+                                                </span>
+                                            </div>
+                                            {closeout ? (
+                                                <p className="text-xs text-slate-700">
+                                                    <span className="text-slate-400">{closeout.createdBy} · </span>
+                                                    {String(closeout.entry).slice(0, 220)}{String(closeout.entry).length > 220 ? '…' : ''}
+                                                    <button type="button" onClick={goWrite} className="ml-2 text-[11px] text-primary-700 underline underline-offset-2">Add to it</button>
+                                                </p>
+                                            ) : (
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <p className="text-xs text-slate-700">No close-out entry yet — what was done, what was found, how the equipment was left.</p>
+                                                    <button type="button" onClick={goWrite} className="flex-shrink-0 px-3 py-1.5 text-xs font-bold rounded-lg bg-primary-600 text-white hover:bg-primary-500">
+                                                        Write it in Journals &amp; Notes
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Times (0349 verdict): one reference time, the failure window for corrective
                                     work, labour from the ledger. Downtime is derived from the window. */}
@@ -3224,7 +3233,7 @@ const SearchableSelect: React.FC<{
     );
 };
 
-const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string, bomItems?: any[], registeredSubunits?: { id: string; code: string; description: string }[] }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode, bomItems = [], registeredSubunits = [] }) => {
+const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string, bomItems?: any[], registeredSubunits?: { id: string; code: string; description: string }[], journalPreset?: { type: string; nonce: number } | null }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode, bomItems = [], registeredSubunits = [], journalPreset = null }) => {
     const { profile } = useAuth();
     // Dropdown Data — all failure modes (unfiltered, for duplicate validation)
     const allFailureModes = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active), [dictionaries]);
@@ -3371,6 +3380,13 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     };
 
     const [journalType, setJournalType] = useState('Note');
+    // The Complete form sends people here to write the Close-out: preset the type and focus the box.
+    const [composerFocusKey, setComposerFocusKey] = useState(0);
+    useEffect(() => {
+        if (!journalPreset) return;
+        setJournalType(journalPreset.type);
+        setComposerFocusKey(journalPreset.nonce);
+    }, [journalPreset]);
     const [showFollowUpConfirm, setShowFollowUpConfirm] = useState(false);
 
     // Follow-up is an ACTION, not a note category: it arms the Complete &
@@ -4016,6 +4032,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     author={profile?.username || undefined}
                     onSubmit={() => addJournal()}
                     onFollowUp={() => addJournal(true)}
+                    focusKey={composerFocusKey}
                 />
 
                 {/* Timeline */}
