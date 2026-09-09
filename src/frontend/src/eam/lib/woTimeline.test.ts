@@ -87,6 +87,13 @@ describe('woTimeline — words', () => {
         expect(s).toBe('Scheduled · assigned Thu by J. Supervisor');
     });
 
+    it('names the waiting reason and prefers the database stamps for timing', () => {
+        expect(statusSentence({ status: 'WAIT', waitReason: 'seal kit SL01 from stores.' }, [j('Status changed: WIP → WAIT — seal kit', '2026-09-06T10:00:00Z')], { now: NOW })).toBe('Waiting for seal kit SL01 from stores since yesterday');
+        const t = buildTimeline({ status: 'TECO', actualStartAt: '2026-09-01T08:00:00Z', actualFinishAt: '2026-09-02T08:00:00Z' }, []);
+        expect(t.steps.find(s => s.code === 'WIP')?.reachedAt).toBe('2026-09-01T08:00:00Z');
+        expect(t.steps.find(s => s.code === 'TECO')?.reachedAt).toBe('2026-09-02T08:00:00Z');
+    });
+
     it('reads finished states in the past tense', () => {
         expect(statusSentence({ status: 'TECO', closedAt: '2026-09-05T10:00:00Z' }, [], { now: NOW })).toBe('Work completed Sat');
         expect(statusSentence({ status: 'CANC' }, [], { now: NOW })).toBe('Cancelled');

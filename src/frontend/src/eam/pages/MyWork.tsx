@@ -254,7 +254,7 @@ export const MyWork: React.FC = () => {
     const openWO = (id: string) => navigate(`/work-orders/${id}`);
 
     const sentenceFor = (wo: MyWO) => statusSentence(
-        { status: wo.status, createdAt: wo.created_at, closedAt: wo.closed_at },
+        { status: wo.status, createdAt: wo.created_at, closedAt: wo.closed_at, waitReason: (wo as any).wait_reason, actualStartAt: (wo as any).actual_start_at, actualFinishAt: (wo as any).actual_finish_at },
         journals[wo.id],
     );
 

@@ -128,6 +128,8 @@ export class DataMapper {
             plannedRate: record.planned_rate != null ? Number(record.planned_rate) : undefined,
             predecessorTaskId: record.predecessor_task_id || undefined,
             assignedUserIds: record.assigned_user_ids || [],
+            completedBy: record.completed_by || undefined,   // 0349 — who signed the step off
+            completedDate: record.completed_at || undefined,
             assignedOrgUnitIds: record.assigned_org_unit_ids || []
         };
     }
@@ -535,6 +537,19 @@ export class DataMapper {
             parentWoId: record.parent_wo_id || undefined,
             assignedTo: record.assigned_to,
             closedAt: record.closed_at || undefined, // stamps at first TECO (0284) — timeline fallback
+            // 0349 execution record
+            requiredBy: record.required_by || undefined,
+            committedStart: record.committed_start || undefined,
+            releasedAt: record.released_at || undefined, releasedBy: record.released_by || undefined,
+            actualStartAt: record.actual_start_at || undefined,
+            actualFinishAt: record.actual_finish_at || undefined,
+            completedAt: record.completed_at || undefined, completedBy: record.completed_by || undefined,
+            closedBy: record.closed_by || undefined,
+            waitReason: record.wait_reason || undefined, waitSince: record.wait_since || undefined,
+            reportedBy: record.reported_by || undefined,
+            plannerId: record.planner_id || undefined,
+            handedBackAt: record.handed_back_at || undefined, handedBackBy: record.handed_back_by || undefined,
+            reviewedBy: record.reviewed_by || undefined, reviewedAt: record.reviewed_at || undefined, reviewNotes: record.review_notes || undefined,
             recurringWorkId: record.recurring_work_id || undefined,
             tasks: mappedTasks,
             jsa: mappedJSA,
@@ -648,6 +663,19 @@ export class DataMapper {
         if (ui.breakdown !== undefined) {
             record.breakdown = ui.breakdown;
         }
+
+        // 0349 execution record — the editable half. Stamps the database owns
+        // (completed/closed/released by, wait_since, committed_start) are never sent.
+        if (ui.requiredBy !== undefined) record.required_by = ui.requiredBy || null;
+        if (ui.actualStartAt !== undefined) record.actual_start_at = ui.actualStartAt || null;
+        if (ui.actualFinishAt !== undefined) record.actual_finish_at = ui.actualFinishAt || null;
+        if (ui.waitReason !== undefined) record.wait_reason = ui.waitReason || null;
+        if (ui.plannerId !== undefined) record.planner_id = ui.plannerId || null;
+        if (ui.handedBackAt !== undefined) record.handed_back_at = ui.handedBackAt || null;
+        if (ui.handedBackBy !== undefined) record.handed_back_by = ui.handedBackBy || null;
+        if (ui.reviewedBy !== undefined) record.reviewed_by = ui.reviewedBy || null;
+        if (ui.reviewedAt !== undefined) record.reviewed_at = ui.reviewedAt || null;
+        if (ui.reviewNotes !== undefined) record.review_notes = ui.reviewNotes || null;
 
         // Follow-up chain (P0-2): parent link was written at creation only and
         // then unreadable/unsaveable — map it both directions.

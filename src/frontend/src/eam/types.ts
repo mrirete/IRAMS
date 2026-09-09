@@ -713,6 +713,19 @@ export interface WorkOrder {
   breakdown?: boolean;       // SAP MSAUS-style breakdown indicator; undefined = not recorded
   actualCost?: number; // Total Actual Cost (Snapshot)
   closedAt?: string;            // work_orders.closed_at — stamps at first TECO (0284); status-timeline fallback
+  // 0349 — the execution record (stamped by the database; editable where noted)
+  requiredBy?: string;          // when the work must be done (priority-derived at creation, editable)
+  committedStart?: string;      // schedule date first promised (first SCHED) — never moved by reschedules
+  releasedAt?: string; releasedBy?: string;
+  actualStartAt?: string;       // first WIP (editable)
+  actualFinishAt?: string;      // TECO (editable until financial close)
+  completedAt?: string; completedBy?: string;
+  closedBy?: string;
+  waitReason?: string; waitSince?: string;
+  reportedBy?: string;
+  plannerId?: string;
+  handedBackAt?: string; handedBackBy?: string;
+  reviewedBy?: string; reviewedAt?: string; reviewNotes?: string; // supervisor acceptance of the completed work
   persistedTaskIds?: string[];  // task ids known to exist in job_tasks (time can be confirmed against them); UI-only
   costFrozen?: boolean;         // 0284 — snapshot taken at financial close (CLOSED), immutable after
   frozenLaborCost?: number;     // ledger basis at close; undefined until frozen

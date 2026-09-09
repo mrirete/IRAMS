@@ -126,3 +126,28 @@ Every finding above was closed the same day and the whole loop was driven again 
 
 - **A technician's status save failed with `ASSIGN_REQUIRED`.** The page sent every step's assignee list on every save, so a stale copy tripped the 0346 gate on an unrelated edit. The save path now drops an unchanged assignee list from the step payload and drops a drifted one with a warning instead of failing the save. Verified: J.tech changed a step to IN PROGRESS and the order to WIP on WO-2026-01003 with assignees intact.
 - **A technician could raise, approve (all four approval roles), issue and activate their own permit to work.** The PTW screen checked nothing and the matrix gave every line role safety view-only. **0347** re-seeds the matrix: TECHNICIAN safety view+create, PLANNER view/create/edit, SUPERVISOR view/create/edit/approve. **0348** enforces the lifecycle on `ptw_permits` / `ptw_approvals`: raise needs Safety · Create and the requester is stamped from the session; submit by the requester or a safety editor; approval steps, approve/reject, issue, suspend, resume and close need Safety · Approve by someone other than the requester (four-eyes); accept and return by the requester or permit holder; toolbox talk before issue; approver, issuer and receiver stamped from the session. The Safety tab buttons follow the same rule with explanatory tooltips. Verified end to end as J.tech and J.Supervisor (13 checks, including the four-eyes refusal when a supervisor approves their own permit).
+
+
+## Execution record — 2026-09-09
+
+**Trigger:** the user noticed low Work Readiness / Closeout scores and missing execution data (no estimate, no actual time, no close-out note) on the closed test orders.
+
+**Execution test (fresh order, WO-EXEC-09091056, before the fix):** 3 steps planned at 1 / 4 / 1.5 h with instructions and crafts, both technicians assigned, 4 confirmations totalling 11 h, every step posted as final, failure mode and coded remedy at completion.
+
+| Field | Expected | Before | After (WO-EXEC-09091125) |
+|---|---|---|---|
+| Order estimate | 6.5 h from the steps | 0 | 6.50 (rolled up, decimal) |
+| Actual start / finish | stamped at WIP / TECO | no columns; "Completed" date saved into the void | 11:26:59 / 11:28:18, editable on the rail |
+| Step 2 actual hours | 4.5 + 4 = 8.5 | 4.5 (second person ignored) | 8.50 |
+| Order actual hours | 11 h posted | null unless typed | 11.00 (posted, read-only) |
+| Waiting reason | asked and shown | nothing | "coupling insert from stores · since 11:27", cleared on resume |
+| Close-out note | always asked | hidden once any journal row existed | required (≥ 10 chars), journal type **Closeout** |
+| Completed by / accepted by / handed back / closed by | on the record | reviewed_by columns existed, never written | J.tech · J.Supervisor (note) · J.tech · (at close) |
+| Required by | from priority | nothing | P3 → +7 days, editable |
+| Committed start / released by | first schedule | nothing | stamped on first SCHED |
+| Closeout Quality | honest | 88 % "Ready to close" on system lines alone | 82 % at TECO, 91 % after supervisor acceptance; system lines no longer count |
+| Readiness after execution | quiet | "1 planning item to complete before scheduling" on a finished job | "1 planning item was missing when this job was executed" |
+
+**Shipped:** migration **0349** (columns: required_by, committed_start, released_at/by, actual_start_at, actual_finish_at, completed_at/by, closed_by, wait_reason/since, reported_by, planner_id, handed_back_at/by; job_tasks.completed_at/by; `stamp_wo_execution` BEFORE INSERT/UPDATE stamps and forces the roll-ups; `rollup_confirmations` AFTER on work_order_labor sums every posted confirmation on the step and the order and marks the step COMPLETED with completed_by on a final posting; `rollup_step_estimates`; backfill of all existing orders) and **0350** (est_duration integer → numeric(8,2), sem_work_orders recreated around it). Page: Waiting prompts for a reason and journals it; Complete modal always asks for the close-out note and shows posted hours read-only; Accept work (workOrders.approve) and Hand back (edit) on TECO orders write the review and hand-back columns and journal it; Details rail rebuilt: Required by, Due, Committed, Est. hours (from steps), Est. downtime, Waiting for, Actual start / finish, Hours worked vs plan, Completed / Accepted / Handed back / Closed by. Scores: `assessCloseout` counts human entries only, adds Close-out note (required for corrective) and Accepted by supervisor; readiness strip stops nagging after execution; `woTimeline` reads the stamps and the waiting reason.
+
+**Still open:** reported_by and planner_id exist but have no UI yet (planner picker on the Details tab is the natural place); the Cost tab's variance uses the same posted figures but does not yet show plan vs posted hours per step.

@@ -1262,7 +1262,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const canComplete = failureCodingMet && hasJournals;
     // Modal completion gating (depends on requiresFailureCoding above).
     const modalFailureModeMet = hasFailureMode || !!modalFailureMode || !requiresFailureCoding;
-    const modalJournalsMet = hasJournals || !!modalJournalNote.trim();
+    // The close-out note is a journal entry and it is always asked for: status
+    // lines are not documentation. Preventive work may lean on an existing note.
+    const modalJournalsMet = modalJournalNote.trim().length >= 10 || (isPreventiveType && hasJournals);
     const modalCanComplete = modalFailureModeMet && modalJournalsMet;
     const [defectFound, setDefectFound] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
@@ -1582,6 +1584,18 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             }
         }
 
+        // Waiting needs a reason (0349): the card, the rail and the schedule read it.
+        if (!force && updates.status === 'WAIT' && localJob.status !== 'WAIT' && !updates.waitReason) {
+            const reason = await promptModal({
+                title: 'Why is the job waiting?',
+                message: 'Parts, access, permit, weather, another trade… The reason shows on the job card and in the schedule until work resumes.',
+                placeholder: 'e.g. Waiting for seal kit SL01 from stores',
+                confirmLabel: 'Set Waiting',
+            });
+            if (!reason || !reason.trim()) return;
+            return updateJob({ ...updates, waitReason: reason.trim() }, true);
+        }
+
         // Intercept Status Change to SCHED
         if (!force && updates.status === 'SCHED' && localJob.status !== 'SCHED') {
             setPendingStatus('SCHED');
@@ -1614,7 +1628,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             isSystem: true,
         });
         if (updates.status && updates.status !== localJob.status) {
-            sysEntries.push({ ...stamp(), entry: `Status changed: ${localJob.status || '—'} → ${updates.status}` });
+            sysEntries.push({ ...stamp(), entry: `Status changed: ${localJob.status || '—'} → ${updates.status}${updates.status === 'WAIT' && updates.waitReason ? ` — ${updates.waitReason}` : ''}` });
         }
         if (updates.assignedTo !== undefined && updates.assignedTo !== localJob.assignedTo) {
             sysEntries.push({ ...stamp(), entry: `Assignment changed: ${localJob.assignedTo || 'unassigned'} → ${updates.assignedTo || 'unassigned'}` });
@@ -1688,14 +1702,55 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         persistToDb(localJob, job, pending);
     };
 
+    // 0349 — posted time is the actual; a typed figure only counts when nothing was posted.
+    const postedConfirmations = (localJob.labor || []).filter(l => (l as { confirmationNo?: number }).confirmationNo != null);
+    const postedHours = postedConfirmations.reduce((sum, l) => sum + (Number(l.actualDuration) || 0), 0);
+    const confirmModal = useConfirm();
+    const stampEntry = (entry: string) => ({
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `sys-${Date.now()}`,
+        type: 'SYSTEM', createdBy: (user as any)?.username || user?.email || 'system',
+        createdAt: new Date().toISOString(), isSystem: true, entry,
+    });
+    /** Supervisor accepts the completed work — writes the review columns the table always had. */
+    const handleAcceptWork = async () => {
+        const note = await promptModal({
+            title: 'Accept the completed work',
+            message: 'Confirm the job was done to standard. Your note goes on the record.',
+            placeholder: 'e.g. Seal flush and run-test readings checked — accepted',
+            confirmLabel: 'Accept work',
+        });
+        if (!note || !note.trim()) return;
+        const who = (user as any)?.username || user?.email || 'supervisor';
+        await updateJob({
+            reviewedBy: user?.id, reviewedAt: new Date().toISOString(), reviewNotes: note.trim(),
+            journals: [stampEntry(`Work accepted by ${who}: ${note.trim()}`), ...(localJob.journals || [])],
+        } as any);
+        showToast('Work accepted.', 'success');
+    };
+    /** Operations took the asset back — the return-to-service moment. */
+    const handleHandBack = async () => {
+        const ok = await confirmModal({
+            title: 'Hand back to operations',
+            message: `Record that ${localJob.assetName || 'the asset'} is back in service and operations have accepted it.`,
+            confirmLabel: 'Hand back',
+        });
+        if (!ok) return;
+        const who = (user as any)?.username || user?.email || 'technician';
+        await updateJob({
+            handedBackAt: new Date().toISOString(), handedBackBy: user?.id,
+            journals: [stampEntry(`Handed back to operations by ${who}`), ...(localJob.journals || [])],
+        } as any);
+        showToast('Handed back to operations.', 'success');
+    };
+
     const handleConfirmCompletion = async (followUp: boolean) => {
         // Same shape as every other journal writer (entry/createdBy/createdAt) —
         // this writer used author/date/comments, so TECO notes rendered blank in
         // the timeline (which reads j.entry).
-        const finalJournals = !hasJournals && modalJournalNote.trim()
+        const finalJournals = modalJournalNote.trim()
             ? [{
                 id: `inst-${Date.now()}`,
-                type: 'Note',
+                type: 'Closeout',
                 createdBy: (user as any)?.username || 'unknown',
                 createdAt: new Date().toISOString(),
                 entry: modalJournalNote.trim(),
@@ -1734,11 +1789,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
         const finalHasFailureMode = !!finalFailureData?.failureMode;
         const finalFailureCodingMet = !requiresFailureCoding || finalHasFailureMode;
-        const finalHasJournals = finalJournals.length > 0;
-        const finalCanComplete = finalFailureCodingMet && finalHasJournals;
+        const finalHasNote = modalJournalNote.trim().length >= 10 || (isPreventiveType && finalJournals.length > 0);
+        const finalCanComplete = finalFailureCodingMet && finalHasNote;
 
         if (!finalCanComplete) {
-            showToast('Completion requirements not met. Please fill failure mode and journal note.', 'warning');
+            showToast('Completion requirements not met: failure mode and a close-out note (at least a sentence).', 'warning');
             return;
         }
 
@@ -2026,6 +2081,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         status={localJob.status}
                         createdAt={localJob.dateCreated}
                         closedAt={localJob.closedAt}
+                        actualStartAt={localJob.actualStartAt}
+                        actualFinishAt={localJob.actualFinishAt}
+                        waitReason={localJob.waitReason}
                         journals={localJob.journals as any}
                         className="w-full max-w-3xl"
                     />
@@ -2041,6 +2099,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         disabled: isSaving,
                         isPrimary: true,
                     },
+                    ...(localJob.status === WorkOrderStatus.TECO && !localJob.reviewedBy && jdPerms?.workOrders?.approve === true ? [{
+                        label: 'Accept work',
+                        icon: <CheckCircle size={14} />,
+                        onClick: handleAcceptWork,
+                        variant: 'secondary' as const,
+                        tooltip: 'Supervisor acceptance of the completed work',
+                    }] : []),
+                    ...(localJob.status === WorkOrderStatus.TECO && !localJob.handedBackAt && canEdit ? [{
+                        label: 'Hand back',
+                        icon: <ArrowRight size={14} />,
+                        onClick: handleHandBack,
+                        variant: 'secondary' as const,
+                        tooltip: 'Operations accept the asset back into service',
+                    }] : []),
                     ...(localJob.status !== WorkOrderStatus.CLOSED && localJob.status !== WorkOrderStatus.TECO ? [{
                         label: 'Complete',
                         icon: <CheckCircle size={14} />,
@@ -2158,6 +2230,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     status={localJob.status}
                     createdAt={localJob.dateCreated}
                     closedAt={localJob.closedAt}
+                    actualStartAt={localJob.actualStartAt}
+                    actualFinishAt={localJob.actualFinishAt}
+                    waitReason={localJob.waitReason}
                     journals={localJob.journals as any}
                 />
             </div>
@@ -2176,7 +2251,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     jumped width as you switched tabs — the cap lives here now and the
                     tabs inherit it. */}
                 <div className="ers-page-record">
-                    {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
+                    {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} users={users} />}
                     {activeTab === 'tasks' && (
                         <TasksTab
                             job={localJob}
@@ -2348,21 +2423,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     </div>
                                 )}
 
-                                {/* Inline Journal Note for Modal */}
-                                {!hasJournals && (
-                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                                        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Required Completion Journal Note</span>
-                                        <div>
-                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Activity Log Note *</label>
-                                            <textarea
-                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2 h-20 resize-none"
-                                                placeholder="Write work performed, findings, or technician notes..."
-                                                value={modalJournalNote}
-                                                onChange={e => setModalJournalNote(e.target.value)}
-                                            />
-                                        </div>
+                                {/* Close-out note — a journal entry (type Closeout), always asked for */}
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                                    <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Close-out note {isPreventiveType && hasJournals ? '(recommended)' : '*'}</span>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Work performed, findings, condition on hand-back</label>
+                                        <textarea
+                                            className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2 h-24 resize-none"
+                                            placeholder="What was done, what was found, and how the equipment was left. This is the note the next planner reads."
+                                            value={modalJournalNote}
+                                            onChange={e => setModalJournalNote(e.target.value)}
+                                        />
+                                        <p className="text-[9px] text-slate-400 mt-0.5">Saved to the journal as a Close-out entry. Status lines do not count as documentation.</p>
                                     </div>
-                                )}
+                                </div>
 
                                 {/* Actuals & Downtime (0283) — the fields MTTR/MTBF/availability actually run on */}
                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
@@ -2370,13 +2444,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Actual Labour (hrs)</label>
-                                            <input
-                                                type="number" min="0" step="0.5"
-                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
-                                                placeholder="e.g. 4.5"
-                                                value={modalActualHours}
-                                                onChange={e => setModalActualHours(e.target.value)}
-                                            />
+                                            {postedConfirmations.length > 0 ? (
+                                                <div className="w-full text-xs border border-slate-200 rounded-lg bg-slate-100 p-2 text-slate-700">
+                                                    <span className="font-bold tabular-nums">{postedHours} h</span> posted · {postedConfirmations.length} confirmation{postedConfirmations.length === 1 ? '' : 's'}
+                                                    <span className="block text-[9px] text-slate-400 mt-0.5">Post time on the steps to change this.</span>
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    type="number" min="0" step="0.5"
+                                                    className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                    placeholder="No time posted — enter hours"
+                                                    value={modalActualHours}
+                                                    onChange={e => setModalActualHours(e.target.value)}
+                                                />
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Equipment Downtime (hrs)</label>
@@ -4267,14 +4348,15 @@ const WorkReadinessStrip: React.FC<{
     reviewGate?: ActionGate;
     isExpanded?: boolean;
     onToggleExpand?: () => void;
-}> = ({ readiness, onReview, reviewGate, isExpanded, onToggleExpand }) => {
+    executed?: boolean;
+}> = ({ readiness, onReview, reviewGate, isExpanded, onToggleExpand , executed }) => {
     const badge = READINESS_CLASS_BADGE[readiness.classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
     return (
         <GateStrip
             title="Work Readiness"
             readiness={readiness}
             readyText="Planning essentials in place — ready to schedule."
-            incompleteText={(n) => `${n} planning item${n === 1 ? '' : 's'} to complete before scheduling.`}
+            incompleteText={(n) => executed ? `${n} planning item${n === 1 ? '' : 's'} ${n === 1 ? 'was' : 'were'} missing when this job was executed.` : `${n} planning item${n === 1 ? '' : 's'} to complete before scheduling.`}
             scoreTitle={`Planning readiness: ${readiness.score}%`}
             leftBadges={<>
                 <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
@@ -4305,7 +4387,18 @@ const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: 
 
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
-const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
+const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], users?: any[] }> = ({ job, onUpdate, dictionaries, users = [] }) => {
+    // 0349 — names for the people the database stamped on the record.
+    const nameOf = (id?: string) => {
+        if (!id) return '';
+        const u = users.find((x: any) => x.id === id || x.contact_id === id || x.contactId === id);
+        return u?.fullName || u?.full_name || u?.username || u?.email || `${id.slice(0, 8)}…`;
+    };
+    const stepEstimate = (job.tasks || []).reduce((sum, t) => sum + (Number(t.estHours) || 0), 0);
+    const postedLines = (job.labor || []).filter(l => (l as { confirmationNo?: number }).confirmationNo != null);
+    const postedTotal = postedLines.reduce((sum, l) => sum + (Number(l.actualDuration) || 0), 0);
+    const inExecution = ['WIP', 'WAIT', 'TECO', 'CLOSED'].includes(String(job.status));
+    const fmtStamp = (iso?: string) => iso ? new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
     // Terminal states are a decision, not an edit. Complete goes through the
     // closeout modal (TECO), financial close through finops.edit; cancelling
     // or closing from this dropdown needs workOrders.approve. A technician
@@ -4487,6 +4580,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             <div className="lg:col-span-2">
                 <WorkReadinessStrip
                     readiness={readiness}
+                    executed={inExecution}
                     onReview={handleReviewPlan}
                     reviewGate={planGate}
                     isExpanded={isFieldsExpanded}
@@ -4971,6 +5065,19 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
                 {(!job.scope || job.scope === 'STANDARD') ? (
                     <div className="flex flex-col gap-2">
+                        {/* 0349 — the dates a maintenance order carries: required (from
+                            priority), planned, committed (first schedule, never moved),
+                            actual start / finish (stamped, correctable until close). */}
+                        <RailRow label="Required by">
+                            <input
+                                key={`req-${job.id}`}
+                                type="date"
+                                value={job.requiredBy ? formatDateForInput(job.requiredBy) : ''}
+                                onChange={(e) => onUpdate({ requiredBy: e.target.value ? `${e.target.value}T00:00:00Z` : undefined })}
+                                className={RAIL_INPUT}
+                                title="When the work must be done — set from priority at creation"
+                            />
+                        </RailRow>
                         <RailRow label="Due Date">
                             <input
                                 key={`due-std-${job.id}`}
@@ -4980,14 +5087,24 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                 className={RAIL_INPUT}
                             />
                         </RailRow>
-                        <RailRow label="Est. Duration (h)">
-                            <input
-                                type="number" min="0" step="0.5"
-                                value={job.estDuration || ''}
-                                onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })}
-                                className={RAIL_INPUT}
-                                placeholder="0"
-                            />
+                        {job.committedStart && (
+                            <RailRow label="Committed">
+                                <span className="text-xs text-slate-700 tabular-nums" title="The schedule date first promised — reschedules move the due date, not this">{formatDateForInput(job.committedStart)}</span>
+                            </RailRow>
+                        )}
+                        <RailRow label="Est. Hours">
+                            {stepEstimate > 0 ? (
+                                <span className="text-xs text-slate-700 tabular-nums" title="Sum of the step estimates on the Tasks tab">{stepEstimate} h · {(job.tasks || []).length} step{(job.tasks || []).length === 1 ? '' : 's'}</span>
+                            ) : (
+                                <input
+                                    type="number" min="0" step="0.5"
+                                    value={job.estDuration || ''}
+                                    onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })}
+                                    className={RAIL_INPUT}
+                                    placeholder="0"
+                                    title="Estimate here until steps carry their own"
+                                />
+                            )}
                         </RailRow>
                         <RailRow label="Est. Downtime (h)">
                             <input
@@ -4998,15 +5115,43 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                 placeholder="0"
                             />
                         </RailRow>
-                        <RailRow label="Completed">
-                            <input
-                                key={`fin-std-${job.id}`}
-                                type="date"
-                                value={job.dateFinished ? formatDateForInput(job.dateFinished) : ''}
-                                onChange={(e) => onUpdate({ dateFinished: e.target.value })}
-                                className={RAIL_INPUT}
-                            />
-                        </RailRow>
+                        {job.status === 'WAIT' && (
+                            <RailRow label="Waiting for">
+                                <span className="text-xs text-amber-700">{job.waitReason || '—'}{job.waitSince ? ` · since ${fmtStamp(job.waitSince)}` : ''}</span>
+                            </RailRow>
+                        )}
+                        {(inExecution || job.actualStartAt) && (
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Actual start</label>
+                                <input
+                                    type="datetime-local"
+                                    value={toLocalInput(job.actualStartAt)}
+                                    disabled={actualsLocked}
+                                    onChange={(e) => onUpdate({ actualStartAt: fromLocalInput(e.target.value) })}
+                                    className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
+                                />
+                            </div>
+                        )}
+                        {(job.actualFinishAt || ['TECO', 'CLOSED'].includes(String(job.status))) && (
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Actual finish</label>
+                                <input
+                                    type="datetime-local"
+                                    value={toLocalInput(job.actualFinishAt)}
+                                    disabled={actualsLocked}
+                                    onChange={(e) => onUpdate({ actualFinishAt: fromLocalInput(e.target.value) })}
+                                    className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
+                                />
+                            </div>
+                        )}
+                        {(job.completedBy || job.reviewedBy || job.handedBackAt || job.closedBy) && (
+                            <div className="text-[10px] text-slate-500 leading-relaxed border-t border-slate-100 pt-2 flex flex-col gap-0.5">
+                                {job.completedBy && <span>Completed by <strong className="text-slate-700">{nameOf(job.completedBy)}</strong>{job.completedAt ? ` · ${fmtStamp(job.completedAt)}` : ''}</span>}
+                                {job.reviewedBy && <span>Accepted by <strong className="text-slate-700">{nameOf(job.reviewedBy)}</strong>{job.reviewedAt ? ` · ${fmtStamp(job.reviewedAt)}` : ''}{job.reviewNotes ? ` — ${job.reviewNotes}` : ''}</span>}
+                                {job.handedBackAt && <span>Handed back to operations{job.handedBackBy ? ` by ${nameOf(job.handedBackBy)}` : ''} · {fmtStamp(job.handedBackAt)}</span>}
+                                {job.closedBy && <span>Closed by <strong className="text-slate-700">{nameOf(job.closedBy)}</strong></span>}
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <p className="text-[10px] text-slate-400 leading-snug">
@@ -5046,15 +5191,21 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
                     {actualsOpen && (
                         <div className="flex flex-col gap-2 mt-2">
-                            <RailRow label="Actual Duration (h)">
-                                <input
-                                    type="number" min="0" step="0.5"
-                                    value={job.actualDuration || ''}
-                                    disabled={actualsLocked}
-                                    onChange={(e) => onUpdate({ actualDuration: parseFloat(e.target.value) || 0 })}
-                                    className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
-                                    placeholder="0"
-                                />
+                            <RailRow label="Hours worked">
+                                {postedLines.length > 0 ? (
+                                    <span className="text-xs text-slate-700 tabular-nums" title="Sum of the posted time confirmations — post time on the steps to change it">
+                                        {postedTotal} h posted{stepEstimate > 0 ? ` · ${postedTotal - stepEstimate >= 0 ? '+' : ''}${Math.round((postedTotal - stepEstimate) * 10) / 10} h vs plan` : ''}
+                                    </span>
+                                ) : (
+                                    <input
+                                        type="number" min="0" step="0.5"
+                                        value={job.actualDuration || ''}
+                                        disabled={actualsLocked}
+                                        onChange={(e) => onUpdate({ actualDuration: parseFloat(e.target.value) || 0 })}
+                                        className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
+                                        placeholder="No time posted"
+                                    />
+                                )}
                             </RailRow>
                             <RailRow label="Actual Downtime (h)">
                                 <input

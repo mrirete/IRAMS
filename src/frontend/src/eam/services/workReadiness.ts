@@ -141,14 +141,21 @@ export function assessCloseout(wo: WorkOrder, opts: CloseoutOptions = {}): Readi
   const tasks = wo.tasks || [];
   // If there are no steps, that's a planning gap — don't double-penalise it here.
   const tasksDone = tasks.length === 0 ? true : tasks.every(t => String(t.status).toUpperCase() === 'COMPLETED');
-  const documented = (wo.journals || []).length > 0;
+  // System status lines are not documentation (2026-09-09: a job with three
+  // "Status changed" rows and nothing a person wrote scored "Work documented").
+  const human = (wo.journals || []).filter(j => !(j as { isSystem?: boolean }).isSystem && String((j as { type?: string }).type || '').toUpperCase() !== 'SYSTEM');
+  const documented = human.length > 0;
+  const closeoutNoted = human.some(j => /^(closeout|close-out|handover)$/i.test(String((j as { type?: string }).type || '')));
+  const accepted = !!wo.reviewedBy;
   const hasMode = !!wo.failureData?.failureMode;
   const hasCause = !!wo.failureData?.failureCause;
   const actuals = (!!wo.actualDuration && wo.actualDuration > 0) || (wo.labor || []).some(l => (l.actualDuration || 0) > 0);
 
   const items: ReadinessItem[] = [
     { id: 'tasks-done', label: 'Tasks completed', met: tasksDone, severity: 'required', hint: 'Mark every task step complete before closing.' },
-    { id: 'documented', label: 'Work documented', met: documented, severity: 'required', hint: 'Record what was found and what was done (findings/journal).' },
+    { id: 'documented', label: 'Work documented', met: documented, severity: 'required', hint: 'Record what was found and what was done (findings/journal) — status lines do not count.' },
+    { id: 'closeout-note', label: 'Close-out note', met: closeoutNoted, severity: preventive ? 'recommended' : 'required', hint: 'Write the close-out note at completion: work performed, findings, hand-back state.' },
+    { id: 'accepted', label: 'Accepted by supervisor', met: accepted, severity: 'recommended', hint: 'The supervisor accepts the completed work (Accept work on the completed order).' },
     { id: 'failure-mode', label: 'Failure mode', met: preventive ? true : hasMode, severity: preventive ? 'recommended' : 'required', hint: preventive ? 'PM — only code a failure if a defect was found.' : 'ISO 14224: record the failure mode (damage code).' },
     { id: 'failure-cause', label: 'Cause coded', met: preventive ? true : hasCause, severity: 'recommended', hint: 'ISO 14224: record the failure cause/mechanism so analytics can learn from it.' },
     { id: 'actuals', label: 'Actuals recorded', met: actuals, severity: 'recommended', hint: 'Capture actual labour hours vs estimate to sharpen future planning.' },

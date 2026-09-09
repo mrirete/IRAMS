@@ -96,6 +96,11 @@ export interface WoStamps {
     createdAt?: string | null;
     /** closed_at stamps at first TECO (0284) and stays through CLOSED. */
     closedAt?: string | null;
+    /** 0349: why the job is waiting, when in WAIT. */
+    waitReason?: string | null;
+    /** 0349: database stamps — preferred over journal timing when present. */
+    actualStartAt?: string | null;
+    actualFinishAt?: string | null;
 }
 
 /**
@@ -120,6 +125,8 @@ export function buildTimeline(wo: WoStamps, journals: JournalLike[] | null | und
         if (!reached.has(e.to)) reached.set(e.to, e.at);
     }
     // Fallbacks when the journal is silent (imports, pre-0283 records).
+    if (validIso(wo.actualStartAt) && !reached.has('WIP')) reached.set('WIP', wo.actualStartAt);
+    if (validIso(wo.actualFinishAt) && !reached.has('TECO')) reached.set('TECO', wo.actualFinishAt);
     if (validIso(wo.closedAt)) {
         if (!reached.has('TECO') && (status === 'TECO' || status === 'CLOSED')) reached.set('TECO', wo.closedAt);
         if (!reached.has('CLOSED') && status === 'CLOSED') reached.set('CLOSED', wo.closedAt);
@@ -195,7 +202,7 @@ export function statusSentence(
 
     switch (t.status) {
         case 'WIP': return `In progress${since}`;
-        case 'WAIT': return `Waiting${since}`;
+        case 'WAIT': return `Waiting${wo.waitReason ? ` for ${String(wo.waitReason).trim().replace(/\.$/, '')}` : ''}${since}`;
         case 'TECO': case 'COMPLETED': return `Work completed${on}`;
         case 'CLOSED': return `Closed${on}`;
         case 'CANC': case 'CANCELLED': return `Cancelled${on}`;
