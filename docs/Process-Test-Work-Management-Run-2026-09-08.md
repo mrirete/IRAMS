@@ -151,3 +151,20 @@ Every finding above was closed the same day and the whole loop was driven again 
 **Shipped:** migration **0349** (columns: required_by, committed_start, released_at/by, actual_start_at, actual_finish_at, completed_at/by, closed_by, wait_reason/since, reported_by, planner_id, handed_back_at/by; job_tasks.completed_at/by; `stamp_wo_execution` BEFORE INSERT/UPDATE stamps and forces the roll-ups; `rollup_confirmations` AFTER on work_order_labor sums every posted confirmation on the step and the order and marks the step COMPLETED with completed_by on a final posting; `rollup_step_estimates`; backfill of all existing orders) and **0350** (est_duration integer → numeric(8,2), sem_work_orders recreated around it). Page: Waiting prompts for a reason and journals it; Complete modal always asks for the close-out note and shows posted hours read-only; Accept work (workOrders.approve) and Hand back (edit) on TECO orders write the review and hand-back columns and journal it; Details rail rebuilt: Required by, Due, Committed, Est. hours (from steps), Est. downtime, Waiting for, Actual start / finish, Hours worked vs plan, Completed / Accepted / Handed back / Closed by. Scores: `assessCloseout` counts human entries only, adds Close-out note (required for corrective) and Accepted by supervisor; readiness strip stops nagging after execution; `woTimeline` reads the stamps and the waiting reason.
 
 **Still open:** reported_by and planner_id exist but have no UI yet (planner picker on the Details tab is the natural place); the Cost tab's variance uses the same posted figures but does not yet show plan vs posted hours per step.
+
+
+### Complete form, verdict applied (2026-09-09 afternoon)
+
+The user asked where actual finish lives, whether the actuals on the Complete form are necessary, and why a "close-out note" existed beside Journals & Notes. Verdict and result:
+
+| Field on the form | Verdict | Now |
+|---|---|---|
+| Actual labour | Deduced from confirmations | Posted total shown read-only; with nothing posted, the hours typed become a final confirmation for the person completing |
+| Equipment downtime | Derived from the malfunction window | Box removed; derived by the existing trigger, correctable on the Details rail |
+| Malfunction start | The failure event, not deducible from tasks | Kept for corrective work, pre-filled from the request's reported time (else order creation) |
+| Back in service | Defaults to work finished | Kept, pre-filled |
+| Breakdown | Only the person knows | Kept, corrective only |
+| Work finished | The SAP reference time, was missing | Added, pre-filled from the latest step completion or posting, editable; written to actual_finish_at |
+| Close-out note | Duplicate of Journals & Notes | One shared `JournalComposer`; Close-out is a journal type in both places; an earlier Close-out entry satisfies completion; recent entries shown for context |
+
+Actual finish is visible on the Details rail (Schedule card) and on the lifecycle rail under the title.

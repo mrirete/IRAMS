@@ -535,6 +535,7 @@ export class DataMapper {
             frozenLaborCost: record.frozen_labor_cost !== null && record.frozen_labor_cost !== undefined ? Number(record.frozen_labor_cost) : undefined,
             frozenMaterialCost: record.frozen_material_cost !== null && record.frozen_material_cost !== undefined ? Number(record.frozen_material_cost) : undefined,
             parentWoId: record.parent_wo_id || undefined,
+            requestId: record.request_id || undefined,
             assignedTo: record.assigned_to,
             closedAt: record.closed_at || undefined, // stamps at first TECO (0284) — timeline fallback
             // 0349 execution record

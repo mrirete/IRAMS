@@ -681,6 +681,7 @@ export interface WorkOrder {
   assetPath?: string[]; // Hierarchy trail
   assetCode?: string; // Tag
   parentWoId?: string; // Parent Work Order ID for follow-up jobs
+  requestId?: string;  // Originating work request (work_orders.request_id)
   recurringWorkId?: string; // Source PM/recurring job that generated this WO
 
   // Financial & Org

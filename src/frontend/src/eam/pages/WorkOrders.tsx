@@ -62,6 +62,7 @@ import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { FilesTab } from '../components/FilesTab';
 import { AuditTrail } from '../components/AuditTrail';
 import { WoStatusTimeline } from '../components/WoStatusTimeline';
+import { JournalComposer, JournalRecent, JOURNAL_TYPE_COLORS, JOURNAL_TYPE_LABEL } from '../components/JournalComposer';
 import { AroundThisFailure } from '../components/AroundThisFailure';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // Added import
 import { NotificationService } from '../services/NotificationService';
@@ -1111,7 +1112,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [modalJournalNote, setModalJournalNote] = useState('');
     // Completion actuals (0283) — the equipment-event data reliability math runs on
     const [modalActualHours, setModalActualHours] = useState('');
-    const [modalDowntimeHours, setModalDowntimeHours] = useState('');
+    const [modalFinishedAt, setModalFinishedAt] = useState(''); // local datetime — the SAP 'reference time' of completion
     const [modalMalfStart, setModalMalfStart] = useState('');
     const [modalMalfEnd, setModalMalfEnd] = useState('');
     const [modalBreakdown, setModalBreakdown] = useState(false);
@@ -1125,7 +1126,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             setModalRemedy('');
             setModalJournalNote('');
             setModalActualHours('');
-            setModalDowntimeHours('');
+            setModalFinishedAt('');
             setModalMalfStart('');
             setModalMalfEnd('');
             setModalBreakdown(false);
@@ -1262,9 +1263,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const canComplete = failureCodingMet && hasJournals;
     // Modal completion gating (depends on requiresFailureCoding above).
     const modalFailureModeMet = hasFailureMode || !!modalFailureMode || !requiresFailureCoding;
-    // The close-out note is a journal entry and it is always asked for: status
-    // lines are not documentation. Preventive work may lean on an existing note.
-    const modalJournalsMet = modalJournalNote.trim().length >= 10 || (isPreventiveType && hasJournals);
+    // The close-out is a journal entry of type Closeout — written here or
+    // earlier under Journals & Notes; either satisfies completion. Status
+    // lines are not documentation. Preventive work may lean on any human note.
+    const hasCloseoutEntry = (localJob.journals || []).some((j: any) => j.type === 'Closeout' && !j.isSystem);
+    const hasHumanJournal = (localJob.journals || []).some((j: any) => !j.isSystem && j.type !== 'SYSTEM');
+    const modalJournalsMet = hasCloseoutEntry || modalJournalNote.trim().length >= 10 || (isPreventiveType && hasHumanJournal);
     const modalCanComplete = modalFailureModeMet && modalJournalsMet;
     const [defectFound, setDefectFound] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
@@ -1702,6 +1706,39 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         persistToDb(localJob, job, pending);
     };
 
+    // Defaults for the completion times (0349 verdict): work finished = the
+    // latest step completion or posting, else now; the failure window opens at
+    // the request's reported time (else order creation) and closes at work
+    // finished. All editable — these are defaults, not decisions.
+    const toLocalDT = (iso?: string) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    };
+    useEffect(() => {
+        if (!showCompleteModal) return;
+        const stamps = [
+            ...(localJob.tasks || []).map(t => t.completedDate),
+            ...(localJob.labor || []).map((l: any) => l.dateWorkPerformed),
+        ].filter(Boolean).map(String).map(v => (v.length === 10 ? `${v}T${new Date().toTimeString().slice(0, 5)}` : v)).sort();
+        const finished = stamps.length ? stamps[stamps.length - 1] : new Date().toISOString();
+        const finLocal = toLocalDT(finished) || toLocalDT(new Date().toISOString());
+        setModalFinishedAt(prev => prev || finLocal);
+        if (!isPreventiveType) {
+            setModalMalfEnd(prev => prev || toLocalDT(localJob.malfunctionEnd) || finLocal);
+            (async () => {
+                let start = localJob.malfunctionStart || localJob.dateCreated;
+                if (!localJob.malfunctionStart && localJob.requestId) {
+                    const { data } = await supabase.from('service_requests').select('created_at').eq('id', localJob.requestId).maybeSingle();
+                    if (data?.created_at) start = data.created_at;
+                }
+                setModalMalfStart(prev => prev || toLocalDT(start));
+            })();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showCompleteModal]);
+
     // 0349 — posted time is the actual; a typed figure only counts when nothing was posted.
     const postedConfirmations = (localJob.labor || []).filter(l => (l as { confirmationNo?: number }).confirmationNo != null);
     const postedHours = postedConfirmations.reduce((sum, l) => sum + (Number(l.actualDuration) || 0), 0);
@@ -1789,7 +1826,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
         const finalHasFailureMode = !!finalFailureData?.failureMode;
         const finalFailureCodingMet = !requiresFailureCoding || finalHasFailureMode;
-        const finalHasNote = modalJournalNote.trim().length >= 10 || (isPreventiveType && finalJournals.length > 0);
+        const finalHasNote = hasCloseoutEntry || modalJournalNote.trim().length >= 10 || (isPreventiveType && hasHumanJournal);
         const finalCanComplete = finalFailureCodingMet && finalHasNote;
 
         if (!finalCanComplete) {
@@ -1801,22 +1838,41 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         let message = `Work Order ${localJob.woNumber || localJob.id} is now Technically Complete.`;
         let followUpFailed = false;
 
-        // Completion actuals (0283) — parse and validate before any write.
+        // Completion times (0349 verdict): work finished is the reference time;
+        // the failure window is the event; downtime is derived from the window.
         const actualHrs = parseFloat(modalActualHours);
-        const downtimeHrs = parseFloat(modalDowntimeHours);
-        const malfStartIso = modalMalfStart ? new Date(modalMalfStart).toISOString() : null;
-        const malfEndIso = modalMalfEnd ? new Date(modalMalfEnd).toISOString() : null;
+        const finishedIso = modalFinishedAt ? new Date(modalFinishedAt).toISOString() : new Date().toISOString();
+        const malfStartIso = !isPreventiveType && modalMalfStart ? new Date(modalMalfStart).toISOString() : null;
+        const malfEndIso = !isPreventiveType && modalMalfEnd ? new Date(modalMalfEnd).toISOString() : null;
         if (malfStartIso && malfEndIso && malfEndIso < malfStartIso) {
-            showToast('Malfunction end must be after malfunction start.', 'warning');
+            showToast('Back in service must be after the equipment failed.', 'warning');
             return;
         }
         const actualsCols: Record<string, unknown> = {
-            ...(Number.isFinite(actualHrs) && actualHrs > 0 ? { actual_duration_hrs: actualHrs } : {}),
-            ...(Number.isFinite(downtimeHrs) && downtimeHrs > 0 ? { actual_downtime_hrs: downtimeHrs } : {}),
+            actual_finish_at: finishedIso,
             ...(malfStartIso ? { malfunction_start: malfStartIso } : {}),
             ...(malfEndIso ? { malfunction_end: malfEndIso } : {}),
             ...(!isPreventiveType ? { breakdown: modalBreakdown } : {}),
         };
+        // No time was posted on the steps: the hours entered here become a
+        // confirmation for the person completing, so the ledger stays the one
+        // source of actual labour. Without a saved step, the figure goes on the order.
+        if (postedConfirmations.length === 0 && Number.isFinite(actualHrs) && actualHrs > 0) {
+            const firstStep = (localJob.tasks || []).find(t => (localJob as any).persistedTaskIds?.includes?.(t.id) || !String(t.id).startsWith('new-'));
+            if (firstStep) {
+                try {
+                    await DatabaseService.getInstance().postConfirmation({
+                        woId: localJob.id, operationId: firstStep.id, hours: actualHrs, contactId: user?.id,
+                        contactType: 'TECHNICIAN', dateWorked: finishedIso.slice(0, 10), isFinal: true, notes: 'Entered at completion',
+                    });
+                } catch (e) {
+                    console.warn('[complete] fallback confirmation failed; recording hours on the order:', e);
+                    actualsCols.actual_duration_hrs = actualHrs;
+                }
+            } else {
+                actualsCols.actual_duration_hrs = actualHrs;
+            }
+        }
 
         try {
             // Flush any pending debounced saves first
@@ -1842,7 +1898,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 ...localJob,
                 status: updatedStatus,
                 ...(Number.isFinite(actualHrs) && actualHrs > 0 ? { actualDuration: actualHrs } : {}),
-                ...(Number.isFinite(downtimeHrs) && downtimeHrs > 0 ? { actualDowntime: downtimeHrs } : {}),
+                actualFinishAt: finishedIso,
                 ...(malfStartIso ? { malfunctionStart: malfStartIso } : {}),
                 ...(malfEndIso ? { malfunctionEnd: malfEndIso } : {}),
                 ...(!isPreventiveType ? { breakdown: modalBreakdown } : {}),
@@ -2423,72 +2479,80 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     </div>
                                 )}
 
-                                {/* Close-out note — a journal entry (type Closeout), always asked for */}
+                                {/* Journal — the same composer as Journals & Notes, type fixed to Close-out */}
                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                                    <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Close-out note {isPreventiveType && hasJournals ? '(recommended)' : '*'}</span>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Work performed, findings, condition on hand-back</label>
-                                        <textarea
-                                            className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2 h-24 resize-none"
-                                            placeholder="What was done, what was found, and how the equipment was left. This is the note the next planner reads."
-                                            value={modalJournalNote}
-                                            onChange={e => setModalJournalNote(e.target.value)}
-                                        />
-                                        <p className="text-[9px] text-slate-400 mt-0.5">Saved to the journal as a Close-out entry. Status lines do not count as documentation.</p>
+                                    <div className="flex items-center justify-between">
+                                        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Journal</span>
+                                        {hasCloseoutEntry && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Close-out already written</span>}
                                     </div>
+                                    <JournalRecent journals={localJob.journals || []} limit={3} />
+                                    <JournalComposer
+                                        fixedType="Closeout"
+                                        required={!hasCloseoutEntry && !(isPreventiveType && hasHumanJournal)}
+                                        value={modalJournalNote}
+                                        onChange={setModalJournalNote}
+                                        author={(user as any)?.username || user?.email}
+                                        hint={hasCloseoutEntry ? 'Add another close-out entry if there is more to say.' : 'Written into the journal with the completion. Status lines do not count as documentation.'}
+                                    />
                                 </div>
 
-                                {/* Actuals & Downtime (0283) — the fields MTTR/MTBF/availability actually run on */}
+                                {/* Times (0349 verdict): one reference time, the failure window for corrective
+                                    work, labour from the ledger. Downtime is derived from the window. */}
                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                                    <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Actuals &amp; Downtime</span>
+                                    <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Times &amp; labour</span>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Actual Labour (hrs)</label>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Work finished</label>
+                                            <input
+                                                type="datetime-local"
+                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                value={modalFinishedAt}
+                                                onChange={e => setModalFinishedAt(e.target.value)}
+                                                title="Defaults to the last step completion or posting — change it if the paperwork is later than the work"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Labour</label>
                                             {postedConfirmations.length > 0 ? (
                                                 <div className="w-full text-xs border border-slate-200 rounded-lg bg-slate-100 p-2 text-slate-700">
                                                     <span className="font-bold tabular-nums">{postedHours} h</span> posted · {postedConfirmations.length} confirmation{postedConfirmations.length === 1 ? '' : 's'}
-                                                    <span className="block text-[9px] text-slate-400 mt-0.5">Post time on the steps to change this.</span>
+                                                    <span className="block text-[9px] text-slate-400 mt-0.5">From the time posted on the steps.</span>
                                                 </div>
                                             ) : (
-                                                <input
-                                                    type="number" min="0" step="0.5"
-                                                    className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
-                                                    placeholder="No time posted — enter hours"
-                                                    value={modalActualHours}
-                                                    onChange={e => setModalActualHours(e.target.value)}
-                                                />
+                                                <>
+                                                    <input
+                                                        type="number" min="0" step="0.5"
+                                                        className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                        placeholder="Hours worked"
+                                                        value={modalActualHours}
+                                                        onChange={e => setModalActualHours(e.target.value)}
+                                                    />
+                                                    <span className="block text-[9px] text-slate-400 mt-0.5">No time was posted on the steps — this is recorded as your confirmation.</span>
+                                                </>
                                             )}
-                                        </div>
-                                        <div>
-                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Equipment Downtime (hrs)</label>
-                                            <input
-                                                type="number" min="0" step="0.5"
-                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
-                                                placeholder="Blank = derive from window"
-                                                value={modalDowntimeHours}
-                                                onChange={e => setModalDowntimeHours(e.target.value)}
-                                            />
                                         </div>
                                     </div>
                                     {!isPreventiveType && (
                                         <>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Malfunction Start</label>
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Equipment failed at</label>
                                                     <input
                                                         type="datetime-local"
                                                         className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
                                                         value={modalMalfStart}
                                                         onChange={e => setModalMalfStart(e.target.value)}
+                                                        title="Defaults to when the problem was reported"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Back in Service</label>
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Back in service</label>
                                                     <input
                                                         type="datetime-local"
                                                         className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
                                                         value={modalMalfEnd}
                                                         onChange={e => setModalMalfEnd(e.target.value)}
+                                                        title="Defaults to work finished"
                                                     />
                                                 </div>
                                             </div>
@@ -2519,8 +2583,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                                 </label>
                                             )}
                                             <p className="text-[10px] text-slate-400">
-                                                The malfunction window is the failure event time used for MTBF — not the work order's paperwork dates.
-                                                If downtime hours are blank, they are derived from the window.
+                                                Downtime is derived from failed-at to back-in-service and can be corrected on the Details tab. The window is the failure event used for MTBF, not the paperwork dates.
                                             </p>
                                         </>
                                     )}
@@ -3394,14 +3457,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         return Number.isFinite(t) ? new Date(t).toLocaleString() : s;
     };
 
-    const journalTypeColors: Record<string, string> = {
-        'Note': 'bg-blue-100 text-blue-700',
-        'Observation': 'bg-emerald-100 text-emerald-700',
-        'Handover': 'bg-blue-100 text-blue-700',
-        'Follow-up': 'bg-amber-100 text-amber-700',
-        'Safety': 'bg-red-100 text-red-700',
-        'SYSTEM': 'bg-slate-200 text-slate-600'
-    };
+    const journalTypeColors = JOURNAL_TYPE_COLORS;
 
     // Phase 4: asset reliability context (failure history → MTBF/MTTR + RCA signal).
     const navigate = useNavigate();
@@ -3950,52 +4006,17 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     <span className="text-[10px] font-normal text-slate-400 ml-auto">{(job.journals || []).length} entries</span>
                 </h3>
 
-                {/* Add Entry — with type selector */}
-                <div className="mb-3">
-                    <div className="flex items-center gap-2 mb-1.5">
-                        <select
-                            value={journalType}
-                            onChange={(e) => setJournalType(e.target.value)}
-                            className="text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1 bg-slate-50 text-slate-600 uppercase"
-                        >
-                            <option value="Note">Note</option>
-                            <option value="Observation">Observation</option>
-                            <option value="Handover">Handover</option>
-                            <option value="Safety">Safety</option>
-                        </select>
-                        <span className="text-[10px] text-slate-400">as {profile?.username || 'Unknown'}</span>
-                    </div>
-                    <div className="relative">
-                        <textarea
-                            value={note}
-                            onChange={(e) => setNote(e.target.value)}
-                            className="w-full border border-slate-300 rounded-lg p-2 md:p-3 text-xs h-16 focus:ring-1 focus:ring-primary-500 pr-12 resize-none"
-                            placeholder={`Add ${journalType.toLowerCase()} entry...`}
-                            onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) addJournal(); }}
-                        />
-                        <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
-                            {/* Follow-up submits the SAME text as a Follow-up entry and
-                                arms Complete & Raise Follow-Up — an action, so it sits
-                                beside the composer, not in the type dropdown */}
-                            <button
-                                onClick={() => addJournal(true)}
-                                disabled={!note.trim()}
-                                className="px-2 py-1.5 bg-amber-100 border border-amber-300 text-amber-800 rounded-lg hover:bg-amber-200 disabled:opacity-50 disabled:hover:bg-amber-100 transition min-h-[32px] sm:min-h-0 flex items-center gap-1 text-[10px] font-bold"
-                                title="Add as Follow-up — arms Complete & Raise Follow-Up and seeds the corrective WO"
-                            >
-                                <GitPullRequest size={12} /> Follow-up
-                            </button>
-                            <button
-                                onClick={() => addJournal()}
-                                disabled={!note.trim()}
-                                className="p-1.5 sm:p-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 disabled:hover:bg-primary-600 transition min-w-[32px] min-h-[32px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
-                                title="Add entry (Ctrl+Enter)"
-                            >
-                                <ArrowRight size={14} />
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                {/* Add Entry — the shared composer (also used by the Complete modal) */}
+                <JournalComposer
+                    className="mb-3"
+                    value={note}
+                    onChange={setNote}
+                    type={journalType}
+                    onTypeChange={setJournalType}
+                    author={profile?.username || undefined}
+                    onSubmit={() => addJournal()}
+                    onFollowUp={() => addJournal(true)}
+                />
 
                 {/* Timeline */}
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1">
@@ -4006,7 +4027,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                 <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100 hover:border-slate-200 transition">
                                     <div className="flex justify-between items-start mb-1">
                                         <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${journalTypeColors[j.type] || journalTypeColors['Note']}`}>
-                                            {j.type}
+                                            {JOURNAL_TYPE_LABEL[j.type] || j.type}
                                         </span>
                                         <span className="flex items-center gap-1.5">
                                             <span className="text-[10px] text-slate-400">{formatJournalDate(j.createdAt)}</span>
