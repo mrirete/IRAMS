@@ -556,6 +556,22 @@ export type ReliabilityAnalysisType = 'mtbf' | 'weibull' | 'availability' | 'spa
 // summary as the study's deliverable and approval stamps for governance.
 export type ReliabilityStudyStatus = 'active' | 'in_review' | 'approved' | 'archived';
 
+/** The decision a study exists to make (0357) — drives its step plan. */
+export type ReliabilityStudyObjective = 'interval' | 'downtime' | 'spares' | 'weak_link' | 'general';
+
+/** What a study produced: the work its answer became (0357). */
+export interface ReliabilityStudyOutcome {
+    id: string;
+    study_id: string;
+    kind: 'pm' | 'spares' | 'rcm' | 'rca' | 'wo';
+    ref_id: string | null;
+    ref_label: string;
+    detail: Record<string, any>;
+    analysis_id: string | null;
+    created_by: string | null;
+    created_at: string;
+}
+
 export interface ReliabilityStudy {
     id: string;
     name: string;
@@ -563,6 +579,7 @@ export interface ReliabilityStudy {
     asset_tag: string | null;
     asset_name: string | null;
     description: string | null;
+    objective?: ReliabilityStudyObjective;
     status: ReliabilityStudyStatus;
     findings?: string | null;
     approved_by?: string | null;
@@ -875,7 +892,7 @@ class AnalyzeService {
 
     async updateReliabilityStudy(
         id: string,
-        updates: Partial<Pick<ReliabilityStudy, 'name' | 'description' | 'status' | 'findings' | 'approved_by' | 'approved_at'>>
+        updates: Partial<Pick<ReliabilityStudy, 'name' | 'description' | 'objective' | 'status' | 'findings' | 'approved_by' | 'approved_at'>>
     ): Promise<ReliabilityStudy | null> {
         try {
             const { data, error } = await supabase
@@ -904,6 +921,51 @@ class AnalyzeService {
         } catch (e) {
             console.error('Error deleting reliability study:', e);
             return false;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  STUDY OUTCOMES (0357) — the work a study produced.
+    //  Written only after the underlying write is CONFIRMED, so this
+    //  table can be read as "what did this study actually change?".
+    // ══════════════════════════════════════════════════════════
+
+    async getStudyOutcomes(): Promise<ReliabilityStudyOutcome[]> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_reliability_study_outcomes')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return (data ?? []) as ReliabilityStudyOutcome[];
+        } catch (e) {
+            // A tenant that has not had 0357 applied yet simply has no outcomes —
+            // never break the page over it.
+            console.warn('Study outcomes unavailable:', e);
+            return [];
+        }
+    }
+
+    async recordStudyOutcome(outcome: {
+        study_id: string;
+        kind: ReliabilityStudyOutcome['kind'];
+        ref_id?: string | null;
+        ref_label: string;
+        detail?: Record<string, any>;
+        analysis_id?: string | null;
+        created_by?: string | null;
+    }): Promise<ReliabilityStudyOutcome | null> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_reliability_study_outcomes')
+                .insert({ detail: {}, ...outcome })
+                .select()
+                .single();
+            if (error) throw error;
+            return data as ReliabilityStudyOutcome;
+        } catch (e) {
+            console.error('Error recording study outcome:', e);
+            return null;
         }
     }
 

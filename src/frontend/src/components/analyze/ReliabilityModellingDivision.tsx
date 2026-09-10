@@ -15,7 +15,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
-    AlertCircle, Check, X, ArrowRight,
+    AlertCircle, Check, X, ArrowRight, Plus,
 } from 'lucide-react';
 
 // Individual calculator tabs exported from the Toolkit
@@ -37,6 +37,10 @@ import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy } f
 import { useAuth } from '../../eam/contexts/AuthContext';
 import { StudyRecordsPanel } from './ReliabilityStudyRecords';
 import ReliabilityStartHere from './ReliabilityStartHere';
+import ReliabilityStudyWorkspace from './ReliabilityStudyWorkspace';
+import NewStudyModal from './NewStudyModal';
+import { objectiveDef, type StudyObjective } from './studyObjectives';
+import type { ReliabilityStudyOutcome } from '../../eam/services/AnalyzeService';
 
 type CalcTab = 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
 
@@ -318,9 +322,12 @@ interface DivisionProps {
      */
     tool?: CalcTab | null;
     onToolChange?: (t: CalcTab | null) => void;
+    /** Open study (?study=<id>) — the launcher shows its workspace instead of the register. */
+    studyId?: string | null;
+    onStudyChange?: (id: string | null) => void;
 }
 
-export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange, seed, tool, onToolChange }) => {
+export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange, seed, tool, onToolChange, studyId, onStudyChange }) => {
     const { profile, user } = useAuth();
     // Human-readable author stamped on saved studies (falls back gracefully).
     const currentAuthor = profile?.username || profile?.fullName || user?.email || null;
@@ -355,6 +362,19 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     // Saved analyses state
     const [savedAnalyses, setSavedAnalyses] = useState<ReliabilityAnalysis[]>([]);
     const [savedStudies, setSavedStudies] = useState<ReliabilityStudy[]>([]);
+    // What each study produced (0357) — the work its answer became.
+    const [outcomes, setOutcomes] = useState<ReliabilityStudyOutcome[]>([]);
+    const [showNewStudy, setShowNewStudy] = useState(false);
+    /**
+     * The study a tool run belongs to. Set when a tool is opened from a study's
+     * plan, so the Save dialog does not ask again — the answer lands in the
+     * study that asked the question.
+     */
+    const [studyContextId, setStudyContextId] = useState<string | null>(null);
+    const openStudy = useCallback((id: string | null) => {
+        if (onStudyChange) onStudyChange(id);
+        setStudyContextId(id);
+    }, [onStudyChange]);
     const [savedLoading, setSavedLoading] = useState(false);
     const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
     const [saveToast, setSaveToast] = useState<string | null>(null);
@@ -374,12 +394,14 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     // Load saved analyses + studies
     const loadSavedAnalyses = useCallback(async () => {
         setSavedLoading(true);
-        const [analyses, studies] = await Promise.all([
+        const [analyses, studies, outcomeRows] = await Promise.all([
             analyzeService.getReliabilityAnalyses(),
             analyzeService.getReliabilityStudies(),
+            analyzeService.getStudyOutcomes(),
         ]);
         setSavedAnalyses(analyses);
         setSavedStudies(studies);
+        setOutcomes(outcomeRows);
         setSavedLoading(false);
     }, []);
 
@@ -424,8 +446,9 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
         // Resolve study assignment. Version appends inherit the lineage's study;
         // a fresh lineage uses the picker choice (existing id, a new study, or none).
-        let studyId: string | null = active ? (active.study_id ?? null) : null;
-        if (!active && study) {
+        // A run started from a study's plan belongs to that study — do not ask.
+        let targetStudyId: string | null = active ? (active.study_id ?? null) : (studyContextId ?? null);
+        if (!active && !studyContextId && study) {
             if (study.newName?.trim()) {
                 const createdStudy = await analyzeService.createReliabilityStudy({
                     name: study.newName.trim(),
@@ -437,15 +460,15 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 });
                 if (createdStudy) {
                     setSavedStudies(prev => [createdStudy, ...prev]);
-                    studyId = createdStudy.id;
+                    targetStudyId = createdStudy.id;
                 }
             } else {
-                studyId = study.studyId ?? null;
+                targetStudyId = study.studyId ?? null;
             }
         }
 
         const payload = {
-            study_id: studyId,
+            study_id: targetStudyId,
             asset_id: currentAsset?.id || null,
             asset_tag: currentAsset?.tag || null,
             asset_name: currentAsset?.name || null,
@@ -478,7 +501,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         }
         setEditingAnalysis(null);
         setTimeout(() => setSaveToast(null), 3000);
-    }, [currentAnalysisType, currentInputs, currentResults, currentAsset, editingAnalysis, currentAuthor, activeAnalysisId, savedAnalyses]);
+    }, [currentAnalysisType, currentInputs, currentResults, currentAsset, editingAnalysis, currentAuthor, activeAnalysisId, savedAnalyses, studyContextId]);
 
     // Load handler — broadcast loaded inputs via state
     const [loadedData, setLoadedData] = useState<{ inputs: Record<string, any>; results: Record<string, any> } | null>(null);
@@ -556,25 +579,62 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
     // ★ New Study button (launcher): create the container up-front — analyses
     // saved later group under it via the Save dialog's study picker.
-    const handleCreateStudy = useCallback(async (name: string, description: string) => {
+    const handleCreateStudy = useCallback(async (input: {
+        name: string; description: string; objective: StudyObjective;
+        asset: { id: string; tag: string; name: string } | null;
+    }) => {
         const created = await analyzeService.createReliabilityStudy({
-            name,
-            asset_id: null,
-            asset_tag: null,
-            asset_name: null,
-            description: description || null,
+            name: input.name,
+            asset_id: input.asset?.id || null,
+            asset_tag: input.asset?.tag || null,
+            asset_name: input.asset?.name || null,
+            description: input.description || null,
+            objective: input.objective,
             created_by: currentAuthor,
         });
         if (created) {
             setSavedStudies(prev => [created, ...prev]);
-            setSaveToast(`Study "${name}" created — save any analysis into it ✓`);
+            // Straight into the study: it already knows its first step.
+            openStudy(created.id);
+            setSaveToast(`Study created — ${objectiveDef(input.objective).steps.length > 0 ? 'its plan is ready' : 'add analyses to it'} ✓`);
             setTimeout(() => setSaveToast(null), 4000);
             return true;
         }
-        setSaveToast('Could not create the study — check your connection and retry');
-        setTimeout(() => setSaveToast(null), 4000);
+        setSaveToast('Could not create the study — if this tenant has not had migration 0357 applied, the objective column is missing');
+        setTimeout(() => setSaveToast(null), 6000);
         return false;
-    }, [currentAuthor]);
+    }, [currentAuthor, openStudy]);
+
+    // ── The study a run belongs to, and its asset ──────────────
+    const activeStudy = useMemo(
+        () => (studyId ? savedStudies.find(s => s.id === studyId) ?? null : null),
+        [studyId, savedStudies],
+    );
+    const contextStudy = useMemo(
+        () => (studyContextId ? savedStudies.find(s => s.id === studyContextId) ?? null : null),
+        [studyContextId, savedStudies],
+    );
+    const outcomesFor = useCallback(
+        (id: string | null) => (id ? outcomes.filter(o => o.study_id === id) : []),
+        [outcomes],
+    );
+
+    /** Record what a study produced — only ever called after a CONFIRMED write. */
+    const recordOutcome = useCallback(async (o: {
+        kind: ReliabilityStudyOutcome['kind'];
+        ref_id?: string | null;
+        ref_label: string;
+        detail?: Record<string, any>;
+        analysis_id?: string | null;
+    }) => {
+        if (!studyContextId) return;
+        const row = await analyzeService.recordStudyOutcome({
+            study_id: studyContextId,
+            created_by: currentAuthor,
+            ...o,
+        });
+        if (row) setOutcomes(prev => [row, ...prev]);
+    }, [studyContextId, currentAuthor]);
 
     // ★ Close the loop: when a PM program is created from a fit, stamp linked_pm_id
     // on the loaded study — or auto-save a snapshot so the link is never lost.
@@ -585,10 +645,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             if (updated) {
                 setSavedAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
                 setSaveToast(`PM "${pmTitle}" linked to this study ✓`);
+                recordOutcome({ kind: 'pm', ref_id: pmId, ref_label: pmTitle, analysis_id: activeAnalysisId });
             }
         } else if (currentAnalysisType) {
             const saved = await analyzeService.saveReliabilityAnalysis({
-                study_id: null,
+                study_id: studyContextId,
                 asset_id: currentAsset?.id || null,
                 asset_tag: currentAsset?.tag || null,
                 asset_name: currentAsset?.name || null,
@@ -605,10 +666,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 setSavedAnalyses(prev => [saved, ...prev]);
                 setActiveAnalysisId(saved.id);
                 setSaveToast(`PM created — study auto-saved & linked ✓`);
+                recordOutcome({ kind: 'pm', ref_id: pmId, ref_label: pmTitle, analysis_id: saved.id });
             }
         }
         setTimeout(() => setSaveToast(null), 4000);
-    }, [activeAnalysisId, currentAnalysisType, currentAsset, currentInputs, currentResults, currentAuthor]);
+    }, [activeAnalysisId, currentAnalysisType, currentAsset, currentInputs, currentResults, currentAuthor, recordOutcome]);
 
     // ★ P2.1 + P2.2: Cross-tab data bridges
     const [bridgeData, setBridgeData] = useState<{ inputs: Record<string, any>; results: Record<string, any> } | null>(null);
@@ -702,66 +764,136 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     // Every tab takes it, so no entry point ever lands the user on a blank picker.
     const entryAsset = startAsset ?? seed?.asset ?? null;
 
+    // Analyses belonging to the open study — the workspace ticks its plan off these.
+    const studyAnalyses = useMemo(
+        () => (activeStudy ? savedAnalyses.filter(a => a.study_id === activeStudy.id) : []),
+        [activeStudy, savedAnalyses],
+    );
+
+    // Open a tool from a study's plan: the study owns the run, and its asset
+    // seeds the tool so the step starts where the study is pointed.
+    const handleStudyOpenTool = useCallback((t: CalcTab) => {
+        if (activeStudy?.asset_id) {
+            setStartAsset({
+                id: activeStudy.asset_id,
+                tag: activeStudy.asset_tag || '',
+                name: activeStudy.asset_name || activeStudy.asset_tag || '',
+                criticality: '',
+            });
+        }
+        setStudyContextId(activeStudy?.id ?? null);
+        handleTabSwitch(t);
+    }, [activeStudy, handleTabSwitch]);
+
+    const handlePickTool = useCallback((t: CalcTab) => {
+        setStudyContextId(null);
+        handleTabSwitch(t);
+    }, [handleTabSwitch]);
+
+    /** The tools rail — the same five tools, off to the side and out of the way. */
+    const ToolsRail = (
+        <div className="space-y-2">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">Analysis tools</p>
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm divide-y divide-slate-100 overflow-hidden">
+                {CALC_TABS.map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => handlePickTool(tab.id)}
+                        title={tab.desc}
+                        className="group w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-primary-50/50 transition-colors"
+                    >
+                        <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-slate-100 text-slate-500 transition-colors group-hover:bg-white group-hover:text-primary-600">
+                            {tab.icon}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-bold text-slate-700 group-hover:text-primary-700 transition-colors">{tab.label}</span>
+                            <span className="block text-[11px] text-slate-500 leading-snug mt-0.5">{tab.question}</span>
+                        </span>
+                    </button>
+                ))}
+            </div>
+            <p className="text-[10px] text-slate-400 px-1 leading-relaxed">
+                A study asks for only the tools its decision needs. These stay open to anyone who wants to run one on its own.
+            </p>
+        </div>
+    );
+
     return (
         <div className="space-y-4">
-            {/* ── Launcher overview (no tool open): study records + tool cards.
-                Each tool opens as its OWN page (?tool=…) — the records register
-                never competes with a running analysis for screen space. ── */}
+            {/* ── Launcher / study workspace: one centred reading column with the
+                tools off to the side. A tool, when opened, takes the full width
+                because charts and diagrams need it. ── */}
             {!focusTab && (
-                <>
-                    {/* 1. Where to start — driven by the tenant's own failure history */}
-                    <ReliabilityStartHere onStart={handleStartHere} />
+                <div className="flex flex-col lg:flex-row gap-4 items-start">
+                    <div className="min-w-0 flex-1 space-y-4 w-full">
+                        {activeStudy ? (
+                            /* A study, opened: its plan, its outcomes, its decision */
+                            <ReliabilityStudyWorkspace
+                                study={activeStudy}
+                                analyses={studyAnalyses}
+                                outcomes={outcomesFor(activeStudy.id)}
+                                onBack={() => openStudy(null)}
+                                onOpenTool={handleStudyOpenTool}
+                                onOpenAnalysis={handleLoad}
+                                onSaveDecision={async ({ findings, status }) => handleUpdateStudy(activeStudy.id, { status, findings })}
+                            />
+                        ) : (
+                            <>
+                                {/* New study sits at the top — the action, not a footnote */}
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Where to start</p>
+                                    <button
+                                        onClick={() => setShowNewStudy(true)}
+                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary-600 text-white text-xs font-bold shadow-sm hover:bg-primary-700 transition-colors"
+                                    >
+                                        <Plus size={14} /> New study
+                                    </button>
+                                </div>
 
-                    {/* 2. Or pick the decision you need to make. A palette, not a
-                        pipeline: open any card, in any order. */}
-                    <div>
-                        <div className="flex flex-wrap items-baseline gap-2 mb-2">
-                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Or start from the question</p>
-                            <span className="text-[11px] text-slate-400">— pick the decision you need to make; the method follows</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                            {CALC_TABS.map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => handleTabSwitch(tab.id)}
-                                    title={tab.desc}
-                                    className="group flex flex-col h-full p-4 rounded-xl border bg-white border-slate-200 text-left transition-all hover:border-primary-300 hover:shadow-md"
-                                >
-                                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-primary-600 transition-colors">
-                                        <span className="text-slate-400 group-hover:text-primary-500 transition-colors">{tab.icon}</span>
-                                        {tab.label}
-                                    </span>
-                                    <span className="block text-sm font-bold text-slate-800 leading-snug mt-2">{tab.question}</span>
-                                    <span className="flex items-start gap-1.5 text-[11px] text-emerald-700 mt-2.5 leading-snug">
-                                        <ArrowRight size={12} className="mt-0.5 shrink-0 text-emerald-500" />
-                                        <span>{tab.outcome}</span>
-                                    </span>
-                                    <span className="mt-auto pt-3 text-[10px] text-slate-400 leading-snug">
-                                        Needs: {tab.needs}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
+                                {/* 1. Where your own failure history says to look */}
+                                <ReliabilityStartHere onStart={handleStartHere} />
+
+                                {/* 2. The register of studies and what they produced */}
+                                <StudyRecordsPanel
+                                    analyses={savedAnalyses}
+                                    studies={savedStudies}
+                                    outcomes={outcomes}
+                                    loading={savedLoading}
+                                    onLoad={handleLoad}
+                                    onUpdateStudy={handleUpdateStudy}
+                                    onOpenStudy={openStudy}
+                                />
+                            </>
+                        )}
                     </div>
 
-                    {/* 3. History last — a register means nothing before you have made one */}
-                    <StudyRecordsPanel
-                        analyses={savedAnalyses}
-                        studies={savedStudies}
-                        loading={savedLoading}
-                        onLoad={handleLoad}
-                        onUpdateStudy={handleUpdateStudy}
-                        onCreateStudy={handleCreateStudy}
-                    />
-                </>
+                    {/* Tools rail — right at lg+, stacked underneath below it */}
+                    <aside className="w-full lg:w-[290px] xl:w-[320px] shrink-0">
+                        {ToolsRail}
+                    </aside>
+                </div>
             )}
 
             {/* ── Focus mode: the selected tool IS the page — slim switch bar,
                 back link to the launcher, Save pinned right ── */}
+            {focusTab && contextStudy && (
+                <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5 rounded-xl border border-primary-200 bg-primary-50/70">
+                    <span className="text-[11px] text-primary-700">
+                        Working in <strong>{contextStudy.name}</strong> - what you save here lands in this study.
+                    </span>
+                    <button
+                        onClick={() => { handleTabSwitch(null); openStudy(contextStudy.id); }}
+                        className="ml-auto shrink-0 text-[11px] font-bold text-primary-600 hover:text-primary-700"
+                    >
+                        Back to the study
+                    </button>
+                </div>
+            )}
+
             {focusTab && (
                 <div className="flex flex-wrap items-center gap-2">
                     <button
-                        onClick={() => handleTabSwitch(null)}
+                        onClick={() => { setStudyContextId(null); handleTabSwitch(null); }}
                         className="flex items-center gap-1.5 px-3 py-2 rounded-xl border bg-white border-slate-200 text-slate-500 text-xs font-semibold hover:border-primary-300 hover:text-primary-600 transition-all"
                         title="Back to study records & all tools"
                     >
@@ -824,8 +956,10 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
             {/* Content */}
             {activeCalc === 'ram' && <RAMDashboardTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} onSendToSpares={handleSendToSpares} />}
-            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} onPMCreated={handlePMCreated} />}
-            {activeCalc === 'spares' && <SparesTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} />}
+            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} onPMCreated={handlePMCreated}
+                onSentToRcm={info => recordOutcome({ kind: 'rcm', ref_id: null, ref_label: `RCM study seeded for ${info.assetTag}`, detail: { beta: info.beta, eta: info.eta } })} />}
+            {activeCalc === 'spares' && <SparesTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset}
+                onMinLevelApplied={item => recordOutcome({ kind: 'spares', ref_id: item.id, ref_label: `Min ${item.minLevel} on ${item.code}`, detail: { min_level: item.minLevel, part: item.code } })} />}
             {activeCalc === 'rbd' && <ReliabilityModelingTab onStateChange={handleStateChange} onSendToRAM={handleSendToRAM} />}
             {activeCalc === 'montecarlo' && <MonteCarloSimTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} bridgeData={mcBridgeData} onSendToRAM={handleMCToRAM} onPMCreated={handlePMCreated} />}
 
@@ -838,11 +972,19 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 editingId={editingAnalysis?.id || null}
                 initialTitle={editingAnalysis?.title}
                 initialNotes={editingAnalysis?.notes || ''}
-                showStudyPicker={!editingAnalysis && !activeAnalysisId}
+                showStudyPicker={!editingAnalysis && !activeAnalysisId && !studyContextId}
                 studies={currentAsset?.id
                     ? savedStudies.filter(s => s.asset_id === currentAsset.id)
                     : savedStudies}
                 defaultStudyName={`${currentAsset?.tag || 'Asset'} Reliability Study — ${new Date().toLocaleDateString()}`}
+            />
+
+            {/* New study — asks the decision it is for, then opens its plan */}
+            <NewStudyModal
+                open={showNewStudy}
+                onClose={() => setShowNewStudy(false)}
+                onCreate={handleCreateStudy}
+                initialAsset={startAsset}
             />
 
             {/* Delete Confirmation */}

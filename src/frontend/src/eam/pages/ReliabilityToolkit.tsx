@@ -60,6 +60,10 @@ export interface TabProps {
     onSendToSpares?: (mtbf: number) => void;
     /** Seed the tab's asset once (e.g. from a Metrics bad-actor drill-through). */
     initialAsset?: AssetOption | null;
+    /** Fired only after a min-level change is CONFIRMED by the database. */
+    onMinLevelApplied?: (item: { id: string; code: string; minLevel: number }) => void;
+    /** Fired when the fit is handed to an RCM study — the study records the hand-over. */
+    onSentToRcm?: (info: { assetTag: string; beta: number; eta: number }) => void;
 }
 
 type TabId = 'mtbf' | 'availability' | 'weibull' | 'spares' | 'maintainability' | 'montecarlo';
@@ -882,7 +886,7 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
 // ═══════════════════════════════════════════════════════════════
 //  TAB 3: Weibull Analysis
 // ═══════════════════════════════════════════════════════════════
-export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreated }: TabProps = {}) {
+export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreated, onSentToRcm }: TabProps = {}) {
     const navigate = useNavigate();
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [dataStr, setDataStr] = useState('20, 42, 55, 73, 95, 101, 118, 139');
@@ -1194,7 +1198,9 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                                     </button>
                                     {pmAsset && (
                                         <button
-                                            onClick={() => navigate('/rcm', {
+                                            onClick={() => {
+                                                onSentToRcm?.({ assetTag: pmAsset.tag, beta: fit.beta, eta: fit.eta });
+                                                navigate('/rcm', {
                                                 state: {
                                                     seed: {
                                                         asset: { id: pmAsset.id, name: pmAsset.name, tag: pmAsset.tag },
@@ -1208,7 +1214,8 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                                                         },
                                                     },
                                                 },
-                                            })}
+                                                });
+                                            }}
                                             title="Start an RCM study seeded with this asset and the fitted life data"
                                             className="flex items-center justify-center gap-2 px-5 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl hover:border-primary-300 hover:text-primary-600 transition-colors"
                                         >
@@ -1286,7 +1293,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
 // ═══════════════════════════════════════════════════════════════
 //  TAB 4: Spares Demand (Poisson)
 // ═══════════════════════════════════════════════════════════════
-export function SparesTab({ onStateChange, loadedData, initialAsset }: TabProps = {}) {
+export function SparesTab({ onStateChange, loadedData, initialAsset, onMinLevelApplied }: TabProps = {}) {
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [loadingSp, setLoadingSp] = useState(false);
     const [population, setPopulation] = useState('10');
@@ -1438,12 +1445,23 @@ export function SparesTab({ onStateChange, loadedData, initialAsset }: TabProps 
                             // max raises the ceiling with it rather than inverting it.
                             const patch: Record<string, number> = { min_level: result.requiredSpares };
                             if (item && result.requiredSpares > item.maxLevel) patch.max_level = result.requiredSpares;
-                            const { error } = await supabase.from('inventory_items')
-                                .update(patch).eq('id', invSel);
+                            // `.select()` is what makes this honest: without it an
+                            // RLS-filtered update returns no error and changes zero
+                            // rows, and the UI used to toast success anyway (audit
+                            // M-4) — and log an "applied" governance action for a
+                            // change that never happened.
+                            const { data: applied, error } = await supabase.from('inventory_items')
+                                .update(patch).eq('id', invSel).select('id');
                             setInvApplying(false);
+                            if (!error && (applied?.length ?? 0) === 0) {
+                                setInvToast('Not applied - you do not have permission to change stock levels. Ask a storekeeper to set the min level, or have the study approved first.');
+                                setTimeout(() => setInvToast(null), 6000);
+                                return;
+                            }
                             if (!error) {
                                 setInvItems(prev => prev.map(i => i.id === invSel ? { ...i, minLevel: result.requiredSpares, maxLevel: Math.max(i.maxLevel, result.requiredSpares) } : i));
                                 setInvToast(`Min level set to ${result.requiredSpares} on ${item?.code} ✓`);
+                                onMinLevelApplied?.({ id: invSel, code: item?.code || 'item', minLevel: result.requiredSpares });
                                 // Governance trail (B7): the applied stocking decision joins
                                 // the same audited, ROI-counted ledger as PM-interval applies —
                                 // an audit can answer "why is the min 3" from data.

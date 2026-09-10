@@ -63,8 +63,17 @@ const ReliabilityModellingPage: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const toolParam = searchParams.get('tool');
     const tool: ToolId | null = TOOL_IDS.includes(toolParam as ToolId) ? (toolParam as ToolId) : null;
+    // An open study (?study=<id>) survives a tool round-trip, so "Start" on a
+    // step and "All studies" come back to the same place.
+    const studyId = searchParams.get('study');
     const handleToolChange = useCallback((t: ToolId | null) => {
-        setSearchParams(t ? { tool: t } : {}, { replace: false });
+        const next: Record<string, string> = {};
+        if (t) next.tool = t;
+        if (studyId) next.study = studyId;
+        setSearchParams(next, { replace: false });
+    }, [setSearchParams, studyId]);
+    const handleStudyChange = useCallback((id: string | null) => {
+        setSearchParams(id ? { study: id } : {}, { replace: false });
     }, [setSearchParams]);
 
     const handleContextChange = useCallback((ctx: ModellingContext) => {
@@ -98,7 +107,7 @@ const ReliabilityModellingPage: React.FC = () => {
     }, [navigate, context]);
 
     return (
-        <div className="space-y-5 px-3 py-4 sm:p-6 max-w-[1760px] mx-auto">
+        <div className="ers-page-wide space-y-5 px-3 py-4 sm:p-6">
             {/* ── Page Header ─────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
                 <div>
@@ -141,6 +150,8 @@ const ReliabilityModellingPage: React.FC = () => {
                 seed={seed}
                 tool={tool}
                 onToolChange={handleToolChange}
+                studyId={studyId}
+                onStudyChange={handleStudyChange}
             />
 
             {/* ── How this works — purpose & outcome, in three steps ── */}

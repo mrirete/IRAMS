@@ -15,7 +15,8 @@ import {
     FileText, CheckCircle2, Plus,
 } from 'lucide-react';
 import { Button } from '../../eam/components/ui';
-import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy, ReliabilityStudyStatus } from '../../eam/services/AnalyzeService';
+import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy, ReliabilityStudyStatus, ReliabilityStudyOutcome } from '../../eam/services/AnalyzeService';
+import { objectiveDef, OUTCOME_META } from './studyObjectives';
 
 // ── Study lifecycle (0204) ────────────────────────────────────
 const STATUS_META: Record<ReliabilityStudyStatus, { label: string; cls: string }> = {
@@ -242,15 +243,17 @@ function StudyDetail({ versions, onClose, onLoad }: {
 }
 
 // ─── Main register panel ──────────────────────────────────────
-export function StudyRecordsPanel({ analyses, studies, loading, onLoad, onUpdateStudy, onCreateStudy }: {
+export function StudyRecordsPanel({ analyses, studies, outcomes = [], loading, onLoad, onUpdateStudy, onOpenStudy }: {
     analyses: ReliabilityAnalysis[];      // ALL versions across all lineages
     studies: ReliabilityStudy[];          // parent study containers
+    /** What each study produced (0357) — shown as chips on the study header. */
+    outcomes?: ReliabilityStudyOutcome[];
     loading: boolean;
     onLoad: (a: ReliabilityAnalysis) => void;
     /** Lifecycle updates (status transition, findings). Absent = read-only register. */
     onUpdateStudy?: (id: string, updates: { status: ReliabilityStudyStatus; findings: string }) => Promise<boolean>;
-    /** Start a study container up-front (before any analysis run). Absent = no button. */
-    onCreateStudy?: (name: string, description: string) => Promise<boolean>;
+    /** Open a study's workspace — its plan, outcomes and decision. */
+    onOpenStudy?: (id: string) => void;
 }) {
     const [expanded, setExpanded] = useState(true);
     const [search, setSearch] = useState('');
@@ -258,24 +261,6 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad, onUpdate
     const [newestFirst, setNewestFirst] = useState(true);
     const [detailRoot, setDetailRoot] = useState<string | null>(null);
     const [governStudy, setGovernStudy] = useState<ReliabilityStudy | null>(null);
-    const [showNewStudy, setShowNewStudy] = useState(false);
-    const [newName, setNewName] = useState('');
-    const [newDesc, setNewDesc] = useState('');
-    const [creating, setCreating] = useState(false);
-
-    const handleCreate = async () => {
-        if (!onCreateStudy || !newName.trim()) return;
-        setCreating(true);
-        const ok = await onCreateStudy(newName.trim(), newDesc.trim());
-        setCreating(false);
-        if (ok) {
-            setShowNewStudy(false);
-            setNewName('');
-            setNewDesc('');
-            setExpanded(true);
-        }
-    };
-
     // Group all versions by lineage → { latest, versions[] }
     const lineages = useMemo(() => {
         const map = new Map<string, ReliabilityAnalysis[]>();
@@ -324,11 +309,14 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad, onUpdate
             const arr = byStudy.get(key) ?? byStudy.set(key, []).get(key)!;
             arr.push(l);
         }
+        // A study with no analyses yet is still a study - it has a plan waiting.
+        // Hiding it was why a freshly created study seemed to vanish.
+        const showEmpty = !search.trim() && typeFilter === 'all';
         const studySections = studies
-            .filter(s => byStudy.has(s.id))
-            .map(s => ({ study: s, lineages: byStudy.get(s.id)! }));
+            .filter(s => byStudy.has(s.id) || showEmpty)
+            .map(s => ({ study: s, lineages: byStudy.get(s.id) ?? [] }));
         return { studySections, ungrouped: byStudy.get('__ungrouped__') ?? [] };
-    }, [filtered, studies, studyById]);
+    }, [filtered, studies, studyById, search, typeFilter]);
 
     const isEmpty = sections.studySections.length === 0 && sections.ungrouped.length === 0;
 
@@ -368,20 +356,11 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad, onUpdate
                 <button onClick={() => setExpanded(v => !v)} className="flex-1 flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                         <History size={16} className="text-primary-500" />
-                        Study Records
-                        <span className="text-xs font-normal text-slate-400">({lineages.length})</span>
+                        Studies
+                        <span className="text-xs font-normal text-slate-400">({studies.length || lineages.length})</span>
                     </div>
                     {expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
                 </button>
-                {onCreateStudy && (
-                    <button
-                        onClick={() => setShowNewStudy(true)}
-                        title="Create a study container up-front — analyses saved later group under it"
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-primary-600 hover:bg-primary-500 rounded-lg shadow-sm transition-colors"
-                    >
-                        <Plus size={13} /> New study
-                    </button>
-                )}
             </div>
 
             {expanded && (
@@ -429,27 +408,66 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad, onUpdate
                             <>
                                 {sections.studySections.map(({ study, lineages: rows }) => {
                                     const meta = STATUS_META[study.status] || STATUS_META.active;
+                                    const obj = objectiveDef(study.objective);
+                                    const produced = outcomes.filter(o => o.study_id === study.id);
                                     return (
                                         <div key={study.id}>
-                                            <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 border-y border-slate-100 sticky top-0 z-10">
-                                                <FolderOpen size={13} className="text-primary-500 shrink-0" />
-                                                <span className="text-xs font-bold text-slate-700 truncate">{study.name}</span>
-                                                {study.asset_tag && <span className="text-[10px] font-mono text-slate-400">{study.asset_tag}</span>}
-                                                {onUpdateStudy ? (
-                                                    <button
-                                                        onClick={() => setGovernStudy(study)}
-                                                        title="Study lifecycle & findings"
-                                                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 hover:opacity-80 transition-opacity ${meta.cls}`}
-                                                    >
-                                                        {meta.label}
-                                                    </button>
-                                                ) : (
-                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${meta.cls}`}>{meta.label}</span>
-                                                )}
-                                                {study.findings && (
-                                                    <FileText size={11} className="text-slate-400 shrink-0" aria-label="Has findings summary" />
-                                                )}
-                                                <span className="text-[10px] text-slate-400 ml-auto shrink-0">{rows.length} {rows.length === 1 ? 'analysis' : 'analyses'}</span>
+                                            <div className="px-4 py-2 bg-slate-50 border-y border-slate-100">
+                                                <div className="flex items-center gap-2">
+                                                    <FolderOpen size={13} className="text-primary-500 shrink-0" />
+                                                    {onOpenStudy ? (
+                                                        <button
+                                                            onClick={() => onOpenStudy(study.id)}
+                                                            className="text-xs font-bold text-slate-700 truncate hover:text-primary-600 transition-colors text-left"
+                                                            title="Open this study - its plan, outcomes and decision"
+                                                        >
+                                                            {study.name}
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-xs font-bold text-slate-700 truncate">{study.name}</span>
+                                                    )}
+                                                    {study.asset_tag && <span className="text-[10px] font-mono text-slate-400 shrink-0">{study.asset_tag}</span>}
+                                                    {onUpdateStudy ? (
+                                                        <button
+                                                            onClick={() => setGovernStudy(study)}
+                                                            title="Study lifecycle & findings"
+                                                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 hover:opacity-80 transition-opacity ${meta.cls}`}
+                                                        >
+                                                            {meta.label}
+                                                        </button>
+                                                    ) : (
+                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${meta.cls}`}>{meta.label}</span>
+                                                    )}
+                                                    {study.findings && (
+                                                        <FileText size={11} className="text-slate-400 shrink-0" aria-label="Has a recorded decision" />
+                                                    )}
+                                                    <span className="text-[10px] text-slate-400 ml-auto shrink-0">{rows.length} {rows.length === 1 ? 'analysis' : 'analyses'}</span>
+                                                    {onOpenStudy && (
+                                                        <button
+                                                            onClick={() => onOpenStudy(study.id)}
+                                                            className="shrink-0 text-[10px] font-bold text-primary-600 hover:text-primary-700"
+                                                        >
+                                                            Open
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {/* What the study is for, and what it has produced so far */}
+                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 pl-5">
+                                                    <span className="text-[10px] text-slate-400">{obj.label}</span>
+                                                    {produced.length === 0 ? (
+                                                        <span className="text-[10px] text-slate-400">no work produced yet</span>
+                                                    ) : produced.slice(0, 4).map(o => (
+                                                        <a
+                                                            key={o.id}
+                                                            href={OUTCOME_META[o.kind].href(o.ref_id)}
+                                                            title={`${OUTCOME_META[o.kind].verb} ${OUTCOME_META[o.kind].label.toLowerCase()}`}
+                                                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors truncate max-w-[220px]"
+                                                        >
+                                                            {'\u2192'} {o.ref_label}
+                                                        </a>
+                                                    ))}
+                                                    {produced.length > 4 && <span className="text-[10px] text-slate-400">+{produced.length - 4} more</span>}
+                                                </div>
                                             </div>
                                             <div className="divide-y divide-slate-50">{rows.map(renderRow)}</div>
                                         </div>
@@ -480,49 +498,6 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad, onUpdate
                 />
             )}
 
-            {/* New Study — start the container up-front; analyses group under it on save */}
-            {showNewStudy && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowNewStudy(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-                            <h3 className="text-lg font-bold text-slate-800">New study</h3>
-                            <button onClick={() => setShowNewStudy(false)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
-                        </div>
-                        <div className="px-6 py-5 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Study name</label>
-                                <input
-                                    type="text" value={newName} onChange={e => setNewName(e.target.value)} autoFocus
-                                    onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
-                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-                                    placeholder="e.g. GT-301 Reliability Review Q3 2026"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Scope / objective (optional)</label>
-                                <textarea
-                                    value={newDesc} onChange={e => setNewDesc(e.target.value)}
-                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-                                    placeholder="What question is this study answering?"
-                                />
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                                Analyses you run afterwards can be saved into this study from any tool's Save dialog.
-                            </p>
-                        </div>
-                        <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
-                            <button onClick={() => setShowNewStudy(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
-                            <button
-                                onClick={handleCreate}
-                                disabled={!newName.trim() || creating}
-                                className="px-5 py-2 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500 rounded-lg shadow-md transition-all disabled:opacity-50"
-                            >
-                                {creating ? 'Creating…' : 'Create study'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
