@@ -23,6 +23,7 @@ import { ScrollTabStrip } from '../components/ui';
 import LifecycleAnalysis from '../../components/reliability/LifecycleAnalysis';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
 import { fitWeibull, weibullBLife } from '../utils/weibull';
+import { poissonSpares } from '../utils/poissonSpares';
 
 // M1 (one reliability engine): failure classification is the shared engine's
 // isFailure — never a local WO-type list. Queries fetch ALL types in-window
@@ -105,28 +106,10 @@ function computeMTTR(repairTimes: number[]) {
     return { mean, median, stdDev, mmax90, mmax95, count: repairTimes.length };
 }
 
-function poissonSpares(population: number, failureRate: number, interval: number, confidence: number) {
-    const lambda = population * failureRate * interval;
-    let cumulative = 0;
-    let k = 0;
-    const rows: { k: number; prob: number; cumProb: number }[] = [];
-    while (cumulative < confidence / 100 && k < 200) {
-        const prob = (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
-        cumulative += prob;
-        rows.push({ k, prob: Math.round(prob * 10000) / 10000, cumProb: Math.round(cumulative * 10000) / 10000 });
-        k++;
-    }
-    return { lambda, requiredSpares: k - 1, rows };
-}
-
-function factorial(n: number): number {
-    if (n <= 1) return 1;
-    // Use Stirling for large n, exact for small
-    if (n > 170) return Infinity;
-    let result = 1;
-    for (let i = 2; i <= n; i++) result *= i;
-    return result;
-}
+// Spares sizing lives in the shared engine (eam/utils/poissonSpares.ts), which
+// accumulates in LOG space. The version that used to sit here computed the pmf
+// linearly and silently overflowed for lambda above ~140, under-sizing the
+// holding by half on ordinary inputs (audit M-9). No Poisson maths in this file.
 
 // R-1: Weibull fitting lives in the SHARED censored-capable fitter
 // (eam/utils/weibull.ts — Johnson adjusted ranks + confidence bounds).

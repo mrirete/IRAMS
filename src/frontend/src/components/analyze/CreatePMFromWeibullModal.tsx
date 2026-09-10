@@ -69,6 +69,11 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [intervalHours, setIntervalHours] = useState(0);
+    // What the recommended interval was, and what produced it — so `origin`
+    // records the basis of the number actually written, not a rule of thumb
+    // that may not have been applied.
+    const [intervalBasis, setIntervalBasis] = useState('');
+    const [recommendedHours, setRecommendedHours] = useState(0);
     const [frequencyType, setFrequencyType] = useState<'HOURS' | 'DAYS' | 'WEEKS' | 'MONTHS'>('HOURS');
     const [intervalValue, setIntervalValue] = useState(0);
     const [priorityCode, setPriorityCode] = useState('P3');
@@ -80,8 +85,19 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
     useEffect(() => {
         if (!isOpen) { setSuccess(false); return; }
 
+        // The caller hands us the interval it recommended (B10 from the Weibull
+        // fit, or the simulated optimum from Monte Carlo). Only when it does NOT
+        // is the %-of-eta rule used. The basis label below must follow whichever
+        // one produced the number: it used to say "N% of eta" even when the
+        // interval written was B10, so the PM's own provenance contradicted its
+        // interval (audit M-3).
         const pct = data.beta > 3 ? 70 : data.beta > 2 ? 75 : 80;
         const pmHrs = data.pmInterval || Math.round(data.eta * (pct / 100));
+        const basisLabel = data.pmInterval
+            ? (data.b10 && Math.abs(data.pmInterval - data.b10) <= 1
+                ? 'B10 life — the age at which 10% have failed'
+                : 'recommended interval from the analysis')
+            : `${pct}% of characteristic life (eta)`;
 
         const isClass = !!(data.classAssets && data.classAssets.length);
         setTitle(isClass
@@ -92,10 +108,12 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
         // the compact Origin chip on the PM detail — not as prose.
         setDescription(
             `Time-directed replacement PM from Weibull analysis of ${data.dataPoints} failure intervals. ` +
-            `Interval = ${pct}% of characteristic life.` +
+            `Interval basis: ${basisLabel} (${pmHrs.toLocaleString()} h).` +
             (isClass ? ` Applies to all ${data.classAssets!.length} assets in the ${data.className} class (pooled fit).` : '')
         );
         setIntervalHours(pmHrs);
+        setIntervalBasis(basisLabel);
+        setRecommendedHours(pmHrs);
         // Default to DAYS, not the raw η hours: recurring_work schedules are
         // calendar-generated (0304 Autopilot), and an 'Hours' cadence silently
         // created a PM nothing could ever generate (PM-31048 sat frozen on it).
@@ -127,6 +145,10 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
         setSubmitting(true);
         try {
             const cls = data.classAssets && data.classAssets.length ? data.classAssets : null;
+            // The cadence as it will actually be saved, back in hours — the unit
+            // the analysis speaks. HOURS is a meter cadence, the rest calendar.
+            const HOURS_PER: Record<string, number> = { HOURS: 1, DAYS: 24, WEEKS: 168, MONTHS: 720 };
+            const intervalAsHours = Math.round(intervalValue * (HOURS_PER[frequencyType] ?? 24));
             // Map the modal's frequency unit to the recurring_work convention.
             const FREQ_UNIT: Record<string, string> = { HOURS: 'Hours', DAYS: 'Days', WEEKS: 'Weeks', MONTHS: 'Months' };
             const createdPM = await DatabaseService.getInstance().createPM(buildPMStrategy({
@@ -153,7 +175,14 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                     r2: data.r2,
                     b10_hours: data.b10,
                     data_points: data.dataPoints,
-                    interval_basis: `${data.beta > 3 ? 70 : data.beta > 2 ? 75 : 80}% of η`,
+                    interval_basis: intervalBasis,
+                    // The cadence as saved — the person can change it in this
+                    // dialog, and an audit needs the number that was written.
+                    interval_hours: intervalAsHours,
+                    interval_recommended_hours: recommendedHours,
+                    ...(Math.abs(intervalAsHours - recommendedHours) > 1
+                        ? { interval_edited: true, interval_basis_note: 'Cadence was adjusted by hand before saving; the basis above describes the recommendation, not the saved interval.' }
+                        : {}),
                     ...(cls ? { class_name: data.className, class_size: cls.length } : { asset_tag: data.asset.tag }),
                     created_at: new Date().toISOString(),
                 },

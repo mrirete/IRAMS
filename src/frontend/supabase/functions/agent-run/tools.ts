@@ -173,6 +173,20 @@ const draftDeTask: AgentTool = {
 
 // ── query_failure_history ─────────────────────────────────────────────────
 // Evidence lookup for the RCA Challenger: recent failures for an asset
+/**
+ * One embedded wo_failure_data row, whichever shape PostgREST returns.
+ *
+ * The embed is hinted `!wo_id` because 0289 added `caused_by_wo_id`, a second FK
+ * from wo_failure_data to work_orders: without the hint PostgREST refuses the
+ * whole query with PGRST201 and the tool dies (audit M-2). With the hint the
+ * payload can still arrive as an object or a single-element array.
+ */
+function failureRow(w: Record<string, any>): Record<string, any> | null {
+  const fd = w?.wo_failure_data;
+  if (!fd) return null;
+  return Array.isArray(fd) ? (fd[0] ?? null) : fd;
+}
+
 // (work_orders joined to wo_failure_data). Read-only, cited.
 const queryFailureHistory: AgentTool = {
   name: "query_failure_history",
@@ -202,26 +216,29 @@ const queryFailureHistory: AgentTool = {
 
     const { data: wos, error } = await ctx.db
       .from("work_orders")
-      .select("wo_number, title, type, created_at, wo_failure_data(failure_mode_code, failure_cause_code, remedy_code, comments)")
+      .select("wo_number, title, type, created_at, wo_failure_data!wo_id(failure_mode_code, failure_cause_code, remedy_code, comments)")
       .eq("asset_id", assetId)
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) throw new Error(`failure history query failed: ${error.message}`);
 
-    const history = (wos ?? []).map((w: Record<string, any>) => ({
-      wo_number: w.wo_number,
-      title: w.title,
-      type: w.type,
-      date: w.created_at,
-      failure: w.wo_failure_data
-        ? {
-            mode: w.wo_failure_data.failure_mode_code,
-            cause: w.wo_failure_data.failure_cause_code,
-            remedy: w.wo_failure_data.remedy_code,
-            comments: w.wo_failure_data.comments,
-          }
-        : null,
-    }));
+    const history = (wos ?? []).map((w: Record<string, any>) => {
+      const fd = failureRow(w);
+      return {
+        wo_number: w.wo_number,
+        title: w.title,
+        type: w.type,
+        date: w.created_at,
+        failure: fd
+          ? {
+              mode: fd.failure_mode_code,
+              cause: fd.failure_cause_code,
+              remedy: fd.remedy_code,
+              comments: fd.comments,
+            }
+          : null,
+      };
+    });
 
     ctx.sources.push({ kind: "work_orders", ref: assetId, label: `${history.length} WOs for ${assetTag ?? assetId}` });
     return {
@@ -405,12 +422,12 @@ const analyzePmEffectiveness: AgentTool = {
     if (assetIds.length) {
       const { data: wos } = await ctx.db
         .from("work_orders")
-        .select("asset_id, type, created_at, wo_failure_data(failure_mode_code)")
+        .select("asset_id, type, created_at, wo_failure_data!wo_id(failure_mode_code)")
         .in("asset_id", assetIds.map(String))
         .gte("created_at", cutoff)
         .limit(20000);
       for (const w of wos ?? []) {
-        const isFailure = w.wo_failure_data || String(w.type).toUpperCase() === "CM";
+        const isFailure = failureRow(w) || String(w.type).toUpperCase() === "CM";
         if (isFailure) failByAsset.set(w.asset_id, (failByAsset.get(w.asset_id) ?? 0) + 1);
       }
     }
@@ -878,14 +895,14 @@ const analyzeWeibull: AgentTool = {
 
     const { data: wos, error } = await ctx.db
       .from("work_orders")
-      .select("created_at, type, wo_failure_data(failure_mode_code)")
+      .select("created_at, type, wo_failure_data!wo_id(failure_mode_code)")
       .eq("asset_id", assetId)
       .order("created_at", { ascending: true })
       .limit(2000);
     if (error) throw new Error(`work_orders query failed: ${error.message}`);
 
     const failureTimes = (wos ?? [])
-      .filter((w: Record<string, unknown>) => String(w.type ?? "").toUpperCase() === "CM" || w.wo_failure_data)
+      .filter((w: Record<string, any>) => String(w.type ?? "").toUpperCase() === "CM" || failureRow(w))
       .map((w: Record<string, unknown>) => new Date(String(w.created_at)).getTime())
       .sort((a: number, b: number) => a - b);
 
