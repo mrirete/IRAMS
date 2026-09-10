@@ -891,6 +891,8 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
     const [suspStr, setSuspStr] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPMModal, setShowPMModal] = useState(false);
+    // True once an asset has been pulled and yielded zero failure intervals.
+    const [noHistory, setNoHistory] = useState(false);
 
     // Population mode — pool failures across a group of assets (scoped by functional
     // location and/or class) and fit ONE life curve, then create a single PM for them.
@@ -972,7 +974,11 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                 .eq('asset_id', asset.id)
                 .order('created_at');
             const times = failureIntervalsHours(wos || []);
-            if (times.length > 0) setDataStr(times.join(', '));
+            // An asset with no failure history must NOT inherit the illustrative
+            // dataset that seeds the box — that is how a placeholder fit reached a
+            // real PM (audit M-1). Clear it and say so instead.
+            setDataStr(times.join(', '));
+            setNoHistory(times.length === 0);
             // The time survived since the last failure is a suspension — leaving
             // it out is what biased the old failures-only fit pessimistic (R-1).
             const run = runningSuspensionHours(wos || []);
@@ -1087,6 +1093,19 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                         </span>
                     )}
                 </div>
+
+                {/* No history — say it plainly rather than fitting placeholder numbers */}
+                {mode === 'asset' && asset && noHistory && failureTimes.length === 0 && !loading && (
+                    <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                        <AlertTriangle size={15} className="text-amber-500 mt-0.5 shrink-0" />
+                        <div className="text-[11px] text-amber-800 leading-relaxed">
+                            <strong>No failure history for {asset.tag}.</strong> A life fit needs recorded failures —
+                            closed corrective work orders on this asset. Nothing has been assumed on your behalf: the
+                            data box is empty, so there is no fit and no PM to create. Pool this asset&apos;s class
+                            instead, pick an asset with history, or enter times-to-failure manually below.
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1267,7 +1286,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
 // ═══════════════════════════════════════════════════════════════
 //  TAB 4: Spares Demand (Poisson)
 // ═══════════════════════════════════════════════════════════════
-export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
+export function SparesTab({ onStateChange, loadedData, initialAsset }: TabProps = {}) {
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [loadingSp, setLoadingSp] = useState(false);
     const [population, setPopulation] = useState('10');
@@ -1297,6 +1316,14 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
         if (inputs.interval) setInterval(String(inputs.interval));
         if (inputs.confidence) setConfidence(String(inputs.confidence));
     }, [loadedData]);
+
+    // Seed the asset once from the launcher ("Start here") or a drill-through.
+    const sparesSeededRef = useRef(false);
+    useEffect(() => {
+        if (sparesSeededRef.current || !initialAsset) return;
+        sparesSeededRef.current = true;
+        setAsset(initialAsset);
+    }, [initialAsset]);
 
     // Auto-populate MTBF from WO data
     useEffect(() => {
@@ -1660,10 +1687,19 @@ function RAMSectionHeader({ icon, title, subtitle, expanded, onToggle, accentCol
     );
 }
 
-export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: TabProps = {}) {
+export function RAMDashboardTab({ onStateChange, loadedData, initialAsset, onSendToSpares }: TabProps = {}) {
     // ─── Shared state ─────────────────────────────────────────
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [loading, setLoading] = useState(false);
+
+    // Seed the asset once from the launcher ("Start here") or a drill-through;
+    // the asset effect below then auto-populates from its work orders.
+    const ramSeededRef = useRef(false);
+    useEffect(() => {
+        if (ramSeededRef.current || !initialAsset) return;
+        ramSeededRef.current = true;
+        setAsset(initialAsset);
+    }, [initialAsset]);
 
     // ─── Reliability (R) inputs ───────────────────────────────
     const [totalHours, setTotalHours] = useState('');

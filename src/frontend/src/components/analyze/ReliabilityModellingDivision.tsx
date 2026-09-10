@@ -15,7 +15,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
-    AlertCircle, Check, X,
+    AlertCircle, Check, X, ArrowRight,
 } from 'lucide-react';
 
 // Individual calculator tabs exported from the Toolkit
@@ -36,19 +36,64 @@ import analyzeService from '../../eam/services/AnalyzeService';
 import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy } from '../../eam/services/AnalyzeService';
 import { useAuth } from '../../eam/contexts/AuthContext';
 import { StudyRecordsPanel } from './ReliabilityStudyRecords';
+import ReliabilityStartHere from './ReliabilityStartHere';
 
 type CalcTab = 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
 
-// Each tool is labelled by the QUESTION it answers (purpose), not a lifecycle
-// phase — so the strip reads as a parallel palette, not a Model→…→Simulate pipeline.
-// `outcome` states the ACTION the tool's result becomes — the answer to
-// "why am I doing this?" shown on every card.
-const CALC_TABS: { id: CalcTab; label: string; icon: React.ReactNode; purpose: string; outcome: string; desc: string; analysisType?: ReliabilityAnalysisType }[] = [
-    { id: 'rbd', label: 'Block Diagrams', icon: <Cpu size={14} />, purpose: 'System model', outcome: '→ weakest-link ranking', desc: 'Reliability Block Diagrams & P&ID system modelling' },
-    { id: 'ram', label: 'RAM Dashboard', icon: <Activity size={14} />, purpose: 'Reliability & availability', outcome: '→ availability baseline', desc: 'Reliability, Availability & Maintainability — unified MTBF/MTTR/Ao analysis', analysisType: 'mtbf' },
-    { id: 'weibull', label: 'Weibull', icon: <TrendingUp size={14} />, purpose: 'Failure pattern & life', outcome: '→ PM program / RCM study', desc: 'Life data analysis — B-life values, failure pattern characterization', analysisType: 'weibull' },
-    { id: 'montecarlo', label: 'Monte Carlo', icon: <Dices size={14} />, purpose: 'Risk forecast', outcome: '→ PM interval decision', desc: 'Probabilistic lifecycle simulation — Weibull failures, PM optimization, P10/P50/P90 forecasting', analysisType: 'montecarlo' },
-    { id: 'spares', label: 'Spares Demand', icon: <Package size={14} />, purpose: 'Spares to stock', outcome: '→ inventory min level', desc: 'Poisson-based spare parts stocking recommendation', analysisType: 'spares' },
+// A tool is chosen by the DECISION a user needs to make, not by the method's
+// name — someone who has never heard of a Weibull still knows they need to
+// decide when to change a part out. So each card leads with the question,
+// names the method as a small chip, states what you walk away with (`outcome`)
+// and what the data has to carry for the answer to be worth anything (`needs`).
+const CALC_TABS: {
+    id: CalcTab;
+    label: string;                 // the method — used by the in-tool switch bar
+    icon: React.ReactNode;
+    question: string;              // the decision, in the user's words
+    outcome: string;               // what leaves the tool as work
+    needs: string;                 // the data precondition, stated up front
+    desc: string;
+    analysisType?: ReliabilityAnalysisType;
+}[] = [
+    {
+        id: 'weibull', label: 'Weibull', icon: <TrendingUp size={14} />,
+        question: 'When should we change this out — before it fails?',
+        outcome: 'A replacement age at the risk you accept, and a PM program in one click',
+        needs: '5+ recorded failures on the asset (or pool a class)',
+        desc: 'Life data analysis — B-life values, failure pattern characterization',
+        analysisType: 'weibull',
+    },
+    {
+        id: 'ram', label: 'RAM', icon: <Activity size={14} />,
+        question: 'How often does it fail, and how much uptime does that cost?',
+        outcome: 'MTBF, MTTR and availability with confidence bounds — the baseline you improve against',
+        needs: '2+ corrective work orders, downtime hours recorded',
+        desc: 'Reliability, Availability & Maintainability — unified MTBF/MTTR/Ao analysis',
+        analysisType: 'mtbf',
+    },
+    {
+        id: 'montecarlo', label: 'Monte Carlo', icon: <Dices size={14} />,
+        question: 'Is this PM interval worth doing?',
+        outcome: 'Cost and downtime at P10/P50/P90 for each interval — planned change-out vs run-to-failure',
+        needs: 'A Weibull fit (β, η) — run the life fit first',
+        desc: 'Probabilistic lifecycle simulation — Weibull failures, PM optimization, P10/P50/P90 forecasting',
+        analysisType: 'montecarlo',
+    },
+    {
+        id: 'spares', label: 'Spares', icon: <Package size={14} />,
+        question: 'How many spares should we hold on the shelf?',
+        outcome: 'A min stock level that survives the resupply window at your service level',
+        needs: 'MTBF, how many units you run, and the lead time',
+        desc: 'Poisson-based spare parts stocking recommendation',
+        analysisType: 'spares',
+    },
+    {
+        id: 'rbd', label: 'Block Diagram', icon: <Cpu size={14} />,
+        question: 'Which single item takes the whole system down?',
+        outcome: 'System availability and a weakest-link ranking to spend on',
+        needs: 'Your asset hierarchy, or a P&ID to model from',
+        desc: 'Reliability Block Diagrams & P&ID system modelling',
+    },
 ];
 
 // ─── Save Analysis Modal ──────────────────────────────────────
@@ -297,6 +342,14 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         seedAppliedRef.current = true;
         openTool(seed.tab || 'weibull');
     }, [seed, openTool]);
+
+    // "Start here" pick: the shortlist chose the asset AND the tool its data can
+    // carry, so the tool opens with that asset already selected — no blank picker.
+    const [startAsset, setStartAsset] = useState<{ id: string; name: string; tag: string; criticality: string } | null>(null);
+    const handleStartHere = useCallback((t: CalcTab, asset: { id: string; tag: string; name: string; criticality: string }) => {
+        setStartAsset(asset);
+        openTool(t);
+    }, [openTool]);
 
 
     // Saved analyses state
@@ -645,6 +698,10 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
     const focusTab = activeCalc ? CALC_TABS.find(t => t.id === activeCalc) ?? null : null;
 
+    // The asset a tool opens on: a "Start here" pick, else a drill-through seed.
+    // Every tab takes it, so no entry point ever lands the user on a blank picker.
+    const entryAsset = startAsset ?? seed?.asset ?? null;
+
     return (
         <div className="space-y-4">
             {/* ── Launcher overview (no tool open): study records + tool cards.
@@ -652,6 +709,42 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 never competes with a running analysis for screen space. ── */}
             {!focusTab && (
                 <>
+                    {/* 1. Where to start — driven by the tenant's own failure history */}
+                    <ReliabilityStartHere onStart={handleStartHere} />
+
+                    {/* 2. Or pick the decision you need to make. A palette, not a
+                        pipeline: open any card, in any order. */}
+                    <div>
+                        <div className="flex flex-wrap items-baseline gap-2 mb-2">
+                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Or start from the question</p>
+                            <span className="text-[11px] text-slate-400">— pick the decision you need to make; the method follows</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {CALC_TABS.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => handleTabSwitch(tab.id)}
+                                    title={tab.desc}
+                                    className="group flex flex-col h-full p-4 rounded-xl border bg-white border-slate-200 text-left transition-all hover:border-primary-300 hover:shadow-md"
+                                >
+                                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-primary-600 transition-colors">
+                                        <span className="text-slate-400 group-hover:text-primary-500 transition-colors">{tab.icon}</span>
+                                        {tab.label}
+                                    </span>
+                                    <span className="block text-sm font-bold text-slate-800 leading-snug mt-2">{tab.question}</span>
+                                    <span className="flex items-start gap-1.5 text-[11px] text-emerald-700 mt-2.5 leading-snug">
+                                        <ArrowRight size={12} className="mt-0.5 shrink-0 text-emerald-500" />
+                                        <span>{tab.outcome}</span>
+                                    </span>
+                                    <span className="mt-auto pt-3 text-[10px] text-slate-400 leading-snug">
+                                        Needs: {tab.needs}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 3. History last — a register means nothing before you have made one */}
                     <StudyRecordsPanel
                         analyses={savedAnalyses}
                         studies={savedStudies}
@@ -660,30 +753,6 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                         onUpdateStudy={handleUpdateStudy}
                         onCreateStudy={handleCreateStudy}
                     />
-
-                    {/* Tools — a palette, not a pipeline: open any, in any order */}
-                    <div>
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Analysis tools</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-                            {CALC_TABS.map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => handleTabSwitch(tab.id)}
-                                    title={tab.desc}
-                                    className="group flex items-start gap-3 p-4 rounded-xl border bg-white border-slate-200 text-slate-700 text-left transition-all hover:border-primary-300 hover:bg-primary-50/40 hover:shadow-md"
-                                >
-                                    <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-slate-100 text-slate-500 transition-colors group-hover:bg-white group-hover:text-primary-600">
-                                        {tab.icon}
-                                    </span>
-                                    <span className="flex flex-col leading-tight min-w-0">
-                                        <span className="font-semibold text-sm">{tab.label}</span>
-                                        <span className="text-[11px] text-slate-400 mt-0.5">{tab.purpose}</span>
-                                        <span className="text-[10px] font-semibold text-emerald-600/80 mt-1">{tab.outcome}</span>
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
                 </>
             )}
 
@@ -754,11 +823,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             )}
 
             {/* Content */}
-            {activeCalc === 'ram' && <RAMDashboardTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} onSendToSpares={handleSendToSpares} />}
-            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} initialAsset={seed?.asset} onPMCreated={handlePMCreated} />}
-            {activeCalc === 'spares' && <SparesTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} />}
+            {activeCalc === 'ram' && <RAMDashboardTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} onSendToSpares={handleSendToSpares} />}
+            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} onPMCreated={handlePMCreated} />}
+            {activeCalc === 'spares' && <SparesTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} />}
             {activeCalc === 'rbd' && <ReliabilityModelingTab onStateChange={handleStateChange} onSendToRAM={handleSendToRAM} />}
-            {activeCalc === 'montecarlo' && <MonteCarloSimTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} bridgeData={mcBridgeData} onSendToRAM={handleMCToRAM} onPMCreated={handlePMCreated} />}
+            {activeCalc === 'montecarlo' && <MonteCarloSimTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} bridgeData={mcBridgeData} onSendToRAM={handleMCToRAM} onPMCreated={handlePMCreated} />}
 
             {/* Save Modal */}
             <SaveAnalysisModal

@@ -27,11 +27,14 @@ const DataQualityBadge = ({ failures, repairs }: { failures: number; repairs: nu
 };
 
 // ─── Asset Selector (inline) ─────────────────────────────────
-function MCAssetSelector({ onSelect }: { onSelect: (a: AssetOption | null) => void }) {
+function MCAssetSelector({ value, onSelect }: { value?: AssetOption | null; onSelect: (a: AssetOption | null) => void }) {
     const [query, setQuery] = useState('');
     const [assets, setAssets] = useState<AssetOption[]>([]);
     const [open, setOpen] = useState(false);
     const [selected, setSelected] = useState<AssetOption | null>(null);
+
+    // Mirror a seeded/parent-owned selection so the box shows what is loaded.
+    useEffect(() => { if (value !== undefined) setSelected(value); }, [value]);
 
     useEffect(() => {
         supabase.from('assets').select('id, name, tag, criticality')
@@ -84,9 +87,11 @@ export interface MCTabProps {
     onSendToRAM?: (mtbf: number, mttr: number, ao: number) => void;
     /** Fired after a PM program is created from this simulation — lets the parent stamp linked_pm_id on the saved study. */
     onPMCreated?: (pmId: string, pmTitle: string) => void;
+    /** Seed the tab's asset once (launcher "Start here" pick, or a drill-through). */
+    initialAsset?: AssetOption | null;
 }
 
-export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSendToRAM, onPMCreated }: MCTabProps) {
+export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSendToRAM, onPMCreated, initialAsset }: MCTabProps) {
     // ─── Inputs (default blank until Weibull bridge or EAM spool populates) ──
     const [beta, setBeta] = useState(bridgeData?.beta ?? 0);
     const [eta, setEta] = useState(bridgeData?.eta ?? 0);
@@ -201,6 +206,15 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
             setSpoolStatus('error');
         }
     }, []);
+
+    // Seed the asset once from the launcher ("Start here") or a drill-through —
+    // spools its work-order history straight away, same as a manual pick.
+    const mcSeededRef = useRef(false);
+    useEffect(() => {
+        if (mcSeededRef.current || !initialAsset) return;
+        mcSeededRef.current = true;
+        handleAssetSelect(initialAsset);
+    }, [initialAsset, handleAssetSelect]);
 
     // ─── CSV Import ──────────────────────────────────────────
     const handleCSVImport = useCallback((text: string) => {
@@ -331,7 +345,7 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
                 <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                     <Database size={14} className="text-blue-500" /> Auto-Populate from EAM Work Orders
                 </h4>
-                <MCAssetSelector onSelect={handleAssetSelect} />
+                <MCAssetSelector value={selectedAsset} onSelect={handleAssetSelect} />
                 {spoolStatus === 'loading' && (
                     <div className="flex items-center gap-2 text-sm text-blue-500">
                         <Loader2 size={14} className="animate-spin" /> Spooling maintenance history...
