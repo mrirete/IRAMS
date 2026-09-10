@@ -17,6 +17,7 @@ import { emptyResult, tally, errMessage } from '../services/importTypes';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { Button } from '../components/ui';
+import { Drawer } from '../components/ui/Overlay';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 // Firestore imports removed in favor of DatabaseService (Supabase)
 
@@ -46,6 +47,8 @@ import type { ImportType } from '../services/assetTemplates';
 
 // UserAccountsManager removed - fused into main Contacts view
 
+type DirectoryView = 'all' | 'login' | 'nologin' | 'system' | 'inactive';
+
 export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const { permissions } = useAuth();
     const { showToast } = useToast();
@@ -65,6 +68,9 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('ALL'); // CONTACT_TYPE code, or ALL
+    const [viewFilter, setViewFilter] = useState<DirectoryView>('all');
+    const [deptFilter, setDeptFilter] = useState<string>('ALL');
+    const [filterSheetOpen, setFilterSheetOpen] = useState(false); // below lg the rail is a sheet
     const [showFilters, setShowFilters] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; contactId: string | null; contactName: string }>({
         isOpen: false,
@@ -400,24 +406,100 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
 
     // --- Filtered list for rendering ---
     const isPerson = (c: Contact) => !Array.isArray(c.types) || !c.types.some(t => ['VENDOR', 'MANUFACTURER', 'SUPPLIER'].includes(t));
-    const filteredContacts = mergedContacts
+    const people = mergedContacts.filter(isPerson);
+
+    // Views: the access questions an admin asks of this page. Counted over the
+    // whole directory so the numbers stay stable while you narrow.
+    const viewMatch = (c: Contact, v: DirectoryView): boolean => {
+        const li = loginInfo(c);
+        switch (v) {
+            case 'login': return li.hasLogin;
+            case 'nologin': return !li.hasLogin;
+            case 'system': return !!c.flags?.isVirtual;
+            case 'inactive': return !c.active || (li.hasLogin && !li.active);
+            default: return true;
+        }
+    };
+    const views: { key: DirectoryView; label: string; count: number }[] = [
+        { key: 'all', label: 'All people', count: people.length },
+        { key: 'login', label: 'Has login', count: people.filter(c => viewMatch(c, 'login')).length },
+        { key: 'nologin', label: 'No login', count: people.filter(c => viewMatch(c, 'nologin')).length },
+        { key: 'system', label: 'System accounts', count: people.filter(c => viewMatch(c, 'system')).length },
+        { key: 'inactive', label: 'Disabled or inactive', count: people.filter(c => viewMatch(c, 'inactive')).length },
+    ];
+
+    // Dropdown options, most common first.
+    const typeOptions = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        people.forEach(c => (c.types || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
+        return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    }, [mergedContacts]);
+    const deptOptions = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        people.forEach(c => { const d = (c.department || '').trim(); if (d) counts.set(d, (counts.get(d) || 0) + 1); });
+        return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    }, [mergedContacts]);
+
+    const filteredContacts = people
         .filter(c =>
             (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 c.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (Array.isArray(c.types) && c.types.some(t => t.toLowerCase().includes(searchTerm.toLowerCase())))) &&
-            isPerson(c) &&
-            (typeFilter === 'ALL' || (Array.isArray(c.types) && c.types.includes(typeFilter)))
+            viewMatch(c, viewFilter) &&
+            (typeFilter === 'ALL' || (Array.isArray(c.types) && c.types.includes(typeFilter))) &&
+            (deptFilter === 'ALL' || (c.department || '').trim() === deptFilter)
         )
         .sort((a, b) => a.name.localeCompare(b.name));
 
-    // Type chips: every people type present in the directory, most common first.
-    const typeOptions = React.useMemo(() => {
-        const counts = new Map<string, number>();
-        mergedContacts.filter(isPerson).forEach(c => (c.types || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
-        return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    }, [mergedContacts]);
-    const peopleCount = mergedContacts.filter(isPerson).length;
-    const chipCls = (on: boolean) => `px-2.5 py-1 rounded-full text-xs font-medium border transition whitespace-nowrap ${on ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`;
+    const activeFilterCount = (viewFilter !== 'all' ? 1 : 0) + (typeFilter !== 'ALL' ? 1 : 0) + (deptFilter !== 'ALL' ? 1 : 0);
+    const clearFilters = () => { setViewFilter('all'); setTypeFilter('ALL'); setDeptFilter('ALL'); };
+
+    // One set of controls, rendered in the left rail (lg+) or a sheet (below lg).
+    const railLabel = 'block px-2 mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400';
+    const railSelect = 'w-full text-sm border border-slate-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500';
+    const filterControls = (
+        <div className="flex flex-col gap-5 text-sm">
+            <div>
+                <div className={railLabel}>Views</div>
+                <ul className="flex flex-col gap-0.5">
+                    {views.map(v => (
+                        <li key={v.key}>
+                            <button
+                                type="button"
+                                onClick={() => setViewFilter(v.key)}
+                                aria-pressed={viewFilter === v.key}
+                                className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left transition ${viewFilter === v.key ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100'}`}
+                            >
+                                <span>{v.label}</span>
+                                <span className="text-xs tabular-nums opacity-60">{v.count}</span>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+            <div className="px-2">
+                <label htmlFor="dir-type" className={railLabel + ' px-0'}>User type</label>
+                <select id="dir-type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className={railSelect}>
+                    <option value="ALL">All types ({people.length})</option>
+                    {typeOptions.map(([t, n]) => <option key={t} value={t}>{getContactTypeLabel(t)} ({n})</option>)}
+                </select>
+            </div>
+            {deptOptions.length > 0 && (
+                <div className="px-2">
+                    <label htmlFor="dir-dept" className={railLabel + ' px-0'}>Department</label>
+                    <select id="dir-dept" value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className={railSelect}>
+                        <option value="ALL">All departments</option>
+                        {deptOptions.map(([d, n]) => <option key={d} value={d}>{d} ({n})</option>)}
+                    </select>
+                </div>
+            )}
+            {activeFilterCount > 0 && (
+                <button type="button" onClick={clearFilters} className="px-2 text-xs font-medium text-blue-600 hover:underline text-left">
+                    Clear filters
+                </button>
+            )}
+        </div>
+    );
 
     // --- Bulk Selection Handlers ---
     const toggleSelectContact = (id: string) => {
@@ -543,6 +625,18 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                     />
                                 </div>
                                 <button
+                                    type="button"
+                                    onClick={() => setFilterSheetOpen(true)}
+                                    className={`lg:hidden relative p-2 border rounded-lg transition ${activeFilterCount ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
+                                    title="Filters"
+                                    aria-label="Filters"
+                                >
+                                    <Filter size={16} />
+                                    {activeFilterCount > 0 && (
+                                        <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">{activeFilterCount}</span>
+                                    )}
+                                </button>
+                                <button
                                     onClick={() => setShowBulkImport(true)}
                                     disabled={!canCreate}
                                     className={`ml-2 hidden sm:flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg transition shadow-sm font-medium text-sm ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}
@@ -560,21 +654,15 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                     Add Person
                                 </Button>
                             </div>
-
-                            {typeOptions.length > 1 && (
-                                <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Filter by user type">
-                                    <button type="button" onClick={() => setTypeFilter('ALL')} className={chipCls(typeFilter === 'ALL')} aria-pressed={typeFilter === 'ALL'}>
-                                        All <span className="opacity-60 ml-1">{peopleCount}</span>
-                                    </button>
-                                    {typeOptions.map(([t, n]) => (
-                                        <button key={t} type="button" onClick={() => setTypeFilter(typeFilter === t ? 'ALL' : t)} className={chipCls(typeFilter === t)} aria-pressed={typeFilter === t}>
-                                            {getContactTypeLabel(t)} <span className="opacity-60 ml-1">{n}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
                         </div>
 
+                        <div className="flex-1 flex min-h-0">
+                        {/* Filter rail — hidden once a person is open so the split view has the width */}
+                        {!selectedContact && (
+                            <aside className="hidden lg:flex w-52 flex-shrink-0 flex-col border-r border-slate-100 bg-slate-50/50 p-3 overflow-y-auto" aria-label="Directory filters">
+                                {filterControls}
+                            </aside>
+                        )}
                         {/* Main Content Area */}
                         <div className="flex-1 overflow-auto table-responsive">
                             {/* Bulk Action Bar */}
@@ -731,6 +819,12 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                             </table>
                             </div>
                         </div>
+                        </div>
+
+                        {/* Filters as a sheet below lg */}
+                        <Drawer open={filterSheetOpen} onClose={() => setFilterSheetOpen(false)} title="Filters" width="md">
+                            <div className="p-4">{filterControls}</div>
+                        </Drawer>
 
                         {/* Handlers for Delete/Duplicate passed to DetailsTab */}
                         {/* Handlers implemented in component body */}
