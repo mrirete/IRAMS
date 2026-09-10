@@ -490,13 +490,19 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
 
     // One set of controls, rendered in the left rail (lg+) or a sheet (below lg).
     const railLabel = 'block mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400';
-    const railSelect = 'w-full text-sm border border-slate-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500';
+    const railSelect = 'w-full text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 truncate';
     const filterControls = (
         <div className="flex flex-col gap-5 text-sm">
             <div>
                 <label htmlFor="dir-org" className={railLabel}>Organization</label>
-                <select id="dir-org" value={unitFilter} onChange={e => setUnitFilter(e.target.value)} className={railSelect}>
-                    <option value="ALL">Whole organization ({people.length})</option>
+                <select
+                    id="dir-org"
+                    value={unitFilter}
+                    onChange={e => setUnitFilter(e.target.value)}
+                    className={railSelect}
+                    title={orgOptions.find(o => o.id === unitFilter)?.name || 'All units'}
+                >
+                    <option value="ALL">All units ({people.length})</option>
                     {orgOptions.map(o => (
                         <option key={o.id} value={o.id}>
                             {NBSP.repeat(o.depth * 2)}{o.depth > 0 ? '\u2514 ' : ''}{o.name} ({o.count})
@@ -512,7 +518,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             </div>
             <div>
                 <label htmlFor="dir-type" className={railLabel}>User type</label>
-                <select id="dir-type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className={railSelect}>
+                <select id="dir-type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className={railSelect} title={typeFilter === 'ALL' ? 'All types' : getContactTypeLabel(typeFilter)}>
                     <option value="ALL">All types ({people.length})</option>
                     {typeOptions.map(([t, n]) => <option key={t} value={t}>{getContactTypeLabel(t)} ({n})</option>)}
                 </select>
@@ -651,7 +657,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                 <button
                                     type="button"
                                     onClick={() => setFilterSheetOpen(true)}
-                                    className={`lg:hidden relative p-2 border rounded-lg transition ${activeFilterCount ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
+                                    className={`xl:hidden relative p-2 border rounded-lg transition ${activeFilterCount ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
                                     title="Filters"
                                     aria-label="Filters"
                                 >
@@ -683,7 +689,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                         <div className="flex-1 flex min-h-0">
                         {/* Filter rail — hidden once a person is open so the split view has the width */}
                         {!selectedContact && (
-                            <aside className="hidden lg:flex w-52 flex-shrink-0 flex-col border-r border-slate-100 bg-slate-50/50 p-3 overflow-y-auto" aria-label="Directory filters">
+                            <aside className="hidden xl:flex w-52 flex-shrink-0 flex-col border-r border-slate-100 bg-slate-50/50 p-3 overflow-y-auto" aria-label="Directory filters">
                                 {filterControls}
                             </aside>
                         )}
@@ -757,13 +763,12 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                 title="Select all"
                                             />
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Name / Code</th>
-                                        <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
+                                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Name / Code</th>
+                                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
                                         {!selectedContact && (
                                             <>
-                                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contact Info</th>
-                                                <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">System Access</th>
-                                                <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                                                <th className="px-3 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Access</th>
+                                                <th className="px-3 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider w-20">Status</th>
                                             </>
                                         )}
                                     </tr>
@@ -786,40 +791,39 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-primary-500 cursor-pointer"
                                                         />
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                    <td className="px-4 py-4 whitespace-nowrap">
                                                         <div className="flex items-center">
                                                             <div className={"flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center font-bold overflow-hidden " + (contact.flags?.isVirtual ? "bg-orange-100 text-orange-600" : "bg-slate-200 text-slate-500")}>
                                                                 {contact.image ? <StorageImage value={contact.image} alt="" className="h-full w-full object-cover" fallback={<>{contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?'}</>} /> : (contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?')}
                                                             </div>
-                                                            <div className="ml-4">
-                                                                <div className="text-sm font-medium text-slate-900">{contact.name}</div>
-                                                                <div className="text-xs text-slate-500">{contact.code}</div>
+                                                            <div className="ml-3 min-w-0">
+                                                                <div className="text-sm font-medium text-slate-900 truncate max-w-[210px]" title={contact.name}>{contact.name}</div>
+                                                                <div className="text-xs text-slate-500 truncate max-w-[210px]">{contact.code}</div>
+                                                                {contact.email && (
+                                                                    <div className="text-xs text-slate-400 truncate max-w-[210px]" title={contact.email}>{contact.email}</div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                                    <td className="px-4 py-4 whitespace-nowrap">
+                                                        <div className="flex flex-wrap gap-1 max-w-[170px]">
                                                             {contact.types.map(t => (
                                                                 <span key={t} className="px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-800 border border-slate-200">
                                                                     {getContactTypeLabel(t)}
                                                                 </span>
                                                             ))}
                                                         </div>
-                                                        <div className="text-xs text-slate-500 mt-1">{contact.title}</div>
+                                                        <div className="text-xs text-slate-500 mt-1 truncate max-w-[170px]">{contact.title}</div>
                                                     </td>
                                                     {!selectedContact && (
                                                         <>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                                <div className="text-sm text-slate-900 flex items-center gap-1"><Mail size={12} className="text-slate-400" /> {contact.email || '-'}</div>
-                                                                <div className="text-sm text-slate-500 flex items-center gap-1"><Phone size={12} className="text-slate-400" /> {contact.mobile || contact.phone || '-'}</div>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                                                            <td className="px-3 py-4 whitespace-nowrap text-center">
                                                                 {systemUser ? (
                                                                     <div className="flex flex-col items-center">
                                                                         <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200 gap-1 items-center">
                                                                             <UserIcon size={12} /> Yes
                                                                         </span>
-                                                                        <span className="text-[10px] text-slate-400 mt-1 font-mono">@{systemUser.username}</span>
+                                                                        <span className="text-[10px] text-slate-400 mt-1 font-mono truncate max-w-[90px]">@{systemUser.username}</span>
                                                                     </div>
                                                                 ) : (
                                                                     <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-400 border border-slate-200">
@@ -827,11 +831,11 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                                     </span>
                                                                 )}
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                                                            <td className="px-3 py-4 whitespace-nowrap text-center">
                                                                 {contact.active ? (
-                                                                    <span className="text-green-600 text-xs font-bold">Active</span>
+                                                                    <span className="text-slate-500 text-xs">Active</span>
                                                                 ) : (
-                                                                    <span className="text-red-500 text-xs font-bold">Inactive</span>
+                                                                    <span className="text-red-600 text-xs font-bold">Inactive</span>
                                                                 )}
                                                             </td>
                                                         </>
