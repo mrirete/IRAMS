@@ -410,7 +410,7 @@ export interface RCMFMEATableProps {
   onCodeModes?: () => void;
 }
 
-const COL_COUNT = 12;
+const COL_COUNT = 13;
 
 export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
   study, functions, failureModes, decisions, breakdown, aiLoading,
@@ -666,11 +666,12 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
               <colgroup>
                 <col style={{ width: 30 }} />
                 <col style={{ width: 38 }} />
-                <col style={{ width: '17%' }} />
-                <col style={{ width: '16%' }} />
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '13%' }} />
+                <col style={{ width: 150 }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '12%' }} />
                 <col style={{ width: 44 }} />
                 <col style={{ width: 44 }} />
                 <col style={{ width: 56 }} />
@@ -681,7 +682,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
               <thead>
                 {/* Band row — the FMEA column families */}
                 <tr>
-                  <th className={th} colSpan={2} />
+                  <th className={th} colSpan={3} />
                   <th className={`${th} !text-primary-600 !bg-primary-50/60`} colSpan={2}>Failure mode &amp; cause — Q3</th>
                   <th className={`${th} !text-amber-600 !bg-amber-50/60`} colSpan={3}>Failure effects — Q4</th>
                   <th className={`${th} !text-slate-600`} colSpan={3}>Risk (S × O)</th>
@@ -691,6 +692,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                 <tr>
                   <th className={th} />
                   <th className={th}>#</th>
+                  <th className={`${th} text-left`} title="ISO 14224 subunit / component / part from 0 · Equipment">Component</th>
                   <th className={`${th} text-left`}>Failure Mode</th>
                   <th className={`${th} text-left`}>Cause</th>
                   <th className={`${th} text-left`}>Local</th>
@@ -850,29 +852,11 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                 {idx + 1}
                               </span>
                             </td>
-                            <td className={td}>
-                              <GridCell
-                                label="Failure mode" col="mode"
-                                value={fm.failure_mode_description}
-                                placeholder="What failed? e.g. Shaft seal leaking"
-                                onCommit={v => onUpdateFailureMode(fm.id, { failure_mode_description: v })}
-                              />
-                              {/* Pin to the register's breakdown (0318): which subunit/component or BOM part this mode is about.
-                                  Pinned → the chip-styled picker. Unpinned → a quiet link until clicked. */}
-                              {hasBreakdown && !fm.component_asset_id && !fm.bom_item_id && !fm.study_item_id && !pinEditing.has(fm.id) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPinEditing(prev => new Set(prev).add(fm.id))}
-                                  title="Whole asset — click to pin this failure mode to a component or BOM part"
-                                  className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-primary-600 transition-colors"
-                                >
-                                  <MapPin size={10} /> Pin to component
-                                </button>
-                              )}
-                              {hasBreakdown && (fm.component_asset_id || fm.bom_item_id || fm.study_item_id || pinEditing.has(fm.id)) && (
+                            {/* 0353: the equipment item — always visible; the Specialist, the spares and the PM read it */}
+                            <td className={`${td} min-w-[11rem] max-w-[14rem]`}>
+                              {hasBreakdown ? (
                                 <select
-                                  autoFocus={pinEditing.has(fm.id)}
-                                  value={(() => { const c = breakdown.components.find(x => modeOnComponent(fm, x)); if (c) return `c:${c.id}`; const p = breakdown.parts.find(x => modeOnPart(fm, x)); return p ? `p:${p.id}` : ''; })()}
+                                                                    value={(() => { const c = breakdown.components.find(x => modeOnComponent(fm, x)); if (c) return `c:${c.id}`; const p = breakdown.parts.find(x => modeOnPart(fm, x)); return p ? `p:${p.id}` : ''; })()}
                                   onChange={e => {
                                     const v = e.target.value;
                                     setPinEditing(prev => { const n = new Set(prev); n.delete(fm.id); return n; });
@@ -885,12 +869,12 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                     });
                                   }}
                                   onBlur={() => setPinEditing(prev => { if (!prev.has(fm.id)) return prev; const n = new Set(prev); n.delete(fm.id); return n; })}
-                                  title="Which component or part this failure mode belongs to"
-                                  className={`mt-0.5 w-full text-[10px] rounded border px-1 py-0.5 bg-white truncate ${
+                                  title="Which equipment item (subunit / component / part) this failure mode belongs to — drives the Specialist's strategy, the spares and the PM"
+                                  className={`w-full text-[10px] rounded border px-1 py-1 bg-white truncate ${
                                     fm.component_asset_id || fm.bom_item_id || fm.study_item_id ? 'border-primary-200 text-primary-700' : 'border-primary-300 text-slate-600'
                                   }`}
                                 >
-                                  <option value="">Whole asset — no component</option>
+                                  <option value="">Whole asset</option>
                                   {breakdown.components.length > 0 && (
                                     <optgroup label="Components">
                                       {breakdown.components.map(c => (
@@ -906,8 +890,17 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                     </optgroup>
                                   )}
                                 </select>
+                              ) : (
+                                <span className="block px-1 py-1 text-[10px] text-slate-300" title="List the equipment on 0 · Equipment to pin modes to it">—</span>
                               )}
-                              {/* 0325: a pin inferred from the wording stays flagged until a person confirms or changes it */}
+                            </td>
+                            <td className={td}>
+                              <GridCell
+                                label="Failure mode" col="mode"
+                                value={fm.failure_mode_description}
+                                placeholder="What failed? e.g. Shaft seal leaking"
+                                onCommit={v => onUpdateFailureMode(fm.id, { failure_mode_description: v })}
+                              />
                               {hasBreakdown && fm.component_link_source === 'text' && (fm.component_asset_id || fm.bom_item_id || fm.study_item_id) && (
                                 <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-amber-700">
                                   <span title="Pinned by matching the failure-mode text to a registered component — not yet confirmed">from text</span>

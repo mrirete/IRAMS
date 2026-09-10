@@ -1287,15 +1287,40 @@ class RCMServiceImpl {
     return !reality.hasLiveFeed;
   }
 
+  /**
+   * 0353: what the PM carries about the item the failure mode is pinned to.
+   * subunit = the pinned item's nearest subunit ancestor (or the item itself
+   * when it has no parent); object part = the pinned component or part; the
+   * failure-mode code from the worksheet.
+   */
+  private async itemContextFor(studyId: string, d: RCMDecision): Promise<{ failureModeCode: string | null; subunitCode: string | null; objectPart: string | null; label: string | null }> {
+    const { data: fm } = await supabase.from('ers_rcm_failure_modes').select('failure_mode_code, study_item_id').eq('id', d.failure_mode_id).maybeSingle();
+    const row = fm as { failure_mode_code?: string | null; study_item_id?: string | null } | null;
+    const out = { failureModeCode: row?.failure_mode_code || null, subunitCode: null as string | null, objectPart: null as string | null, label: null as string | null };
+    if (!row?.study_item_id) return out;
+    const items = await this.getStudyItems(studyId);
+    const byId = new Map(items.map(i => [i.id, i]));
+    const item = byId.get(row.study_item_id);
+    if (!item) return out;
+    const nameOf = (i: RCMStudyItem) => i.tag || i.name;
+    out.objectPart = nameOf(item).slice(0, 80);
+    let top: RCMStudyItem = item; const seen = new Set<string>([item.id]);
+    while (top.parent_item_id && byId.has(top.parent_item_id) && !seen.has(top.parent_item_id)) { seen.add(top.parent_item_id); top = byId.get(top.parent_item_id)!; }
+    out.subunitCode = nameOf(top).slice(0, 80);
+    out.label = item.tag ? `${item.tag} — ${item.name}` : item.name;
+    return out;
+  }
+
   private async insertPMForDecision(
     study: RCMStudy, d: RCMDecision, failureModeDescription: string,
   ): Promise<{ ok: true; pmCode: string; meterCadence: boolean; packageLabel: string | null } | { ok: false; reason: string }> {
-    const [jobPlan, spares] = await Promise.all([
+    const [jobPlan, spares, item] = await Promise.all([
       this.resolveJobPlan(d.task_library_item_id),
       this.matchSpares(d.spares_requirements),
+      this.itemContextFor(study.id, d),
     ]);
     const readByPerson = await this.readByPersonFor(study, d);
-    const built = buildPMFromDecision(study, d, failureModeDescription, { jobPlan, spares, readByPerson });
+    const built = buildPMFromDecision(study, d, failureModeDescription, { jobPlan, spares, readByPerson, item });
     if (!built.ok) return built;
     let row: Record<string, unknown>;
     try {
@@ -1815,10 +1840,10 @@ Rules: 4-8 subunits, 2-6 components each, name what a maintenance technician wou
     if (!d.recurring_work_id) return { ok: false, reason: 'this decision has no PM to sync — create it first' };
     const fms = await this.getFailureModesByStudy(studyId);
     const name = fms.find(x => x.id === d.failure_mode_id)?.failure_mode_description || 'Failure mode';
-    const [jobPlan, spares] = await Promise.all([this.resolveJobPlan(d.task_library_item_id), this.matchSpares(d.spares_requirements)]);
+    const [jobPlan, spares, item] = await Promise.all([this.resolveJobPlan(d.task_library_item_id), this.matchSpares(d.spares_requirements), this.itemContextFor(studyId, d)]);
     // The builder refuses an already-generated decision; we are regenerating on purpose.
     const readByPerson = await this.readByPersonFor(study, d);
-    const built = buildPMFromDecision(study, { ...d, recurring_work_id: null }, name, { jobPlan, spares, readByPerson });
+    const built = buildPMFromDecision(study, { ...d, recurring_work_id: null }, name, { jobPlan, spares, readByPerson, item });
     if (!built.ok) return built;
     let row: Record<string, unknown>;
     try { row = buildPMStrategy(built.input); } catch (e) { return { ok: false, reason: e instanceof Error ? e.message : String(e) }; }
@@ -1828,6 +1853,7 @@ Rules: 4-8 subunits, 2-6 components each, name what a maintenance technician wou
       title: row.title, description: row.description, schedule_type: row.schedule_type,
       frequency_interval: row.frequency_interval, frequency_unit: row.frequency_unit,
       priority_code: row.priority_code, est_duration: row.est_duration, templates: row.templates ?? null,
+      failure_mode_code: row.failure_mode_code ?? null, subunit_code: row.subunit_code ?? null, object_part: row.object_part ?? null,
       origin, updated_at: new Date().toISOString(),
     };
     // Keep a due date the scheduler already set; only fill one in when there is none.
@@ -2005,16 +2031,24 @@ Return ONLY valid JSON with this structure:
    */
   async aiRecommendStrategy(
     failureMode: RCMFailureMode,
-    opts: { study?: RCMStudy; consequenceCode?: string; isHidden?: boolean; functionDescription?: string } = {},
+    opts: {
+      study?: RCMStudy; consequenceCode?: string; isHidden?: boolean; functionDescription?: string;
+      /** 0353: the equipment item the mode is pinned to — a critical item and a named part change the JA1012 answer. */
+      item?: { name: string; kind: string; critical: boolean; parts: string[]; replacementIntervalDays?: number | null } | null;
+    } = {},
   ): Promise<AIRecommendation | null> {
     if (!isAIAvailable()) return null;
 
     const assetCtx = opts.study ? await this.assetContextFor(opts.study) : '';
     const monitoring = opts.study?.asset_id ? await this.monitoringRealityFor(opts.study.asset_id) : '';
+    const itemLine = opts.item
+      ? `Equipment item: ${opts.item.name} (${opts.item.kind}${opts.item.critical ? ', CRITICAL to the function' : ''})${opts.item.parts.length ? ` — spare parts on record: ${opts.item.parts.slice(0, 6).join('; ')}` : ' — no spare part on record'}${opts.item.replacementIntervalDays ? ` — replacement interval on record: ${opts.item.replacementIntervalDays} days` : ''}`
+      : 'Equipment item: not pinned (whole asset)';
     const prompt = `Recommend the maintenance strategy for this failure mode using the SAE JA1012 decision logic.
 ${assetCtx ? `\n${assetCtx}\n` : ''}${monitoring ? `\n${monitoring}\n` : ''}${opts.study?.operating_context ? `Operating context: ${opts.study.operating_context}\n` : ''}
 Function: ${opts.functionDescription || 'Not specified'}
 Failure Mode: ${failureMode.failure_mode_description}
+${itemLine}
 Cause: ${failureMode.failure_cause_description || 'Not specified'}
 Local Effect: ${failureMode.failure_effect_local || 'Not specified'}
 System Effect: ${failureMode.failure_effect_system || 'Not specified'}
@@ -2037,7 +2071,7 @@ Walk the decision logic (technically feasible? worth doing? on-condition -> sche
   "confidence": 0.85,
   "suggested_technology": "for PM_CONDITION: how the condition is read - visual/manual inspection, vibration, thermography, oil analysis, ultrasound, online sensor; else empty"
 }
-Rules: pick exactly ONE strategy (there is no combined option - if two tasks are needed, recommend the one that controls the dominant failure mechanism and mention the other in justification). PM_CONDITION covers every on-condition task, inspected by a person or monitored by a sensor - say which in suggested_technology; there is no separate predictive strategy. suggested_technology must match the monitoring actually in place: when the asset has NO live sensor feed, name the method a person performs on a round (visual inspection, handheld vibration meter, oil sample to the lab, gauge reading, thermography) and only add 'online sensor' as a future step; write the task so a technician can do it with what exists today. interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value and task_type to null and describe the default action in task_description.`;
+Rules: pick exactly ONE strategy (there is no combined option - if two tasks are needed, recommend the one that controls the dominant failure mechanism and mention the other in justification). The equipment item matters: a CRITICAL item with a safety or operational consequence is never run-to-failure; a named spare part with a replacement interval makes scheduled discard/restoration feasible; no spare on record weighs toward on-condition or a redesign of the sparing. PM_CONDITION covers every on-condition task, inspected by a person or monitored by a sensor - say which in suggested_technology; there is no separate predictive strategy. suggested_technology must match the monitoring actually in place: when the asset has NO live sensor feed, name the method a person performs on a round (visual inspection, handheld vibration meter, oil sample to the lab, gauge reading, thermography) and only add 'online sensor' as a future step; write the task so a technician can do it with what exists today. interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value and task_type to null and describe the default action in task_description.`;
 
     try {
       const raw = await callRCMGemini(prompt, 0.2);

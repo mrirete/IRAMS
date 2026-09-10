@@ -5537,7 +5537,7 @@ export class DatabaseService {
 
         // 2b. Seed wo_failure_data with failure context from PM template (ISO 14224 §B.2.5)
         //     Carries: failure_mode_code (the mode this PM prevents), local_impact, plant_wide_impact
-        if (pm.failure_mode_code || pm.local_impact || pm.plant_wide_impact) {
+        if (pm.failure_mode_code || pm.local_impact || pm.plant_wide_impact || pm.subunit_code || pm.object_part) {
             const failureSeed: any = {
                 wo_id: woId,
                 failure_mode_code: pm.failure_mode_code || '',
@@ -5545,6 +5545,9 @@ export class DatabaseService {
                 remedy_code: '',
                 local_impact: pm.local_impact || null,
                 plant_wide_impact: pm.plant_wide_impact || null,
+                // 0353: the equipment item the PM addresses, so the work codes back to it
+                subunit_code: pm.subunit_code || null,
+                object_part: pm.object_part || null,
                 comments: pm.failure_mode_code ? `Failure mode "${pm.failure_mode_code}" inherited from PM strategy.` : null,
             };
             const { error: fdErr } = await supabase.from('wo_failure_data').insert(failureSeed);

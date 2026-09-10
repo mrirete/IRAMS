@@ -347,6 +347,12 @@ export function buildPMFromDecision(
      * sensor-served condition tasks as READING schedules.
      */
     readByPerson?: boolean;
+    /**
+     * 0353: the equipment item the failure mode is pinned to, and its ISO 14224
+     * code — carried on the PM and seeded onto every work order it generates,
+     * so completed work codes back to the same item.
+     */
+    item?: { failureModeCode?: string | null; subunitCode?: string | null; objectPart?: string | null; label?: string | null } | null;
   } = {},
 ): PMBuildResult {
   const now = opts.now ?? new Date();
@@ -383,7 +389,7 @@ export function buildPMFromDecision(
   const taskType = isTaskTypeCode(d.task_type_code) ? TASK_TYPE_LABELS[d.task_type_code].label : null;
   const brief = briefJustification(d.justification);
   const description = [
-    `RCM study "${study.title}"${study.revision ? ` rev ${study.revision}` : ''} · Failure mode: ${failureModeDescription}`,
+    `RCM study "${study.title}"${study.revision ? ` rev ${study.revision}` : ''} · Failure mode: ${failureModeDescription}${opts.item?.label ? ` · Item: ${opts.item.label}` : ''}`,
     `Strategy: ${d.recommended_strategy_code}${taskType ? ` (${taskType})` : ''} · Consequence: ${consequence}${d.task_owner_craft ? ` · Craft: ${d.task_owner_craft}` : ''}`,
     brief ? `\n${brief}` : '',
   ].join('\n').trim();
@@ -439,6 +445,9 @@ export function buildPMFromDecision(
       estDuration: est,
       templates: { tasks, labor, inventory, jsa: null },
       ...(nextDue ? { nextDueDate: nextDue } : {}),
+      failureModeCode: opts.item?.failureModeCode ?? null,
+      subunitCode: opts.item?.subunitCode ?? null,
+      objectPart: opts.item?.objectPart ?? null,
       origin: {
         source: 'rcm',
         study_id: study.id,

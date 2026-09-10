@@ -33,6 +33,10 @@ export interface PMStrategyInput {
     /** 0299: structured provenance — why this PM exists (e.g. {source:'weibull_analysis',
      *  beta, eta_hours, r2, ...}). Display/audit only; generation never reads it. */
     origin?: Record<string, unknown>;
+    /** 0353: the ISO 14224 failure mode this PM prevents, and the item it addresses — seeded onto every generated work order. */
+    failureModeCode?: string | null;
+    subunitCode?: string | null;
+    objectPart?: string | null;
 }
 
 function generatePmCode(): string {
@@ -79,5 +83,8 @@ export function buildPMStrategy(i: PMStrategyInput): Record<string, unknown> {
     if (i.templates !== undefined) row.templates = i.templates;
     if (i.strategyId) { row.strategy_id = i.strategyId; row.strategy_package = i.strategyPackage || null; }
     if (i.origin) row.origin = i.origin;
+    if (i.failureModeCode !== undefined) row.failure_mode_code = i.failureModeCode || null;
+    if (i.subunitCode !== undefined) row.subunit_code = i.subunitCode || null;
+    if (i.objectPart !== undefined) row.object_part = i.objectPart || null;
     return row;
 }

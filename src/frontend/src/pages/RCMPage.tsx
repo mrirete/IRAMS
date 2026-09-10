@@ -53,7 +53,7 @@ import { matchFailureCode, acceptFailureCode, type FailureCodeLike } from '../li
 import type { RCMStudyTemplate } from '../eam/services/RCMService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
-import { matchComponent, matchPart, pinFailureMode, inferComponentLink, linkFor, breakdownFromItems, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
+import { matchComponent, matchPart, pinFailureMode, inferComponentLink, linkFor, breakdownFromItems, modeOnComponent, modeOnPart, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'items' | 'functions' | 'decisions' | 'tasks' | 'evidence';
@@ -1076,11 +1076,22 @@ export const RCMPage: React.FC = () => {
     if (!gate.ok) { showToast(gate.reason, 'error'); return; }
     setAiLoading(`recommend-${fm.id}`);
     const fn = functions.find(f => f.id === fm.function_id);
+    // 0353: the pinned item — critical flag and parts under it — shapes the JA1012 answer.
+    const comp = breakdown.components.find(c => modeOnComponent(fm, c));
+    const part = comp ? null : breakdown.parts.find(p => modeOnPart(fm, p));
+    const under = comp ? studyItems.filter(i => i.kind === 'part' && (i.parent_item_id === comp.id)) : [];
+    const pinnedItem = comp ? studyItems.find(i => i.id === comp.id) : part ? studyItems.find(i => i.id === part.id) : undefined;
+    const item = comp
+      ? { name: comp.tag ? `${comp.tag} — ${comp.name}` : comp.name, kind: String(comp.level || 'component').toLowerCase(), critical: !!pinnedItem?.critical || comp.criticality === 'A', parts: under.map(p => p.tag ? `${p.tag} ${p.name}` : p.name), replacementIntervalDays: pinnedItem?.replacement_interval_days ?? null }
+      : part
+        ? { name: part.partNumber ? `${part.partNumber} — ${part.description}` : part.description, kind: 'part', critical: part.critical, parts: [part.partNumber ? `${part.partNumber} ${part.description}` : part.description], replacementIntervalDays: part.replacementIntervalDays ?? null }
+        : null;
     const rec = await rcmService.aiRecommendStrategy(fm, {
       study: selectedStudy,
       consequenceCode: decision?.consequence_code || undefined,
       isHidden: !!decision?.is_hidden_failure,
       functionDescription: fn?.function_description,
+      item,
     });
     setAiLoading(null);
     if (!rec) {
