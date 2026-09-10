@@ -11,7 +11,7 @@ import {
     UserPlus, Upload, Lock, Unlock
 } from 'lucide-react';
 import { MOCK_USERS, MOCK_WORK_ORDERS } from '../constants';
-import { Contact, Qualification, CustomField, WorkOrder, DictionaryEntry, User } from '../types';
+import { Contact, Qualification, CustomField, WorkOrder, DictionaryEntry, User, OrganizationUnit } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
 import { emptyResult, tally, errMessage } from '../services/importTypes';
 import { AskRelanternButton } from '../components/AskRelanternButton';
@@ -47,7 +47,11 @@ import type { ImportType } from '../services/assetTemplates';
 
 // UserAccountsManager removed - fused into main Contacts view
 
-type DirectoryView = 'all' | 'login' | 'nologin' | 'system' | 'inactive';
+/** Indents a <select> option; a plain space collapses in an option label. */
+const NBSP = '\u00A0';
+
+/** The directory lists people; vendors and manufacturers have their own page. */
+const isPerson = (c: Contact) => !Array.isArray(c.types) || !c.types.some(t => ['VENDOR', 'MANUFACTURER', 'SUPPLIER'].includes(t));
 
 export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const { permissions } = useAuth();
@@ -59,6 +63,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [dictionaries, setDictionaries] = useState<DictionaryEntry[]>([]);
     const [users, setUsers] = useState<User[]>([]);
+    const [orgUnits, setOrgUnits] = useState<OrganizationUnit[]>([]);
     const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [viewMode, setViewMode] = useState<'directory' | 'orgChart'>('directory');
@@ -68,10 +73,8 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('ALL'); // CONTACT_TYPE code, or ALL
-    const [viewFilter, setViewFilter] = useState<DirectoryView>('all');
-    const [deptFilter, setDeptFilter] = useState<string>('ALL');
+    const [unitFilter, setUnitFilter] = useState<string>('ALL'); // org unit id, ALL, or NONE
     const [filterSheetOpen, setFilterSheetOpen] = useState(false); // below lg the rail is a sheet
-    const [showFilters, setShowFilters] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; contactId: string | null; contactName: string }>({
         isOpen: false,
         contactId: null,
@@ -102,14 +105,16 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
         setLoading(true);
         try {
             const db = DatabaseService.getInstance();
-            const [contactData, dictData, userData] = await Promise.all([
+            const [contactData, dictData, userData, unitData] = await Promise.all([
                 db.getContacts(),
                 db.getDictionaries(),
-                db.getUsers()
+                db.getUsers(),
+                db.getOrgUnits()
             ]);
             setContacts(contactData || []);
             setDictionaries(dictData || []);
             setUsers(userData as any || []);
+            setOrgUnits(unitData || []);
 
             // Auto-select contact from URL ?id= param (e.g. from TopBar "My Profile")
             const targetId = searchParams.get('id');
@@ -405,96 +410,115 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     };
 
     // --- Filtered list for rendering ---
-    const isPerson = (c: Contact) => !Array.isArray(c.types) || !c.types.some(t => ['VENDOR', 'MANUFACTURER', 'SUPPLIER'].includes(t));
-    const people = mergedContacts.filter(isPerson);
+    const people = React.useMemo(() => mergedContacts.filter(isPerson), [mergedContacts]);
 
-    // Views: the access questions an admin asks of this page. Counted over the
-    // whole directory so the numbers stay stable while you narrow.
-    const viewMatch = (c: Contact, v: DirectoryView): boolean => {
-        const li = loginInfo(c);
-        switch (v) {
-            case 'login': return li.hasLogin;
-            case 'nologin': return !li.hasLogin;
-            case 'system': return !!c.flags?.isVirtual;
-            case 'inactive': return !c.active || (li.hasLogin && !li.active);
-            default: return true;
-        }
-    };
-    const views: { key: DirectoryView; label: string; count: number }[] = [
-        { key: 'all', label: 'All people', count: people.length },
-        { key: 'login', label: 'Has login', count: people.filter(c => viewMatch(c, 'login')).length },
-        { key: 'nologin', label: 'No login', count: people.filter(c => viewMatch(c, 'nologin')).length },
-        { key: 'system', label: 'System accounts', count: people.filter(c => viewMatch(c, 'system')).length },
-        { key: 'inactive', label: 'Disabled or inactive', count: people.filter(c => viewMatch(c, 'inactive')).length },
-    ];
-
-    // Dropdown options, most common first.
+    // Type dropdown options, most common first.
     const typeOptions = React.useMemo(() => {
         const counts = new Map<string, number>();
         people.forEach(c => (c.types || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
         return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    }, [mergedContacts]);
-    const deptOptions = React.useMemo(() => {
-        const counts = new Map<string, number>();
-        people.forEach(c => { const d = (c.department || '').trim(); if (d) counts.set(d, (counts.get(d) || 0) + 1); });
-        return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    }, [mergedContacts]);
+    }, [people]);
+
+    // ── Organization structure ──────────────────────────────────────────────
+    // The org tree is SITE › DIVISION › DEPARTMENT › SECTION › TEAM, and people
+    // are attached at any level. Picking a unit therefore has to include the
+    // units beneath it: someone in the Utilities section IS in Operations and
+    // IS on the site, and a filter that showed only direct members would report
+    // an empty department whose sections are full.
+    const orgOptions = React.useMemo(() => {
+        const children = new Map<string | null, OrganizationUnit[]>();
+        orgUnits.forEach(u => {
+            const key = u.parentId ?? null;
+            if (!children.has(key)) children.set(key, []);
+            children.get(key)!.push(u);
+        });
+        children.forEach(list => list.sort((a, b) => a.name.localeCompare(b.name)));
+
+        // Depth-first so the list reads as the chart does, top down.
+        const rows: { unit: OrganizationUnit; depth: number; subtree: Set<string> }[] = [];
+        const walk = (parent: string | null, depth: number): string[] => {
+            const ids: string[] = [];
+            for (const unit of (children.get(parent) || [])) {
+                const row = { unit, depth, subtree: new Set<string>([unit.id]) };
+                rows.push(row);
+                walk(unit.id, depth + 1).forEach(id => row.subtree.add(id));
+                ids.push(unit.id, ...Array.from(row.subtree));
+            }
+            return ids;
+        };
+        walk(null, 0);
+
+        // A unit whose parent row is gone would never be walked, and every person in
+        // it would silently drop out of the picker. Surface those at the top level.
+        const seen = new Set(rows.map(r => r.unit.id));
+        orgUnits.filter(u => !seen.has(u.id)).forEach(unit => {
+            const row = { unit, depth: 0, subtree: new Set([unit.id]) };
+            rows.push(row);
+            walk(unit.id, 1).forEach(id => row.subtree.add(id));
+        });
+
+        return rows.map(r => ({
+            id: r.unit.id,
+            depth: r.depth,
+            name: r.unit.name,
+            count: people.filter(c => (c.organizationUnitIds || []).some(id => r.subtree.has(id))).length,
+            subtree: r.subtree,
+        }));
+    }, [orgUnits, people]);
+
+    const unassignedCount = people.filter(c => !(c.organizationUnitIds || []).length).length;
+    const unitMatch = (c: Contact): boolean => {
+        if (unitFilter === 'ALL') return true;
+        const ids = c.organizationUnitIds || [];
+        if (unitFilter === 'NONE') return ids.length === 0;
+        const opt = orgOptions.find(o => o.id === unitFilter);
+        return !!opt && ids.some(id => opt.subtree.has(id));
+    };
 
     const filteredContacts = people
         .filter(c =>
             (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 c.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (Array.isArray(c.types) && c.types.some(t => t.toLowerCase().includes(searchTerm.toLowerCase())))) &&
-            viewMatch(c, viewFilter) &&
             (typeFilter === 'ALL' || (Array.isArray(c.types) && c.types.includes(typeFilter))) &&
-            (deptFilter === 'ALL' || (c.department || '').trim() === deptFilter)
+            unitMatch(c)
         )
         .sort((a, b) => a.name.localeCompare(b.name));
 
-    const activeFilterCount = (viewFilter !== 'all' ? 1 : 0) + (typeFilter !== 'ALL' ? 1 : 0) + (deptFilter !== 'ALL' ? 1 : 0);
-    const clearFilters = () => { setViewFilter('all'); setTypeFilter('ALL'); setDeptFilter('ALL'); };
+    const activeFilterCount = (typeFilter !== 'ALL' ? 1 : 0) + (unitFilter !== 'ALL' ? 1 : 0);
+    const clearFilters = () => { setTypeFilter('ALL'); setUnitFilter('ALL'); };
 
     // One set of controls, rendered in the left rail (lg+) or a sheet (below lg).
-    const railLabel = 'block px-2 mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400';
+    const railLabel = 'block mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400';
     const railSelect = 'w-full text-sm border border-slate-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500';
     const filterControls = (
         <div className="flex flex-col gap-5 text-sm">
             <div>
-                <div className={railLabel}>Views</div>
-                <ul className="flex flex-col gap-0.5">
-                    {views.map(v => (
-                        <li key={v.key}>
-                            <button
-                                type="button"
-                                onClick={() => setViewFilter(v.key)}
-                                aria-pressed={viewFilter === v.key}
-                                className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left transition ${viewFilter === v.key ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100'}`}
-                            >
-                                <span>{v.label}</span>
-                                <span className="text-xs tabular-nums opacity-60">{v.count}</span>
-                            </button>
-                        </li>
+                <label htmlFor="dir-org" className={railLabel}>Organization</label>
+                <select id="dir-org" value={unitFilter} onChange={e => setUnitFilter(e.target.value)} className={railSelect}>
+                    <option value="ALL">Whole organization ({people.length})</option>
+                    {orgOptions.map(o => (
+                        <option key={o.id} value={o.id}>
+                            {NBSP.repeat(o.depth * 2)}{o.depth > 0 ? '\u2514 ' : ''}{o.name} ({o.count})
+                        </option>
                     ))}
-                </ul>
+                    {unassignedCount > 0 && <option value="NONE">Not in the chart ({unassignedCount})</option>}
+                </select>
+                {orgOptions.length === 0 && (
+                    <p className="mt-1.5 text-xs text-slate-400 leading-snug">
+                        Build the structure on the Organization Chart tab, then people can be filtered by it.
+                    </p>
+                )}
             </div>
-            <div className="px-2">
-                <label htmlFor="dir-type" className={railLabel + ' px-0'}>User type</label>
+            <div>
+                <label htmlFor="dir-type" className={railLabel}>User type</label>
                 <select id="dir-type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className={railSelect}>
                     <option value="ALL">All types ({people.length})</option>
                     {typeOptions.map(([t, n]) => <option key={t} value={t}>{getContactTypeLabel(t)} ({n})</option>)}
                 </select>
             </div>
-            {deptOptions.length > 0 && (
-                <div className="px-2">
-                    <label htmlFor="dir-dept" className={railLabel + ' px-0'}>Department</label>
-                    <select id="dir-dept" value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className={railSelect}>
-                        <option value="ALL">All departments</option>
-                        {deptOptions.map(([d, n]) => <option key={d} value={d}>{d} ({n})</option>)}
-                    </select>
-                </div>
-            )}
             {activeFilterCount > 0 && (
-                <button type="button" onClick={clearFilters} className="px-2 text-xs font-medium text-blue-600 hover:underline text-left">
+                <button type="button" onClick={clearFilters} className="text-xs font-medium text-blue-600 hover:underline text-left">
                     Clear filters
                 </button>
             )}
