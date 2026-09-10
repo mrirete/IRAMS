@@ -87,6 +87,11 @@ export interface RCAInvestigation {
     asset_id: string | null; // nullable since 0117 — an RCA may start before an asset is linked
     /** The asset as typed when it is not in the register (0327). Set only when asset_id is null. */
     asset_ref: string | null;
+    /** 0355 — the failed equipment item: links (when registered / on an RCM study) and the label a person reads. */
+    study_item_id?: string | null;
+    component_asset_id?: string | null;
+    bom_item_id?: string | null;
+    item_label?: string | null;
     title: string;
     /** The committed analysis method. One investigation, one method, one editor. */
     method: RCAMethod | null;
@@ -358,6 +363,11 @@ export interface RCACorrectiveAction {
     cause_node_id: string | null;
     cause_category: 'physical' | 'human' | 'latent' | null;
     action_description: string;
+    /** 0355 — the failed equipment item: links (when registered / on an RCM study) and the label a person reads. */
+    study_item_id?: string | null;
+    component_asset_id?: string | null;
+    bom_item_id?: string | null;
+    item_label?: string | null;
     action_type: 'immediate' | 'short_term' | 'long_term';
     assigned_to: string | null;
     due_date: string | null;
@@ -515,6 +525,11 @@ export interface DETask {
     id: string;
     asset_id: string | null;
     asset_name: string;
+    /** 0355 — the failed equipment item: links (when registered / on an RCM study) and the label a person reads. */
+    study_item_id?: string | null;
+    component_asset_id?: string | null;
+    bom_item_id?: string | null;
+    item_label?: string | null;
     title: string;
     status: 'identified' | 'in_progress' | 'resolved' | 'verified';
     priority: 'critical' | 'high' | 'medium' | 'low';

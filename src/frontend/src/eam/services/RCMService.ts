@@ -357,6 +357,31 @@ export interface RCMStudyTemplate {
   company_id: string | null;
 }
 
+/** 0355 — one pickable equipment item of an asset, from the register, its BOM or an RCM study, with the links a record stores. */
+export interface EquipmentItemOption {
+  id: string;
+  label: string;
+  kind: 'subunit' | 'component' | 'part';
+  source: 'register' | 'bom' | 'study';
+  study_item_id: string | null;
+  component_asset_id: string | null;
+  bom_item_id: string | null;
+  depth: number;
+  study_title?: string;
+}
+/** 0355 — equipment_item_history(): what the platform holds about one item. */
+export interface EquipmentItemHistory {
+  keys: string[];
+  months: number;
+  asset_cm_count: number;
+  item_cm_count: number;
+  work_orders: Array<{ id: string; wo_number: string | null; title: string; type: string | null; status: string | null; created_at: string; failure_mode_code: string | null; subunit_code: string | null; object_part: string | null }>;
+  rcas: Array<{ id: string; title: string; status: string; method: string | null; root_cause_summary: string | null; created_at: string; closed_at: string | null }>;
+  de_tasks: Array<{ id: string; title: string; status: string; priority: string | null; annual_cost: number | null; created_at: string }>;
+  rcm_modes: Array<{ study_id: string; study_title: string; study_status: string; failure_mode_id: string; failure_mode: string; failure_mode_code: string | null; strategy: string | null; task: string | null; interval: string | null; consequence: string | null; recurring_work_id: string | null; reading_definition_id: string | null }>;
+  points: Array<{ id: string; name: string; unit: string | null; last_value: number | null; last_at: string | null; is_alarm: boolean | null; max_warning: number | null; max_critical: number | null }>;
+}
+
 /** 0337 — what the asset did after approval that the study did not foresee. Raised by the daily sweep, cleared by Revise. */
 export interface RCMEvidenceFlag {
   id: string;
@@ -1657,6 +1682,54 @@ Rules: 4-8 subunits, 2-6 components each, name what a maintenance technician wou
     const { data, error } = await q.order('code');
     if (error) { console.warn('[RCM] failureCodesFor:', error.message); return []; }
     return ((data || []) as FailureCodeLike[]).filter(c => c.code);
+  }
+
+  // ─── 0355: the equipment item across RCA / DE / RCM ─────────────────────
+
+  /**
+   * Every item an asset is known to have, as one pickable list: register
+   * children and BOM lines, plus the items of the asset's RCM studies (latest
+   * approved first). Each option carries the same three links a failure mode
+   * stores, so an RCA, a DE task and an RCM mode can point at the same thing.
+   */
+  async listEquipmentItems(assetId: string | null | undefined): Promise<EquipmentItemOption[]> {
+    if (!assetId || !UUID_RE.test(assetId)) return [];
+    const [reg, studies] = await Promise.all([this.getAssetBreakdown(assetId), this.getStudiesForAsset(assetId)]);
+    const out: EquipmentItemOption[] = [];
+    const seenAsset = new Set<string>(), seenBom = new Set<string>(), seenName = new Set<string>();
+    const key = (kind: string, name: string) => `${kind}|${name.trim().toLowerCase()}`;
+    for (const c of reg.components) {
+      seenAsset.add(c.id); seenName.add(key(c.level === 'SUBUNIT' ? 'subunit' : 'component', c.name));
+      out.push({ id: `a:${c.id}`, label: `${c.tag} — ${c.name}`, kind: String(c.level || '').toUpperCase() === 'SUBUNIT' ? 'subunit' : 'component', source: 'register', component_asset_id: c.id, bom_item_id: null, study_item_id: null, depth: c.depth });
+    }
+    for (const p of reg.parts) {
+      seenBom.add(p.id); seenName.add(key('part', p.description));
+      out.push({ id: `b:${p.id}`, label: `${p.partNumber ? `${p.partNumber} — ` : ''}${p.description}`, kind: 'part', source: 'bom', component_asset_id: null, bom_item_id: p.id, study_item_id: null, depth: 1 });
+    }
+    const ranked = [...studies].sort((a, b) => (a.status === 'approved' ? 0 : 1) - (b.status === 'approved' ? 0 : 1) || String(b.updated_at).localeCompare(String(a.updated_at)));
+    for (const st of ranked) {
+      const items = await this.getStudyItems(st.id);
+      for (const i of items) {
+        // a register-backed item is already listed by its register row — attach the study item id to it
+        if (i.asset_id && seenAsset.has(i.asset_id)) { const o = out.find(x => x.component_asset_id === i.asset_id); if (o && !o.study_item_id) o.study_item_id = i.id; continue; }
+        if (i.bom_item_id && seenBom.has(i.bom_item_id)) { const o = out.find(x => x.bom_item_id === i.bom_item_id); if (o && !o.study_item_id) o.study_item_id = i.id; continue; }
+        if (seenName.has(key(i.kind, i.name))) continue;
+        seenName.add(key(i.kind, i.name));
+        out.push({ id: `i:${i.id}`, label: i.tag ? `${i.tag} — ${i.name}` : i.name, kind: i.kind, source: 'study', study_item_id: i.id, component_asset_id: i.asset_id ?? null, bom_item_id: i.bom_item_id ?? null, depth: i.parent_item_id ? 2 : 1, study_title: st.title });
+      }
+    }
+    return out;
+  }
+
+  /** What the platform holds about one item: work orders coded to it, RCAs, DE tasks, RCM modes with their PM, latest readings. */
+  async getEquipmentItemHistory(assetId: string, link: { study_item_id?: string | null; component_asset_id?: string | null; bom_item_id?: string | null; item_label?: string | null }, months = 12): Promise<EquipmentItemHistory | null> {
+    if (!assetId || !UUID_RE.test(assetId)) return null;
+    const { data, error } = await supabase.rpc('equipment_item_history', {
+      p_asset_id: assetId, p_study_item_id: link.study_item_id ?? null, p_component_asset_id: link.component_asset_id ?? null,
+      p_bom_item_id: link.bom_item_id ?? null, p_label: link.item_label ?? null, p_months: months,
+    });
+    if (error) { console.warn('[RCM] equipment_item_history:', error.message); return null; }
+    return data as EquipmentItemHistory;
   }
 
   /** 0337 — the study's unresolved living-study flags, newest first. */

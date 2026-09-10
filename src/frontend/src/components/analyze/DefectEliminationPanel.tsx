@@ -9,7 +9,7 @@
  * Implements the user rule: monthly automated Pareto for top 5 bad actors.
  */
 import React, { useState, useMemo, useEffect } from 'react';
-import {
+import { Boxes,
     Target, DollarSign, Sparkles, AlertTriangle,
     CheckCircle2, Clock, ArrowRight, ArrowLeft, Zap, Shield,
     Edit3, Trash2, X, AlertCircle, ChevronRight, Search, LayoutList,
@@ -21,6 +21,7 @@ import { confidenceFromScore } from '../../eam/services/AnalyzeService';
 import type { StudyCollaborator } from '../../eam/services/AnalyzeService';
 import { aiEngine, type DefectPattern, type EliminationPlanDraft } from '../../eam/services/AIAnalysisEngine';
 import { TeamPanel, AvatarStack } from './CollaboratorPicker';
+import { rcmService, type EquipmentItemHistory } from '../../eam/services/RCMService';
 
 export interface DefectEliminationTask {
     id: string;
@@ -40,7 +41,35 @@ export interface DefectEliminationTask {
     evidenceConfidence?: number | null;
     collaborators?: StudyCollaborator[];
     createdAt: string;
+    /** 0355 — the failed equipment item the task is about (links + label). */
+    itemLabel?: string | null;
+    studyItemId?: string | null;
+    componentAssetId?: string | null;
+    bomItemId?: string | null;
 }
+
+/**
+ * 0355 — the number that justifies a defect-elimination effort: how many of the
+ * asset's corrective work orders in the last 12 months are on this one item.
+ */
+const ItemRecurrence: React.FC<{ task: DefectEliminationTask }> = ({ task }) => {
+    const [h, setH] = useState<EquipmentItemHistory | null>(null);
+    useEffect(() => {
+        if (!task.assetId || !(task.itemLabel || task.studyItemId || task.componentAssetId || task.bomItemId)) { setH(null); return; }
+        let live = true;
+        rcmService.getEquipmentItemHistory(task.assetId, { study_item_id: task.studyItemId, component_asset_id: task.componentAssetId, bom_item_id: task.bomItemId, item_label: task.itemLabel }).then(r => { if (live) setH(r); });
+        return () => { live = false; };
+    }, [task.assetId, task.itemLabel, task.studyItemId, task.componentAssetId, task.bomItemId]);
+    if (!task.itemLabel && !task.studyItemId && !task.componentAssetId && !task.bomItemId) return null;
+    return (
+        <span style={{ fontSize: 12, color: TEXT_BRIGHT, display: 'inline-flex', alignItems: 'center', gap: 5 }} title={h ? `Corrective work orders on the asset in the last ${h.months} months, and how many of them are on this item` : undefined}>
+            <Boxes size={12} color={TEXT_MUTED} />
+            {task.itemLabel || 'item'}
+            {h && <span style={{ color: h.item_cm_count > 0 ? '#f87171' : TEXT_MUTED, fontWeight: 600 }}> · {h.item_cm_count} of {h.asset_cm_count} corrective WOs</span>}
+            {h && h.rcm_modes.length > 0 && <span style={{ color: TEXT_MUTED }}> · {h.rcm_modes.length} RCM mode{h.rcm_modes.length !== 1 ? 's' : ''}</span>}
+        </span>
+    );
+};
 
 interface DefectEliminationPanelProps {
     badActors: ParetoResult[];
@@ -693,6 +722,7 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                                             <Activity size={13} color={TEXT_MUTED} />
                                             {selectedTask.assetName}
                                         </span>
+                                        <ItemRecurrence task={selectedTask} />
                                     </div>
                                 </div>
                                 {/* Action buttons */}

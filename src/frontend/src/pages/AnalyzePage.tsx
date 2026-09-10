@@ -403,6 +403,7 @@ export const AnalyzePage: React.FC = () => {
                 rootCauseSummary: t.root_cause_summary, proposedSolution: t.proposed_solution,
                 rcaId: t.rca_id ?? undefined, collaborators: t.collaborators ?? [], createdAt: t.created_at,
                 evidenceConfidence: t.evidence_confidence ?? null,
+                itemLabel: t.item_label ?? null, studyItemId: t.study_item_id ?? null, componentAssetId: t.component_asset_id ?? null, bomItemId: t.bom_item_id ?? null,
             })));
         }).catch(err => {
             console.error('[AnalyzePage] Failed to load DE tasks:', err);

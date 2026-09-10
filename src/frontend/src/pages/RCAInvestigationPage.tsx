@@ -15,7 +15,9 @@ import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
 import { friendlyAIError } from '../eam/lib/aiError';
 import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor, EVIDENCE_GRADES, bestEvidenceGrade, nodeConfidence, rootCauseConfidence, confidenceFromScore } from '../eam/services/AnalyzeService';
 import { rcmService } from '../eam/services/RCMService';
-import { pinFailureMode } from '../lib/rcmBreakdown';
+import { pinFailureMode, linkFor } from '../lib/rcmBreakdown';
+import type { EquipmentItemOption } from '../eam/services/RCMService';
+import { EquipmentItemPanel } from '../components/analyze/EquipmentItemPanel';
 import { suggestRcaMethod } from '../lib/rcaMethodSuggest';
 import { classifyWoStatus } from '../lib/woState';
 import { actionsSettled as settleActions, mocGate, resolveAssignee, isAssigned, fmeaSeverity, fmeaOccurrence, fmeaDetection, type Person } from '../lib/rcaActions';
@@ -196,7 +198,9 @@ export function RCAInvestigationPage() {
         setAddingToRcm(true);
         try {
             const rootCauses = nodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
-            const modeText = (inv?.event_what || inv?.problem_statement || inv?.title || '').trim();
+            // 0355: event_what now carries the ITEM when it was picked; the failure MODE is how it failed.
+            const whatIsItem = !!inv?.item_label && (inv?.event_what || '').trim().toLowerCase() === inv.item_label.trim().toLowerCase();
+            const modeText = ((whatIsItem ? '' : inv?.event_what) || inv?.event_how || inv?.problem_statement || inv?.title || '').trim();
             const causeText = rootCauses.map(n => n.description).join('; ') || inv?.root_cause_summary || '';
             const asset = allHierarchyAssets.find(a => a.id === assetId);
             const studies = await rcmService.getStudiesForAsset(assetId);
@@ -216,14 +220,23 @@ export function RCAInvestigationPage() {
             const existing = await rcmService.getFailureModesByStudy(study.id);
             const dup = existing.find(m => modeText && m.failure_mode_description?.trim().toLowerCase() === modeText.toLowerCase());
             if (dup) { showToast('This failure mode is already in the study'); navigate(`/rcm/${study.id}`); return; }
-            // Pin the mode to the component its text names, when the register has one.
+            // 0355: pin the mode to the item the investigation is about — by link when the
+            // study lists it, else by the wording, as before.
+            const items = await rcmService.getStudyItems(study.id);
+            const mine = items.find(i => (inv?.study_item_id && i.id === inv.study_item_id) || (inv?.component_asset_id && i.asset_id === inv.component_asset_id) || (inv?.bom_item_id && i.bom_item_id === inv.bom_item_id)
+                || (inv?.item_label && (i.tag ? `${i.tag} — ${i.name}` : i.name).toLowerCase() === inv.item_label.toLowerCase()));
             const breakdown = await rcmService.getAssetBreakdown(study.asset_id);
+            const explicit = mine
+                ? linkFor(mine.kind !== 'part' ? { id: mine.id, itemId: mine.id, assetId: mine.asset_id, tag: mine.tag || '', name: mine.name, level: mine.kind.toUpperCase(), depth: 1 } : null,
+                          mine.kind === 'part' ? { id: mine.id, itemId: mine.id, bomItemId: mine.bom_item_id, partNumber: mine.tag || '', description: mine.name, qty: Number(mine.qty) || 1, uom: mine.uom || 'EA', critical: !!mine.critical } : null)
+                : null;
             const created = await rcmService.createFailureMode(pinFailureMode({
                 function_id: fn.id,
                 failure_mode_description: modeText || `Failure investigated in RCA ${inv?.id?.slice(0, 8) || ''}`.trim(),
                 failure_cause_description: causeText || null,
                 data_source: 'wo_history',
                 sort_order: existing.filter(m => m.function_id === fn.id).length + 1,
+                ...(explicit ? { ...explicit, component_link_source: 'manual' as const } : {}),
             }, breakdown));
             if (created) { showToast(`Added to RCM study "${study.title}" — classify its consequence on the Worksheet`); navigate(`/rcm/${study.id}`); }
             else showToast('Could not add the failure mode to the study', 'error');
@@ -315,7 +328,8 @@ export function RCAInvestigationPage() {
         let cancelled = false;
         (async () => {
             const assetId = inv.asset_id;
-            const modeText = (inv.event_what || inv.problem_statement || inv.title || '').trim().toLowerCase();
+            const whatIsItem = !!inv.item_label && (inv.event_what || '').trim().toLowerCase() === inv.item_label.trim().toLowerCase();
+            const modeText = ((whatIsItem ? '' : inv.event_what) || inv.event_how || inv.problem_statement || inv.title || '').trim().toLowerCase();
             const [studies, sheets, de] = await Promise.all([
                 assetId ? rcmService.getStudiesForAsset(assetId).catch(() => []) : Promise.resolve([]),
                 assetId ? analyzeService.getFMEAWorksheets(assetId).catch(() => []) : Promise.resolve([]),
@@ -371,7 +385,11 @@ export function RCAInvestigationPage() {
         problem_statement: '', event_what: '', event_how: '',
         event_location: '', event_date: new Date().toISOString().split('T')[0],
         event_how_much: { cost: 0, downtime_hrs: 0, safety_tier: '', env_impact: '' },
+        // 0355 — the failed item as a link (register child / BOM line / RCM study item) and its label
+        study_item_id: '', component_asset_id: '', bom_item_id: '', item_label: '',
     });
+    // Every item the asset is known to have — the picker behind "Failed item".
+    const [itemOptions, setItemOptions] = useState<EquipmentItemOption[]>([]);
     // Impact fields live behind one disclosure; it opens itself once any of them holds a value.
     const [impactOpen, setImpactOpen] = useState(false);
     // Registered subunits / components of the linked asset, offered as suggestions for
@@ -448,6 +466,8 @@ export function RCAInvestigationPage() {
                     event_location: invData.event_location || '',
                     event_date: invData.event_date ? invData.event_date.split('T')[0] : '',
                     event_how_much: (invData.event_how_much as any) || { cost: 0, downtime_hrs: 0, safety_tier: '', env_impact: '' },
+                    study_item_id: invData.study_item_id || '', component_asset_id: invData.component_asset_id || '',
+                    bom_item_id: invData.bom_item_id || '', item_label: invData.item_label || '',
                 }));
                 // Fetch related RCAs for re-occurrence detection
                 const related = await analyzeService.getRelatedRCAs(invData.asset_id);
@@ -610,6 +630,44 @@ export function RCAInvestigationPage() {
         if (hm.cost || hm.downtime_hrs || hm.safety_tier || hm.env_impact) setImpactOpen(true);
     }, [draft.event_how_much]);
 
+    // ── 0355: the asset's equipment items, and the failed item off the triggering work order ──
+    const incomingWoId: string | null = (location.state as any)?.incomingWO?.wo_id || null;
+    useEffect(() => {
+        if (!draft.asset_id) { setItemOptions([]); return; }
+        let live = true;
+        rcmService.listEquipmentItems(draft.asset_id).then(async opts => {
+            if (!live) return;
+            setItemOptions(opts);
+            // A new investigation raised from a work order starts on the item that work order was coded to.
+            if (!inv && incomingWoId) {
+                const { data } = await supabase.from('wo_failure_data').select('subunit_code, object_part, failure_mode_code').eq('wo_id', incomingWoId).maybeSingle();
+                const fd = data as { subunit_code?: string | null; object_part?: string | null } | null;
+                const want = [fd?.object_part, fd?.subunit_code].map(x => String(x || '').trim().toLowerCase()).filter(Boolean);
+                if (!live || want.length === 0) return;
+                const hit = opts.find(o => want.some(w => o.label.toLowerCase() === w || o.label.toLowerCase().startsWith(`${w} —`) || o.label.toLowerCase().includes(w)));
+                setDraft(d => (d.study_item_id || d.component_asset_id || d.bom_item_id || d.item_label) ? d : ({
+                    ...d,
+                    study_item_id: hit?.study_item_id || '', component_asset_id: hit?.component_asset_id || '', bom_item_id: hit?.bom_item_id || '',
+                    item_label: hit?.label || fd?.object_part || fd?.subunit_code || '',
+                    event_what: d.event_what || hit?.label || fd?.object_part || fd?.subunit_code || '',
+                }));
+            }
+        }).catch(() => { if (live) setItemOptions([]); });
+        return () => { live = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draft.asset_id, inv?.id, incomingWoId]);
+    const pickItem = (id: string) => {
+        if (id === '__other') { setDraft(d => ({ ...d, study_item_id: '', component_asset_id: '', bom_item_id: '', item_label: '' })); return; }
+        const o = itemOptions.find(x => x.id === id);
+        setDraft(d => ({
+            ...d,
+            study_item_id: o?.study_item_id || '', component_asset_id: o?.component_asset_id || '', bom_item_id: o?.bom_item_id || '',
+            item_label: o?.label || '', event_what: o ? o.label : d.event_what,
+        }));
+    };
+    const pickedItemId = itemOptions.find(o => (draft.study_item_id && o.study_item_id === draft.study_item_id) || (draft.component_asset_id && o.component_asset_id === draft.component_asset_id) || (draft.bom_item_id && o.bom_item_id === draft.bom_item_id))?.id
+        || (draft.item_label || draft.event_what ? '__other' : '');
+
     // ── Load EAM Asset context card when asset changes ──
     useEffect(() => {
         if (!draft.asset_id) {
@@ -678,6 +736,8 @@ export function RCAInvestigationPage() {
                     event_what: draft.event_what || null,
                     event_how: draft.event_how || null,
                     event_how_much: draft.event_how_much as any,
+                    study_item_id: draft.study_item_id || null, component_asset_id: draft.component_asset_id || null,
+                    bom_item_id: draft.bom_item_id || null, item_label: draft.item_label.trim() || draft.event_what.trim() || null,
                     work_order_id: (location.state as any)?.incomingWO?.wo_id || null, lead_investigator: null,
                     current_step: 1, closed_at: null,
                     effectiveness_due: null, effectiveness_status: 'pending',
@@ -705,6 +765,8 @@ export function RCAInvestigationPage() {
                     event_what: draft.event_what || null,
                     event_how: draft.event_how || null,
                     event_how_much: draft.event_how_much as any,
+                    study_item_id: draft.study_item_id || null, component_asset_id: draft.component_asset_id || null,
+                    bom_item_id: draft.bom_item_id || null, item_label: draft.item_label.trim() || draft.event_what.trim() || null,
                     current_step: activeStep,
                 } as any);
                 await fetchAll(inv.id);
@@ -814,6 +876,9 @@ export function RCAInvestigationPage() {
                 proposed_solution: deDraft.proposedSolution,
                 rca_id: inv?.id || null,
                 created_by: null,
+                // 0355 — the DE task is about the same item the investigation was
+                study_item_id: inv?.study_item_id || null, component_asset_id: inv?.component_asset_id || null,
+                bom_item_id: inv?.bom_item_id || null, item_label: inv?.item_label || inv?.event_what || null,
             });
 
             // Dispatch DE task created notification
@@ -1627,15 +1692,36 @@ export function RCAInvestigationPage() {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className={LABEL_CLS}>Failed component</label>
-                                    <input
-                                        className={INPUT_CLS}
-                                        list={componentOptions.length ? 'rca-component-options' : undefined}
-                                        value={draft.event_what}
-                                        onChange={e => setDraft(d => ({ ...d, event_what: e.target.value }))}
-                                        placeholder={componentOptions.length ? 'Pick from the asset breakdown or type' : 'e.g. Mechanical seal, carbon face'}
-                                    />
-                                    {componentOptions.length > 0 && (
+                                    <label className={LABEL_CLS}>Failed item</label>
+                                    {/* 0355 — a link to the asset's equipment (register, BOM, RCM study), or typed when nobody has listed it */}
+                                    {itemOptions.length > 0 ? (
+                                        <>
+                                            <select className={INPUT_CLS} value={pickedItemId} onChange={e => pickItem(e.target.value)} title="Which subunit, component or part failed — the investigation, its evidence and its hand-offs follow this item">
+                                                <option value="">— whole asset / not yet known —</option>
+                                                {(['subunit', 'component', 'part'] as const).map(kind => {
+                                                    const group = itemOptions.filter(o => o.kind === kind);
+                                                    return group.length ? (
+                                                        <optgroup key={kind} label={kind === 'part' ? 'Parts' : kind === 'subunit' ? 'Subunits' : 'Components'}>
+                                                            {group.map(o => <option key={o.id} value={o.id}>{'  '.repeat(Math.max(0, o.depth - 1))}{o.label}{o.source === 'study' ? ' · RCM' : ''}</option>)}
+                                                        </optgroup>
+                                                    ) : null;
+                                                })}
+                                                <option value="__other">Something else (type it)</option>
+                                            </select>
+                                            {pickedItemId === '__other' && (
+                                                <input className={`${INPUT_CLS} mt-2`} value={draft.event_what} onChange={e => setDraft(d => ({ ...d, event_what: e.target.value, item_label: e.target.value }))} placeholder="e.g. Mechanical seal, carbon face" autoFocus />
+                                            )}
+                                        </>
+                                    ) : (
+                                        <input
+                                            className={INPUT_CLS}
+                                            list={componentOptions.length ? 'rca-component-options' : undefined}
+                                            value={draft.event_what}
+                                            onChange={e => setDraft(d => ({ ...d, event_what: e.target.value, item_label: e.target.value }))}
+                                            placeholder="e.g. Mechanical seal, carbon face"
+                                        />
+                                    )}
+                                    {componentOptions.length > 0 && itemOptions.length === 0 && (
                                         <datalist id="rca-component-options">
                                             {componentOptions.map(c => <option key={c} value={c} />)}
                                         </datalist>
@@ -1727,6 +1813,24 @@ export function RCAInvestigationPage() {
                 {/* ── STEP 2: Collect Evidence ─────────────────────── */}
                 {activeStep === 2 && inv && (
                     <div className="space-y-6">
+                        {/* 0355 — what the platform already holds about the failed item; each line cites into the library */}
+                        <EquipmentItemPanel
+                            assetId={inv.asset_id}
+                            link={{ study_item_id: inv.study_item_id, component_asset_id: inv.component_asset_id, bom_item_id: inv.bom_item_id, item_label: inv.item_label || inv.event_what }}
+                            citedTitles={evidence.map(e => e.title)}
+                            readOnly={readOnly}
+                            excludeRcaId={inv.id}
+                            onCite={async ev => {
+                                const created = await analyzeService.addRCAEvidence({
+                                    investigation_id: inv.id, evidence_type: ev.evidence_type, title: ev.title, content: ev.content,
+                                    linked_entity_id: ev.linked_entity_id, event_timestamp: null, uploaded_by: currentUsername,
+                                    // a work order or a reading is a recorded fact; a prior RCA's conclusion or an RCM expectation is an inference here
+                                    quality_grade: ev.evidence_type === 'work_order' || ev.evidence_type === 'sensor_data' ? 'fact' : 'inference',
+                                } as any);
+                                if (created) { setEvidence(es => [...es, created]); showToast(`Cited: ${ev.title}`); }
+                                else showToast('Could not add the evidence', 'error');
+                            }}
+                        />
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
                                 <Database className="w-4 h-4 text-primary-600" /> Evidence Library & Data Log
@@ -3179,8 +3283,18 @@ export function RCAInvestigationPage() {
                             // WO: link now. REQUEST: remember it; the 0328 trigger links the WO when
                             // the planner converts it. PM: a strategy, not a one-off — note it and
                             // leave the action open for its first execution.
+                            // 0355: the corrective work order is coded to the same item the
+                            // investigation was, so its completion records against it.
+                            if (kind === 'WO' && (inv.item_label || inv.event_what)) {
+                                const label = inv.item_label || inv.event_what || '';
+                                const tag = label.split(' — ')[0].trim();
+                                try {
+                                    await DatabaseService.getInstance().updateWorkOrder(id, { failureData: { subunitCode: tag.slice(0, 80), objectPart: label.slice(0, 80) } } as any, profile?.username || 'rca');
+                                } catch (e) { console.warn('[RCA] could not code the work order to the item', e); }
+                            }
+                            const item = { study_item_id: inv.study_item_id || null, component_asset_id: inv.component_asset_id || null, bom_item_id: inv.bom_item_id || null, item_label: inv.item_label || inv.event_what || null };
                             const patch = kind === 'WO'
-                                ? { work_order_id: id, status: raiseAction.status === 'open' ? 'in_progress' : raiseAction.status }
+                                ? { work_order_id: id, status: raiseAction.status === 'open' ? 'in_progress' : raiseAction.status, ...item }
                                 : kind === 'REQUEST'
                                     ? { work_request_id: id }
                                     : { completion_notes: `PM strategy ${id} created for this action` };
