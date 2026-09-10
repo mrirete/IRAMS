@@ -64,6 +64,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
 
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [typeFilter, setTypeFilter] = useState<string>('ALL'); // CONTACT_TYPE code, or ALL
     const [showFilters, setShowFilters] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; contactId: string | null; contactName: string }>({
         isOpen: false,
@@ -398,14 +399,25 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     };
 
     // --- Filtered list for rendering ---
+    const isPerson = (c: Contact) => !Array.isArray(c.types) || !c.types.some(t => ['VENDOR', 'MANUFACTURER', 'SUPPLIER'].includes(t));
     const filteredContacts = mergedContacts
         .filter(c =>
             (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 c.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (Array.isArray(c.types) && c.types.some(t => t.toLowerCase().includes(searchTerm.toLowerCase())))) &&
-            (!Array.isArray(c.types) || !c.types.some(t => ['VENDOR', 'MANUFACTURER', 'SUPPLIER'].includes(t)))
+            isPerson(c) &&
+            (typeFilter === 'ALL' || (Array.isArray(c.types) && c.types.includes(typeFilter)))
         )
         .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Type chips: every people type present in the directory, most common first.
+    const typeOptions = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        mergedContacts.filter(isPerson).forEach(c => (c.types || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
+        return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    }, [mergedContacts]);
+    const peopleCount = mergedContacts.filter(isPerson).length;
+    const chipCls = (on: boolean) => `px-2.5 py-1 rounded-full text-xs font-medium border transition whitespace-nowrap ${on ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`;
 
     // --- Bulk Selection Handlers ---
     const toggleSelectContact = (id: string) => {
@@ -476,7 +488,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     };
 
     return (
-        <div className="flex flex-col h-full gap-4">
+        <div className={`flex flex-col h-full gap-4 w-full ${viewMode === 'directory' && !selectedContact ? 'ers-page-record' : ''}`}>
             {/* Top Navigation */}
             <div className="flex items-center gap-4 border-b border-gray-200 dark:border-gray-700 pb-2">
                 <button
@@ -548,6 +560,19 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                     Add Person
                                 </Button>
                             </div>
+
+                            {typeOptions.length > 1 && (
+                                <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Filter by user type">
+                                    <button type="button" onClick={() => setTypeFilter('ALL')} className={chipCls(typeFilter === 'ALL')} aria-pressed={typeFilter === 'ALL'}>
+                                        All <span className="opacity-60 ml-1">{peopleCount}</span>
+                                    </button>
+                                    {typeOptions.map(([t, n]) => (
+                                        <button key={t} type="button" onClick={() => setTypeFilter(typeFilter === t ? 'ALL' : t)} className={chipCls(typeFilter === t)} aria-pressed={typeFilter === t}>
+                                            {getContactTypeLabel(t)} <span className="opacity-60 ml-1">{n}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {/* Main Content Area */}
