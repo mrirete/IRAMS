@@ -652,7 +652,12 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             created_by: currentAuthor,
             ...o,
         });
-        if (row) setOutcomes(prev => [row, ...prev]);
+        if (row) { setOutcomes(prev => [row, ...prev]); return; }
+        // The change itself succeeded — only the study's record of it did not.
+        // Saying nothing here is the same dishonesty as M-4: the person sees
+        // "applied ✓" while the study still reads "no work produced yet".
+        setSaveToast('The change was applied, but this study could not record it — you may not have rights to write on this study. Ask a reliability engineer to add it.');
+        setTimeout(() => setSaveToast(null), 7000);
     }, [studyContextId, currentAuthor]);
 
     // ★ Close the loop: when a PM program is created from a fit, stamp linked_pm_id
