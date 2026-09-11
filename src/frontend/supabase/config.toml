@@ -1,1 +1,23 @@
 project_id = "hacrebcfvyqdnjvilhqc"
+
+# ── Per-function JWT verification (2026-09-11) ─────────────────────────────
+# Declared here so `supabase functions deploy <slug>` picks it up from git
+# instead of from a flag someone has to remember. These five are reached by
+# machines, not browsers, and each checks its own credential in code:
+#   x-cron-key  (BRIEFING_CRON_KEY)  — specialist-briefing, specialist-watchdog, erp-export
+#   x-api-key   (ers_collector_keys) — ingest-readings, ingest-work-orders
+# Everything not listed keeps the default (verify_jwt = true).
+[functions.specialist-briefing]
+verify_jwt = false
+
+[functions.specialist-watchdog]
+verify_jwt = false
+
+[functions.erp-export]
+verify_jwt = false
+
+[functions.ingest-readings]
+verify_jwt = false
+
+[functions.ingest-work-orders]
+verify_jwt = false

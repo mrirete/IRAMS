@@ -1,0 +1,132 @@
+# Database migrations: dry-run on every PR, apply only by hand and only after
+# a dump exists.
+#
+# Why (2026-09-11 launch review): migrations were applied straight from a
+# laptop with a personal access token, onto a production project with no
+# backups, and 14 of them carry DROP/TRUNCATE. The runner already keeps a
+# ledger, checksums each file and wraps each in a transaction — what it lacked
+# was a gate in front of it. This adds two:
+#
+#   check  — on any PR touching migrations: --dry-run against the live ledger
+#            (catches duplicate numbers, drifted checksums, out-of-order
+#            files) and lists destructive statements as an annotation so the
+#            reviewer sees them without opening the file.
+#   apply  — workflow_dispatch only, behind the "production" environment
+#            (add required reviewers there). REFUSES unless SUPABASE_DB_URL is
+#            set, because it takes a pg_dump first and uploads it as an
+#            artifact: no dump, no apply. Once the project is on a plan with
+#            PITR this step can be relaxed; until then it is the only backup.
+#
+# Secrets:
+#   SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF   (already present)
+#   SUPABASE_DB_URL   postgres://…  direct connection string — apply only
+name: Migrations
+
+on:
+  pull_request:
+    paths:
+      - "src/frontend/supabase/migrations/**"
+      - "scripts/provision/apply-migrations.mjs"
+      - "scripts/provision/migrationPlan.mjs"
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type APPLY to run pending migrations against production'
+        required: true
+        default: ""
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Destructive statements in changed migrations
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- src/frontend/supabase/migrations/ || true)
+          [ -z "$CHANGED" ] && { echo "No migration files changed."; exit 0; }
+          for f in $CHANGED; do
+            [ -f "$f" ] || continue
+            if grep -nE '^\s*(DROP (TABLE|COLUMN|SCHEMA)|ALTER TABLE .* DROP COLUMN|TRUNCATE|DELETE FROM)' "$f"; then
+              echo "::warning file=$f::destructive statement(s) — reviewer must confirm a dump exists before apply"
+            fi
+          done
+
+      - name: Dry-run against the live ledger
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::warning::secrets absent (fork PR?) — dry-run skipped"
+            exit 0
+          fi
+          node scripts/provision/apply-migrations.mjs --project-ref "$SUPABASE_PROJECT_REF" --dry-run
+
+  apply:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: migrations-apply
+      cancel-in-progress: false
+    steps:
+      - name: Confirmation word
+        if: github.event.inputs.confirm != 'APPLY'
+        run: |
+          echo "::error::Type APPLY in the confirm box to run migrations against production."
+          exit 1
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Refuse without a way to back up
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL is not set — no dump can be taken, so nothing will be applied."
+            exit 1
+          fi
+
+      - name: Dump before apply
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges --format=custom \
+            --schema=public --schema=storage --schema=auth \
+            --file="pre-migration-${STAMP}.dump"
+          ls -la pre-migration-*.dump
+          echo "DUMP=pre-migration-${STAMP}.dump" >> "$GITHUB_ENV"
+
+      - name: Keep the dump
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: ${{ env.DUMP }}
+          path: ${{ env.DUMP }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Apply pending migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          node scripts/provision/apply-migrations.mjs --project-ref "$SUPABASE_PROJECT_REF" --dry-run
+          node scripts/provision/apply-migrations.mjs --project-ref "$SUPABASE_PROJECT_REF" --apply
+
+      - name: Record
+        run: |
+          echo "### Migrations applied from \`${GITHUB_SHA::7}\` by ${GITHUB_ACTOR}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pre-apply dump artifact: \`${DUMP}\` (30 days)" >> "$GITHUB_STEP_SUMMARY"

@@ -227,13 +227,24 @@ SELECT vault.create_secret('<same value as BRIEFING_CRON_KEY>', 'briefing_cron_k
 
 ### 3.5 Deploy the edge functions
 
+Edge functions deploy **from git, via CI** — `.github/workflows/deploy-functions.yml`
+runs on every push to `main` that touches `supabase/functions/**` (or on
+`workflow_dispatch`, optionally for one slug). Per-function JWT verification is
+declared in `supabase/config.toml` (`[functions.<slug>] verify_jwt = false` for
+the five machine-facing functions), so no `--no-verify-jwt` flag is ever typed.
+
+Why not from a laptop: `supabase functions deploy` bundles whatever is on disk,
+so a redeploy for one fix ships every uncommitted edit in the folder and in
+`_shared/`. It happened on 2026-09-11; the repo and production disagreed for hours.
+
+For a brand-new tenant project before its CI is wired, the manual equivalent is:
+
 ```bash
 cd src/frontend
-for f in agent-run specialist-briefing notify-dispatch proposal-writeback sensor-sync detect-sweep audit-invite signup-tenant ingest-work-orders ingest-readings erp-export ai-proxy specialist-watchdog; do
-  npx --no-install supabase functions deploy $f
+for f in $(ls -d supabase/functions/*/ | xargs -n1 basename | grep -v '^_shared$'); do
+  git status --porcelain -- supabase/functions/$f supabase/functions/_shared | grep . && { echo "dirty: commit first"; exit 1; }
+  npx --no-install supabase functions deploy $f --project-ref <ref>   # verify_jwt comes from config.toml
 done
-npx --no-install supabase functions deploy ingest-readings --no-verify-jwt   # webhook, x-api-key auth
-npx --no-install supabase functions deploy specialist-briefing --no-verify-jwt  # cron, x-cron-key auth
 ```
 
 ### 3.6 Set the edition

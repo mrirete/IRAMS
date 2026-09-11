@@ -1,0 +1,86 @@
+# Edge functions ship from git, not from a laptop.
+#
+# Why this exists (2026-09-11): `supabase functions deploy` bundles whatever is
+# on disk. A redeploy of agent-run for a one-line fix shipped four-day-old
+# uncommitted prompt text from agents.ts, and the repo and production disagreed
+# for hours. Running the deploy here means the only thing that can reach
+# production is a commit on main.
+#
+# Every function is deployed on every run rather than "changed ones only":
+# nine of thirteen import from _shared/, so a change there must reach all of
+# them, and a full pass takes about two minutes. JWT verification per function
+# is declared in supabase/config.toml ([functions.<slug>] verify_jwt), not by
+# remembering a flag — the Monday briefing cron and the sensor webhook broke
+# once when a bare redeploy flipped them back to requiring a JWT.
+#
+# Secrets (already present for build.yml / security-scan.yml):
+#   SUPABASE_ACCESS_TOKEN  personal access token (sbp_…)
+#   SUPABASE_PROJECT_REF   hacrebcfvyqdnjvilhqc
+name: Deploy Edge Functions
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "src/frontend/supabase/functions/**"
+      - "src/frontend/supabase/config.toml"
+      - ".github/workflows/deploy-functions.yml"
+  workflow_dispatch:
+    inputs:
+      function:
+        description: "Deploy one function only (slug), or leave blank for all"
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Refuse without credentials
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF are not set — nothing deployed."
+            exit 1
+          fi
+
+      - name: Deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          ONLY: ${{ github.event.inputs.function }}
+        run: |
+          set -euo pipefail
+          if [ -n "$ONLY" ]; then
+            FUNCS="$ONLY"
+          else
+            FUNCS=$(ls -d supabase/functions/*/ | xargs -n1 basename | grep -v '^_shared$')
+          fi
+          for f in $FUNCS; do
+            echo "::group::deploy $f"
+            # verify_jwt comes from config.toml; no per-function flags here.
+            npx --yes supabase@2.117.0 functions deploy "$f" --project-ref "$SUPABASE_PROJECT_REF"
+            echo "::endgroup::"
+          done
+
+      - name: Record what shipped
+        run: |
+          echo "### Edge functions deployed from \`${GITHUB_SHA::7}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          ls -d supabase/functions/*/ | xargs -n1 basename | grep -v '^_shared$' | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
