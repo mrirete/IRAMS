@@ -160,6 +160,11 @@ class ImportService {
                         // SAP TPLNR path, kept for reference — this importer builds
                         // a flat list; the tree is the Asset Register importer's job.
                         ...(a.functional_location ? { functional_location: a.functional_location } : {}),
+                        // Honest about what this is: an asset created to anchor
+                        // history, not one placed in the register. The Hierarchy
+                        // tab shows it as "placement needed" until someone gives it
+                        // a parent (a parent_tag in the file clears it below).
+                        ...(a.parent_tag ? {} : { needs_classification: true, classification_source: 'history_import' }),
                     },
                 };
             });
@@ -169,6 +174,10 @@ class ImportService {
         }
         if (defaultedCrit > 0) {
             notes.push(`${defaultedCrit} asset(s) had no criticality in the file — defaulted to C pending a criticality assessment.`);
+        }
+        const unplaced = newAssets.filter((a) => !a.parent_tag).length;
+        if (unplaced > 0) {
+            notes.push(`${unplaced} asset(s) were created from history without a parent — they sit at the top of the register flagged "placement needed". Import the register through Assets › Import (hierarchyLevel + parentTag), or set parents in the Asset Register, to place them.`);
         }
 
         // 2b. Parent links (B9) — second pass, after every row exists, so a

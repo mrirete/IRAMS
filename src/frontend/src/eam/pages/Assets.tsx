@@ -2806,9 +2806,18 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                 <div className="p-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
                     <div className="flex items-start justify-between">
                         <div>
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${currentLevel.color}`}>{currentLevel.tag}</span>
                                 <span className="text-xs text-slate-500 font-medium">{currentLevel.label}</span>
+                                {/* A history-import stub: created to anchor work orders, never placed in the tree. */}
+                                {!parent && (asset as any).properties?.needs_classification && (
+                                    <span
+                                        className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200"
+                                        title="Created from a work-order history import with no parent. Give it a parent (site, unit or system) to place it in the register."
+                                    >
+                                        Placement needed
+                                    </span>
+                                )}
                             </div>
                             <h3 className="text-lg font-bold text-slate-800">{asset.tag}</h3>
                             <p className="text-sm text-slate-500 mt-0.5">{asset.name}</p>

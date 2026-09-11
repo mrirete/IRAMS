@@ -218,6 +218,7 @@ export function downloadAssetTemplate(): void {
         ]),
         [],
         ['How parents work'],
+        ['• A register starts at the Installation — ISO 14224 L3, the SITE level here. Leave parentTag blank only on site rows; equipment with nothing above it is imported but reported, because it is not a hierarchy.'],
         ['• parentTag may point at an earlier row in this file, or at an asset that already exists in ERS.'],
         ['• Rows are sorted automatically, so a child may appear above its parent in the sheet.'],
         ['• A parent tag that exists nowhere is reported as a failed row — nothing is guessed.'],

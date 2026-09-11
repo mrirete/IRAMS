@@ -296,6 +296,11 @@ TARGET SCHEMA (map source headers onto these logical fields):
   SAP EQUNR; work-order history links by tag OR equipment_number, so both
   survive migration), functional_location (SAP "Functional loc." TPLNR path —
   stored as a reference property; the hierarchy itself is built elsewhere),
+  parent_tag (the SUPERORDINATE asset this item is installed in — sets the
+  parent link so equipment-to-subunit structure survives: SAP "Superord.
+  Equipment" / HEQUI, or "SupFunctLoc" / TPLMA on a functional-location
+  list; Maximo PARENT; MaintainX "Parent Asset". Never map a plain location
+  column here — that is functional_location),
   name, criticality, manufacturer, model, serial_number, asset_category.
 - wo_fields: wo_number (REQUIRED for work-order files), title, description,
   type, status, priority, asset_tag (the column linking the WO to its asset —
@@ -339,6 +344,10 @@ KNOWN EXPORT FINGERPRINTS (use them, but trust the actual data first):
   map tag←Equipment, and if its sample values are long digit runs WARN that
   the export should include TechIdentNo. so assets keep recognisable tags.
   WO files: asset_tag←Equipment, asset_location←"Functional Loc.".
+  Register files with "Superord.Equipment" (HEQUI): map parent_tag←it —
+  its values are EQUNRs of other rows, which the importer resolves by
+  equipment number. Assets without a parent land at the top of the register
+  flagged "placement needed" — say so when the column is absent.
 - Maximo: WONUM, WORKTYPE (CM/EM→CM, PM→PM, PDM→PdM), ASSETNUM, LOCATION,
   DESCRIPTION, REPORTDATE (prefer ACTSTART when present), ACTFINISH, STATUS
   (COMP/CLOSE→CLOSED, CAN→CANCELLED, WAPPR/APPR→OPEN, INPRG→WIP),

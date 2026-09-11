@@ -421,6 +421,14 @@ export async function importAssets(
                 continue;
             }
 
+            // A register starts at the Installation (ISO 14224 L3 · Site).
+            // Equipment with nothing above it is imported — a deliberate
+            // exception is allowed, as in the register — but said out loud,
+            // because it is usually a parentTag that was left blank.
+            if (!d.parentTag && getLevelConfig(d.level)?.objectClass === 'EQUIPMENT') {
+                res.notes!.push(`Row ${d.row} (${d.tag || 'auto-numbered'}): ${d.level} imported at the top of the register with no location above it — give it a parentTag (site, unit or system) unless that is intended.`);
+            }
+
             const ccCode = (d.data['costcenter'] || '').toUpperCase();
             const ccId = ccCode ? ccByCode.get(ccCode) : undefined;
 
