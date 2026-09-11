@@ -41,6 +41,7 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     '/reliability-metrics': 'reliability',
     '/predict': 'reliability',
     '/reliability-modelling': 'reliability',
+    '/reliability-toolkit': 'reliability',
     '/analyze': 'reliability',
     '/analyze/rca': 'reliability',
     '/rcm': 'reliability',

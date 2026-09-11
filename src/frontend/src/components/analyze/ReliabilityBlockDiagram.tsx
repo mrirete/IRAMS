@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import RBDReliabilityDashboard from './RBDReliabilityDashboard';
+import { groupR as engineGroupR, systemR as engineSystemR, systemMTBF as engineSystemMTBF, systemAo as engineSystemAo, kOfNProbability } from '../../eam/lib/rbdEngine';
 
 // ── Types ────────────────────────────────────────────────────
 export interface RBDBlock {
@@ -567,39 +568,8 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
     }, [topoDrag, positionedBlocks, groups]);
 
     // ── System Metrics ──
-    const systemAo = useMemo(() => {
-        if (blocks.length === 0) return 0;
-        const ungrouped = blocks.filter(b => !b.groupId);
-        let seriesProduct = 1;
-        ungrouped.forEach(b => { seriesProduct *= blockAvailability(b); });
-        groups.forEach(g => {
-            const gBlocks = blocks.filter(b => g.blocks.includes(b.id));
-            if (gBlocks.length === 0) return;
-            let gAo: number;
-            if (g.type === 'parallel') {
-                gAo = 1 - gBlocks.reduce((p, b) => p * (1 - blockAvailability(b)), 1);
-            } else if (g.type === 'standby') {
-                const primary = gBlocks[0];
-                const standbyUnits = gBlocks.slice(1);
-                gAo = blockAvailability(primary);
-                standbyUnits.forEach(sb => { gAo = 1 - (1 - gAo) * (1 - blockAvailability(sb)); });
-            } else if (g.type === 'k-of-n' && g.k) {
-                const n = gBlocks.length;
-                const kk = g.k;
-                let sum = 0;
-                for (let i = kk; i <= n; i++) {
-                    const comb = factorial(n) / (factorial(i) * factorial(n - i));
-                    const avgA = gBlocks.reduce((s, b) => s + blockAvailability(b), 0) / n;
-                    sum += comb * Math.pow(avgA, i) * Math.pow(1 - avgA, n - i);
-                }
-                gAo = sum;
-            } else {
-                gAo = gBlocks.reduce((p, b) => p * blockAvailability(b), 1);
-            }
-            seriesProduct *= gAo;
-        });
-        return seriesProduct;
-    }, [blocks, groups]);
+    // Shared engine (audit M-12): exact k-of-n, standby as the parallel bound.
+    const systemAo = useMemo(() => (blocks.length === 0 ? 0 : engineSystemAo(blocks, groups)), [blocks, groups]);
 
     // ★ GAP 4 FIX: systemMTBF now delegates to topology-aware calculation (topoMTBF)
     // The old formula (8760/Σλ) assumed pure series — incorrect for parallel/standby
@@ -626,73 +596,20 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
         return Math.exp(-lambdaPerHour * t);
     }, []);
 
-    /** Group reliability based on topology */
+    /** Group reliability based on topology — the shared engine (exact k-of-n, cold standby). */
     const groupReliability = useCallback((g: RBDGroup, gBlocks: RBDBlock[], t: number): number => {
         if (gBlocks.length === 0) return 1;
-        if (g.type === 'series') {
-            return gBlocks.reduce((p, b) => p * blockReliability(b, t), 1);
-        }
-        if (g.type === 'parallel') {
-            // R = 1 - Π(1 - Ri(t))
-            return 1 - gBlocks.reduce((p, b) => p * (1 - blockReliability(b, t)), 1);
-        }
-        if (g.type === 'k-of-n' && g.k) {
-            // Binomial: R = Σ[C(n,i) × R^i × (1-R)^(n-i)] for i = k to n
-            const n = gBlocks.length;
-            const kk = Math.min(g.k, n);
-            // Use average R for simplification when components differ
-            const avgR = gBlocks.reduce((s, b) => s + blockReliability(b, t), 0) / n;
-            let sum = 0;
-            for (let i = kk; i <= n; i++) {
-                const comb = factorial(n) / (factorial(i) * factorial(n - i));
-                sum += comb * Math.pow(avgR, i) * Math.pow(1 - avgR, n - i);
-            }
-            return sum;
-        }
-        if (g.type === 'standby') {
-            // Cold standby: R(t) = e^(-λt) × Σ[(λt)^i / i!] for i = 0 to (n-1)
-            // Using average λ across standby units
-            const avgLambda = gBlocks.reduce((s, b) => s + (1 / b.mtbf), 0) / gBlocks.length;
-            const lt = avgLambda * t;
-            let poissonSum = 0;
-            for (let i = 0; i < gBlocks.length; i++) {
-                poissonSum += Math.pow(lt, i) / factorial(i);
-            }
-            return Math.exp(-lt) * poissonSum;
-        }
-        return gBlocks.reduce((p, b) => p * blockReliability(b, t), 1);
-    }, [blockReliability]);
+        return engineGroupR(g, gBlocks, t);
+    }, []);
 
-    /** System R(t) — topology-aware composition */
-    const computeSystemR = useCallback((t: number): number => {
-        if (blocks.length === 0) return 0;
-        const ungrouped = blocks.filter(b => !b.groupId);
-        let seriesProduct = 1;
-        ungrouped.forEach(b => { seriesProduct *= blockReliability(b, t); });
-        groups.forEach(g => {
-            const gBlocks = blocks.filter(b => g.blocks.includes(b.id));
-            if (gBlocks.length === 0) return;
-            seriesProduct *= groupReliability(g, gBlocks, t);
-        });
-        return seriesProduct;
-    }, [blocks, groups, blockReliability, groupReliability]);
+    /** System R(t) — topology-aware composition (shared engine) */
+    const computeSystemR = useCallback((t: number): number => engineSystemR(blocks, groups, t), [blocks, groups]);
 
     const systemR = useMemo(() => computeSystemR(missionTime), [computeSystemR, missionTime]);
     const systemF = 1 - systemR; // Failure probability
 
-    /** Topology-aware system MTBF — numerical integration of R(t) */
-    const topoMTBF = useMemo(() => {
-        if (blocks.length === 0) return 0;
-        const horizon = 200000; // hours
-        const steps = 500;
-        const dt = horizon / steps;
-        let integral = 0;
-        for (let i = 0; i < steps; i++) {
-            const t = i * dt;
-            integral += computeSystemR(t) * dt;
-        }
-        return integral;
-    }, [blocks, computeSystemR]);
+    /** Topology-aware system MTBF — ∫R(t)dt with a step sized from the shortest block life (audit M-12) */
+    const topoMTBF = useMemo(() => engineSystemMTBF(blocks, groups), [blocks, groups]);
 
     const expectedFailures = useMemo(() => {
         if (topoMTBF <= 0) return 0;
@@ -802,17 +719,12 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
                     ? gBlocks.reduce((s, b) => s + blockReliability(b, missionTime), 0) / gBlocks.length
                     : 0;
                 const gR = groupReliability(g, gBlocks, missionTime);
-                // For K-of-N: compute R for all possible K values
+                // For K-of-N: exact R for every possible K (heterogeneous blocks, no averaging)
                 const kVariants: { k: number; r: number }[] = [];
                 if (g.type === 'k-of-n' && gBlocks.length > 0) {
+                    const rs = gBlocks.map(b => blockReliability(b, missionTime));
                     for (let kk = 1; kk <= gBlocks.length; kk++) {
-                        const n = gBlocks.length;
-                        let sum = 0;
-                        for (let i = kk; i <= n; i++) {
-                            const comb = factorial(n) / (factorial(i) * factorial(n - i));
-                            sum += comb * Math.pow(avgR, i) * Math.pow(1 - avgR, n - i);
-                        }
-                        kVariants.push({ k: kk, r: sum });
+                        kVariants.push({ k: kk, r: kOfNProbability(rs, kk) });
                     }
                 }
                 return { group: g, blocks: gBlocks, avgR, groupR: gR, kVariants };
@@ -1483,13 +1395,5 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
         </div>
     );
 };
-
-// Factorial helper for k-of-n
-function factorial(n: number): number {
-    if (n <= 1) return 1;
-    let r = 1;
-    for (let i = 2; i <= n; i++) r *= i;
-    return r;
-}
 
 export default ReliabilityBlockDiagram;

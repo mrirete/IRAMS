@@ -10,9 +10,10 @@ import {
     type MCInputs, type MCOutput
 } from '../utils/monteCarloEngine';
 import { MonteCarloResults } from '../components/MonteCarloResults';
+import { useReliabilityPerms } from '../hooks/useReliabilityPerms';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
 import {
-    FAILURE_QUERY_COLUMNS, isFailure, failureIntervalsHours, failureRepairHours,
+    FAILURE_QUERY_COLUMNS, isFailure, failureIntervalsHours, failureRepairHours, runningSuspensionHours,
 } from '../services/reliabilityMetrics';
 
 interface AssetOption { id: string; name: string; tag: string; criticality: string; }
@@ -92,6 +93,7 @@ export interface MCTabProps {
 }
 
 export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSendToRAM, onPMCreated, initialAsset }: MCTabProps) {
+    const perms = useReliabilityPerms();
     // ─── Inputs (default blank until Weibull bridge or EAM spool populates) ──
     const [beta, setBeta] = useState(bridgeData?.beta ?? 0);
     const [eta, setEta] = useState(bridgeData?.eta ?? 0);
@@ -185,9 +187,12 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
 
             setSpoolInfo({ failures: ttfs.length, repairs: repairs.length });
 
-            // Auto-fit Weibull if enough data
+            // Auto-fit Weibull if enough data — with the running time since the
+            // last failure as a suspension, exactly as the Weibull tab does, so
+            // both tools fit the same β/η on the same asset (audit M-10).
             if (ttfs.length >= 2) {
-                const wFit = fitWeibullFromTTFs(ttfs);
+                const run = runningSuspensionHours(records);
+                const wFit = fitWeibullFromTTFs(ttfs, run != null ? [run] : []);
                 if (wFit) { setBeta(wFit.beta); setEta(wFit.eta); setFitR2(wFit.r2); }
             }
             // Auto-fit Lognormal if enough repair data
@@ -462,7 +467,7 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
                         output={output}
                         hasPM={pmInterval > 0}
                         onSendToRAM={onSendToRAM}
-                        onCreatePM={selectedAsset && beta > 1 ? () => setShowPMModal(true) : undefined}
+                        onCreatePM={selectedAsset && beta > 1 && perms.canCreatePm ? () => setShowPMModal(true) : undefined}
                         asset={selectedAsset ? { id: selectedAsset.id, tag: selectedAsset.tag, name: selectedAsset.name } : null}
                         pmInterval={pmInterval}
                         beta={beta}

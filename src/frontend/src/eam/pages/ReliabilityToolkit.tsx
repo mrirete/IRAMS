@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import {
     computeAssetReliability, failureRepairHours, failureIntervalsHours,
     isFailure, assetFailureBasis, FAILURE_QUERY_COLUMNS,
+    failureRepairHoursWindowed, runningSuspensionHours,
 } from '../services/reliabilityMetrics';
 // @ts-ignore
 import * as jStat from 'jstat';
@@ -24,6 +25,7 @@ import LifecycleAnalysis from '../../components/reliability/LifecycleAnalysis';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
 import { fitWeibull, weibullBLife } from '../utils/weibull';
 import { poissonSpares } from '../utils/poissonSpares';
+import { useReliabilityPerms } from '../hooks/useReliabilityPerms';
 
 // M1 (one reliability engine): failure classification is the shared engine's
 // isFailure — never a local WO-type list. Queries fetch ALL types in-window
@@ -756,6 +758,10 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
                 if (basis.repairHours.length > 0) {
                     const calcMttr = basis.repairHours.reduce((s, v) => s + v, 0) / basis.repairHours.length;
                     setMttr(calcMttr.toFixed(1));
+                    // The engine's downtime series is the whole malfunction window
+                    // (SMRP MDT — logistics included), so a separate MLDT on top
+                    // would count it twice (audit M-18).
+                    setMldt('0');
                 }
             }
             setLoading(false);
@@ -871,6 +877,7 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
 // ═══════════════════════════════════════════════════════════════
 export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreated, onSentToRcm }: TabProps = {}) {
     const navigate = useNavigate();
+    const perms = useReliabilityPerms();
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [dataStr, setDataStr] = useState('20, 42, 55, 73, 95, 101, 118, 139');
     // Right-censored units (suspensions): ages of units removed/still running
@@ -939,15 +946,8 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
         if (loadedData.inputs.suspStr != null) setSuspStr(loadedData.inputs.suspStr);
     }, [loadedData]);
 
-    // Running (right-censored) interval: hours survived since the last failure.
-    const runningSuspensionHours = (recs: any[]): number | null => {
-        const lastFail = (recs || []).filter(isFailure)
-            .map(w => new Date(w.closed_at || w.created_at).getTime())
-            .sort((a, b) => b - a)[0];
-        if (!lastFail) return null;
-        const h = Math.floor((Date.now() - lastFail) / 3600000);
-        return h > 0 ? h : null;
-    };
+    // Running (right-censored) interval: `runningSuspensionHours` from the shared
+    // engine — the Monte Carlo tab uses the same one, so both fit the same data.
 
     useEffect(() => {
         if (!asset) return;
@@ -1172,14 +1172,20 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                                     </div>
                                 </div>
                                 <div className="flex flex-col gap-2 shrink-0">
-                                    <button
-                                        onClick={() => setShowPMModal(true)}
-                                        className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
-                                    >
-                                        <Wrench size={15} />
-                                        Create PM Program
-                                    </button>
-                                    {pmAsset && (
+                                    {perms.canCreatePm ? (
+                                        <button
+                                            onClick={() => setShowPMModal(true)}
+                                            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+                                        >
+                                            <Wrench size={15} />
+                                            Create PM Program
+                                        </button>
+                                    ) : (
+                                        <span className="text-[11px] text-slate-500 max-w-[220px]" title="Creating a PM program needs PM create/edit rights (planner, supervisor, reliability engineer).">
+                                            Hand this interval to a planner — creating the PM program needs PM rights.
+                                        </span>
+                                    )}
+                                    {pmAsset && perms.canEdit && (
                                         <button
                                             onClick={() => {
                                                 onSentToRcm?.({ assetTag: pmAsset.tag, beta: fit.beta, eta: fit.eta });
@@ -1217,7 +1223,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                         eta={fit.eta}
                         r2={fit.r2}
                         assetTag={classActive ? scopeLabel : asset?.tag}
-                        onCreatePM={pmAsset ? () => setShowPMModal(true) : undefined}
+                        onCreatePM={pmAsset && perms.canCreatePm ? () => setShowPMModal(true) : undefined}
                         reliabilityChart={
                             <ResponsiveContainer width="100%" height={280}>
                                 <LineChart data={fit.plotData} margin={{ top: 15, right: 25, left: 5, bottom: 5 }}>
@@ -1277,6 +1283,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
 //  TAB 4: Spares Demand (Poisson)
 // ═══════════════════════════════════════════════════════════════
 export function SparesTab({ onStateChange, loadedData, initialAsset, onMinLevelApplied }: TabProps = {}) {
+    const perms = useReliabilityPerms();
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [loadingSp, setLoadingSp] = useState(false);
     const [population, setPopulation] = useState('10');
@@ -1471,13 +1478,24 @@ export function SparesTab({ onStateChange, loadedData, initialAsset, onMinLevelA
                             }
                             setTimeout(() => setInvToast(null), 4000);
                         }}
-                        disabled={!invSel || invApplying}
+                        disabled={!invSel || invApplying || !perms.canApplyStock}
+                        title={perms.canApplyStock ? undefined : 'Changing stock levels needs inventory edit rights (storekeeper / planner)'}
                         className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors"
                     >
                         {invApplying ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />}
                         Apply min level
                     </button>
                 </div>
+                {!perms.canApplyStock && (
+                    <p className="text-[11px] text-slate-500">
+                        You can size the holding here; setting the item's min level is a storekeeper / planner action — save this analysis into the study and hand it over.
+                    </p>
+                )}
+                {result.truncated && (
+                    <p className="text-[11px] font-medium text-amber-700">
+                        λ = {result.lambda.toFixed(0)} expected failures in one resupply interval — far beyond a Poisson stocking model; check the population, MTBF and resupply time.
+                    </p>
+                )}
                 {invToast && <p className="text-[11px] font-medium text-emerald-700">{invToast}</p>}
             </div>
 
@@ -1539,16 +1557,13 @@ export function MaintainabilityTab({ onStateChange, loadedData }: TabProps = {})
         if (!asset) return;
         setLoading(true);
         (async () => {
-            // actual_hours never existed on work_orders — PostgREST rejected the
-            // whole select (42703) and this auto-populate silently never fired.
-            // Same repair basis as the engine: recorded downtime, else order-level
-            // actual hours (0283).
+            // Same repair series as the engine's MTTR/MDT: PRIMARY FAILURES only,
+            // engine window, engine downtime chain. This tab used to average every
+            // work order on the asset, PMs included (audit M-18).
             const { data: wos } = await supabase.from('work_orders')
-                .select('actual_downtime_hrs, actual_duration_hrs')
+                .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id);
-            const durs = (wos || [])
-                .map(w => Number(w.actual_downtime_hrs) || Number(w.actual_duration_hrs) || 0)
-                .filter(n => n > 0);
+            const durs = failureRepairHoursWindowed(wos || []);
             if (durs.length > 0) {
                 setDataStr(durs.map(n => n.toFixed(1)).join(', '));
             }
@@ -1754,8 +1769,10 @@ export function RAMDashboardTab({ onStateChange, loadedData, initialAsset, onSen
                     // Falls back to a calendar year when MTBF can't be derived (<2 failures).
                     setTotalHours(rel.mtbfDays != null ? String(Math.round(rel.mtbfDays * 24 * n)) : '8760');
                 }
-                // Repair times = same failure set + downtime basis as the engine's MTTR.
-                const repairs = failureRepairHours(wos);
+                // Repair times = same failure set, downtime basis AND window as the
+                // engine's MTTR/MDT — the lifetime series made RAM's Ao disagree
+                // with Metrics for the same asset (audit M-13).
+                const repairs = failureRepairHoursWindowed(wos);
                 if (repairs.length > 0) {
                     setRepairTimesStr(repairs.map(r => r.toFixed(1)).join(', '));
                 }

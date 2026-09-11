@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
-    Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
+    Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp, Info,
     AlertCircle, Check, X, ArrowRight, Plus,
 } from 'lucide-react';
 
@@ -35,6 +35,7 @@ import { MonteCarloSimTab } from '../../eam/components/MonteCarloSimTab';
 import analyzeService from '../../eam/services/AnalyzeService';
 import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy } from '../../eam/services/AnalyzeService';
 import { useAuth } from '../../eam/contexts/AuthContext';
+import { useReliabilityPerms } from '../../eam/hooks/useReliabilityPerms';
 import { StudyRecordsPanel } from './ReliabilityStudyRecords';
 import ReliabilityStartHere from './ReliabilityStartHere';
 import ReliabilityStudyWorkspace from './ReliabilityStudyWorkspace';
@@ -331,6 +332,8 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     const { profile, user } = useAuth();
     // Human-readable author stamped on saved studies (falls back gracefully).
     const currentAuthor = profile?.username || profile?.fullName || user?.email || null;
+    // Role state (audit M-5): the page offers only what 0358 will let through.
+    const perms = useReliabilityPerms();
 
     // Controlled (URL) when onToolChange is provided; internal state otherwise.
     const [internalCalc, setInternalCalc] = useState<CalcTab | null>('ram');
@@ -559,11 +562,27 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     // ★ Study lifecycle (0204): status transition + findings summary. Approval
     // stamps the approver; graceful toast if the migration isn't applied yet.
     const handleUpdateStudy = useCallback(async (id: string, updates: { status: import('../../eam/services/AnalyzeService').ReliabilityStudyStatus; findings: string }) => {
-        const payload: Record<string, any> = { status: updates.status, findings: updates.findings || null };
         const prev = savedStudies.find(s => s.id === id);
-        if (updates.status === 'approved' && prev?.status !== 'approved') {
-            payload.approved_by = currentAuthor;
-            payload.approved_at = new Date().toISOString();
+        // Page-side mirror of the 0358 guard so the refusal reads as a sentence,
+        // not a 42501. The approver stamps are set by the database trigger.
+        const entering = updates.status === 'approved' && prev?.status !== 'approved';
+        const leaving = prev?.status === 'approved' && updates.status !== 'approved';
+        if (prev && (entering || leaving) && !perms.canApproveStudy(prev)) {
+            setSaveToast(entering
+                ? (prev.created_by_user_id === perms.uid
+                    ? 'A study is approved by someone other than its author (four-eyes) — send it for review and ask an approver.'
+                    : 'Approval needs reliability approval rights, or an administrator.')
+                : 'Reopening an approved study needs an approver or an administrator.');
+            setTimeout(() => setSaveToast(null), 6000);
+            return false;
+        }
+        const payload: Record<string, any> = prev?.status === 'approved' && updates.status === 'approved'
+            ? {} // frozen: nothing to send
+            : { status: updates.status, findings: updates.findings || null };
+        if (Object.keys(payload).length === 0) {
+            setSaveToast('The study is approved and frozen — reopen it to change the decision.');
+            setTimeout(() => setSaveToast(null), 5000);
+            return false;
         }
         const updated = await analyzeService.updateReliabilityStudy(id, payload);
         if (updated) {
@@ -572,10 +591,10 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             setTimeout(() => setSaveToast(null), 3000);
             return true;
         }
-        setSaveToast('Update failed — apply migration 0204 (study lifecycle), then retry');
+        setSaveToast('Update refused — you may not have the rights for this change (details in the console)');
         setTimeout(() => setSaveToast(null), 5000);
         return false;
-    }, [savedStudies, currentAuthor]);
+    }, [savedStudies, perms]);
 
     // ★ New Study button (launcher): create the container up-front — analyses
     // saved later group under it via the Save dialog's study picker.
@@ -820,6 +839,18 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
     return (
         <div className="space-y-4">
+            {/* View-only state (audit M-5): say so once, up front, instead of
+                offering Save / Create PM / Apply that the database will refuse. */}
+            {!perms.canEdit && (
+                <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+                    <Info size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                    <span>
+                        <strong>View only.</strong> You can run every calculator and read every study; saving studies, creating PM programs and
+                        changing stock levels need reliability, PM or inventory edit rights.
+                        {perms.canApprove && ' You may approve or reopen studies sent for review.'}
+                    </span>
+                </div>
+            )}
             {/* ── Launcher / study workspace: one centred reading column with the
                 tools off to the side. A tool, when opened, takes the full width
                 because charts and diagrams need it. ── */}
@@ -836,18 +867,22 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                                 onOpenTool={handleStudyOpenTool}
                                 onOpenAnalysis={handleLoad}
                                 onSaveDecision={async ({ findings, status }) => handleUpdateStudy(activeStudy.id, { status, findings })}
+                                canEdit={perms.canEditStudy(activeStudy)}
+                                canApprove={perms.canApproveStudy(activeStudy)}
                             />
                         ) : (
                             <>
                                 {/* New study sits at the top — the action, not a footnote */}
                                 <div className="flex items-center justify-between gap-2">
                                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Where to start</p>
-                                    <button
-                                        onClick={() => setShowNewStudy(true)}
-                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary-600 text-white text-xs font-bold shadow-sm hover:bg-primary-700 transition-colors"
-                                    >
-                                        <Plus size={14} /> New study
-                                    </button>
+                                    {perms.canEdit && (
+                                        <button
+                                            onClick={() => setShowNewStudy(true)}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary-600 text-white text-xs font-bold shadow-sm hover:bg-primary-700 transition-colors"
+                                        >
+                                            <Plus size={14} /> New study
+                                        </button>
+                                    )}
                                 </div>
 
                                 {/* 1. Where your own failure history says to look */}
@@ -860,7 +895,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                                     outcomes={outcomes}
                                     loading={savedLoading}
                                     onLoad={handleLoad}
-                                    onUpdateStudy={handleUpdateStudy}
+                                    onUpdateStudy={perms.canEdit || perms.canApprove ? handleUpdateStudy : undefined}
                                     onOpenStudy={openStudy}
                                 />
                             </>
@@ -920,8 +955,8 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                         })}
                     </div>
 
-                    {/* Save button — always visible, pinned outside scroll horizon */}
-                    {currentAnalysisType && (
+                    {/* Save button — pinned outside scroll horizon; only for people who may write */}
+                    {currentAnalysisType && perms.canEdit && (
                         <button
                             onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
                             title={activeAnalysisId ? 'Save the current state as a new dated version' : 'Save this study'}
@@ -948,8 +983,8 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                     analyses={filteredAnalyses}
                     activeId={activeAnalysisId}
                     onLoad={handleLoad}
-                    onEdit={handleEdit}
-                    onDelete={setDeleteTarget}
+                    onEdit={perms.canEdit ? handleEdit : () => setSaveToast('View only — saving and editing analyses needs reliability edit rights')}
+                    onDelete={perms.canEdit ? setDeleteTarget : () => setSaveToast('View only — deleting analyses needs reliability edit rights')}
                     loading={savedLoading}
                 />
             )}

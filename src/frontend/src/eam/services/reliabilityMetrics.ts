@@ -56,7 +56,8 @@ export interface AssetReliability {
   availabilityPct?: number;    // alias of aiPct (legacy consumers)
   scheduledDowntimeHrs12mo: number;   // SMRP 3.3 — downtime on preventive/scheduled work in window
   unscheduledDowntimeHrs12mo: number; // SMRP 3.4 — downtime on failures in window
-  operatingHrs12mo: number;    // window hours less all recorded downtime (the MTBF/MTBM numerator)
+  operatingHrs12mo: number;    // window hours less all recorded downtime (the MTBF/MTBM numerator), never below 1
+  downtimeSuspect: boolean;    // a single event recorded more downtime than the whole window — capped, and the record needs a look
   downtimeCoveragePct: number; // share of window failures carrying a downtime figure — the trust caveat
   collateral12mo: number;      // failures marked as collateral of ANOTHER failure (0289) — shown, never counted against this asset
   recurringModes: { mode: string; count: number }[]; // failure modes seen >=2× (12mo)
@@ -177,7 +178,8 @@ export function assetFailureBasis(records: any[]): FailureBasis {
     failures,
     mtbfHours,
     totalHours: mtbfHours != null && failures > 0 ? Math.round(mtbfHours * failures) : 8760,
-    repairHours: failureRepairHours(records || []),
+    // Same pool as the engine's MTTR/MDT (window, else lifetime) — M-13.
+    repairHours: failureRepairHoursWindowed(records || []),
   };
 }
 
@@ -249,11 +251,20 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
   else if (downs.length) { mttrHours = mdtHours; mttrBasis = 'downtime-proxy'; }
 
   // ── Downtime split (SMRP 3.3 / 3.4) and the operating-time basis ──────────
-  const unscheduledDowntimeHrs12mo = Math.round(failures12.map(repairHoursOf).reduce((s, d) => s + d, 0) * 10) / 10;
-  const interruptingPm = (records || []).filter(r => !isFailure(r) && isPreventiveType(r) && inWindow(r) && pmDowntimeOf(r) > 0);
-  const scheduledDowntimeHrs12mo = Math.round(interruptingPm.map(pmDowntimeOf).reduce((s, d) => s + d, 0) * 10) / 10;
   const windowHours = windowDays * 24;
-  const operatingHrs12mo = Math.max(0, Math.round(windowHours - unscheduledDowntimeHrs12mo - scheduledDowntimeHrs12mo));
+  // No single event can have taken the asset down for longer than the window
+  // it is being counted in: a 9 000 h outage on one order drove operating time
+  // to 0 and MTBF/Ai to 0 (audit M-23). Cap per event and flag the record.
+  const capped = (h: number) => Math.min(h, windowHours);
+  const downtimeSuspect = failures12.some(r => repairHoursOf(r) > windowHours)
+    || (records || []).some(r => !isFailure(r) && isPreventiveType(r) && inWindow(r) && pmDowntimeOf(r) > windowHours);
+  const unscheduledDowntimeHrs12mo = Math.round(failures12.map(r => capped(repairHoursOf(r))).reduce((s, d) => s + d, 0) * 10) / 10;
+  const interruptingPm = (records || []).filter(r => !isFailure(r) && isPreventiveType(r) && inWindow(r) && pmDowntimeOf(r) > 0);
+  const scheduledDowntimeHrs12mo = Math.round(interruptingPm.map(r => capped(pmDowntimeOf(r))).reduce((s, d) => s + d, 0) * 10) / 10;
+  // Operating time never collapses to zero: the sum of recorded downtime is
+  // itself capped at the window less one hour, so a suspect record produces
+  // a very low MTBF (visible, flagged) rather than 0 / division by zero.
+  const operatingHrs12mo = Math.max(1, Math.round(windowHours - Math.min(windowHours - 1, unscheduledDowntimeHrs12mo + scheduledDowntimeHrs12mo)));
 
   // ── SMRP 3.5.1 MTBF = operating time ÷ failures ───────────────────────────
   // Operating time is the window less recorded downtime (calendar-hour
@@ -334,6 +345,7 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     scheduledDowntimeHrs12mo,
     unscheduledDowntimeHrs12mo,
     operatingHrs12mo,
+    downtimeSuspect,
     downtimeCoveragePct,
     collateral12mo,
     recurringModes,
@@ -395,9 +407,40 @@ const pmDowntimeOf = (r: any): number => {
 
 /** Per-failure repair/downtime hours (same basis as MTTR) — for maintainability charts.
  *  Primaries only (0289): repairing collateral damage is real work, but it is not
- *  this asset's repair-time distribution. */
+ *  this asset's repair-time distribution. ALL history. */
 export function failureRepairHours(records: any[]): number[] {
   return (records || []).filter(isFailure).filter(r => !isSecondaryFailure(r)).map(repairHoursOf).filter(d => d > 0);
+}
+
+/**
+ * The repair-time series over the SAME pool the engine's MTTR/MDT use: the
+ * analysis window when it holds failures, all recorded failures otherwise.
+ * The RAM tab used to take the lifetime series while its MTBF was windowed,
+ * so its Ao disagreed with Metrics for the same asset (audit M-13).
+ */
+export function failureRepairHoursWindowed(records: any[], windowDays = 365): number[] {
+  const since = Date.now() - windowDays * 86400000;
+  const primaries = (records || []).filter(isFailure).filter(r => !isSecondaryFailure(r));
+  const inWindow = primaries.filter(r => { const d = eventDate(r); return d ? new Date(d).getTime() >= since : false; });
+  const pool = inWindow.length ? inWindow : primaries;
+  return pool.map(repairHoursOf).filter(d => d > 0);
+}
+
+/**
+ * Right-censored running interval: hours the asset has survived since its
+ * last primary failure. Every Weibull surface must pass this as a suspension —
+ * fitting the failures alone biases β/η pessimistic, and the Monte Carlo tab
+ * used to do exactly that while the Weibull tab did not, so the two disagreed
+ * on the same asset (audit M-10).
+ */
+export function runningSuspensionHours(records: any[], now = Date.now()): number | null {
+  const last = (records || []).filter(isFailure).filter(r => !isSecondaryFailure(r))
+    .map(eventDate).filter(Boolean)
+    .map(d => new Date(d as string).getTime())
+    .sort((a, b) => b - a)[0];
+  if (!last) return null;
+  const h = Math.floor((now - last) / 3600000);
+  return h > 0 ? h : null;
 }
 
 /** Inter-arrival times between consecutive failures, in hours — for Weibull life data.

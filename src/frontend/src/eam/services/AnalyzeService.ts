@@ -584,6 +584,10 @@ export interface ReliabilityStudy {
     findings?: string | null;
     approved_by?: string | null;
     approved_at?: string | null;
+    /** 0358: trigger-stamped auth uids; approved_by / created_by keep the display names */
+    approved_by_user_id?: string | null;
+    created_by_user_id?: string | null;
+    revision?: number;
     created_by: string | null;
     created_at: string;
     updated_at: string;

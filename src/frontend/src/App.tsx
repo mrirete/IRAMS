@@ -217,7 +217,7 @@ function App() {
                                 <Route path="/task-library" element={<PermissionGate module="taskLibrary"><EamTaskLibrary /></PermissionGate>} />
                                 <Route path="/management-of-change" element={<PermissionGate module="moc"><EamManagementOfChange /></PermissionGate>} />
                                 <Route path="/management-of-change/:id" element={<PermissionGate module="moc"><EamManagementOfChange /></PermissionGate>} />
-                                <Route path="/reliability-toolkit" element={<PermissionGate module="analytics"><EamReliabilityToolkit /></PermissionGate>} />
+                                <Route path="/reliability-toolkit" element={<PermissionGate module="reliability"><EamReliabilityToolkit /></PermissionGate>} />
                                 <Route path="/system-health" element={<PermissionGate module="admin"><EamSystemHealth /></PermissionGate>} />
                                 <Route path="/reports" element={<PermissionGate module="analytics"><EamReports /></PermissionGate>} />
                                 <Route path="/reports/drilldown/:reportType" element={<PermissionGate module="analytics"><EamReportDrillDown /></PermissionGate>} />

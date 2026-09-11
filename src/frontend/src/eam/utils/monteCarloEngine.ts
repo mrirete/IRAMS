@@ -24,6 +24,8 @@ export interface MCRunResult {
   downtime: number;
   availability: number;
   totalCost: number;
+  /** time to the FIRST failure of a new unit in this run (hours) — the empirical survival sample */
+  firstTtf: number;
 }
 
 export interface MCOutput {
@@ -68,9 +70,15 @@ function simulateRun(inputs: MCInputs, usePM: boolean): MCRunResult {
   const { beta, eta, muR, sigmaR, missionTime, costPerFailure, pmCost, pmInterval, pmDuration } = inputs;
   let t = 0, failures = 0, downtime = 0, cost = 0;
   let nextPM = usePM && pmInterval > 0 ? pmInterval : Infinity;
+  // The first draw is a complete time-to-failure sample of a new unit (the
+  // PM, when it comes first, is a renewal — so it is recorded from the RTF
+  // strategy only, where nothing interrupts it).
+  const firstTtf = weibullRandom(beta, eta);
+  let first = true;
 
   while (t < missionTime) {
-    const ttf = weibullRandom(beta, eta);
+    const ttf = first ? firstTtf : weibullRandom(beta, eta);
+    first = false;
     const failureTime = t + ttf;
 
     if (usePM && failureTime > nextPM && nextPM <= missionTime) {
@@ -94,7 +102,7 @@ function simulateRun(inputs: MCInputs, usePM: boolean): MCRunResult {
   }
 
   const availability = Math.max(0, (missionTime - downtime) / missionTime) * 100;
-  return { failures, downtime: Math.round(downtime * 10) / 10, availability: Math.round(availability * 100) / 100, totalCost: Math.round(cost) };
+  return { failures, downtime: Math.round(downtime * 10) / 10, availability: Math.round(availability * 100) / 100, totalCost: Math.round(cost), firstTtf };
 }
 
 // ─── Percentile helper ──────────────────────────────────────
@@ -106,14 +114,16 @@ function percentile(arr: number[], p: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
 
-function calcPercentiles(runs: MCRunResult[]): MCPercentiles {
+function calcPercentiles(runs: MCRunResult[], missionTime: number): MCPercentiles {
   const aos = runs.map(r => r.availability);
   const fails = runs.map(r => r.failures);
   const costs = runs.map(r => r.totalCost);
   const downs = runs.map(r => r.downtime);
   const totalFailures = fails.reduce((s, v) => s + v, 0);
   const totalDown = downs.reduce((s, v) => s + v, 0);
-  const totalUp = runs.length * (runs[0] ? 8760 : 0) - totalDown;
+  // Uptime basis is the MISSION time, not a calendar year: a 2-year mission
+  // used to halve the simulated MTBF (audit M-11).
+  const totalUp = runs.length * missionTime - totalDown;
   const mtbfSim = totalFailures > 0 ? Math.round(totalUp / totalFailures) : Infinity;
 
   const pct = (arr: number[]) => ({
@@ -186,24 +196,40 @@ export function runMonteCarloSimulation(inputs: MCInputs): MCOutput {
     }
   }
 
-  // Convergence check: CV < 2%
+  // Convergence = the estimate we report has settled, not "the spread is
+  // small". Availability sits at 97–99 % so its CV was always < 2 % and every
+  // run said "Converged" (audit M-11). Use the 95 % half-width of the MEAN
+  // failure count (the quantity the PM decision turns on) relative to the
+  // mean: < 2 % → converged. If nothing ever failed, a large run count is
+  // the only signal.
   const finalAvg = aoSum / numRuns;
-  const finalVar = (aoSumSq / numRuns) - (finalAvg ** 2);
-  const cv = finalAvg > 0 ? Math.sqrt(Math.max(0, finalVar)) / finalAvg : 1;
-  const converged = cv < 0.02;
+  const meanOf = (xs: number[]) => xs.reduce((s, v) => s + v, 0) / Math.max(1, xs.length);
+  const seOf = (xs: number[]) => {
+    const m = meanOf(xs);
+    const v = xs.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, xs.length - 1);
+    return Math.sqrt(Math.max(0, v) / Math.max(1, xs.length));
+  };
+  const failCounts = rtfRuns.map(r => r.failures);
+  const meanFails = meanOf(failCounts);
+  const converged = meanFails > 0
+    ? (1.96 * seOf(failCounts)) / meanFails < 0.02
+    : numRuns >= 1000;
+  void finalAvg;
 
-  // Survival curve from theoretical Weibull
+  // Survival curve: theoretical Weibull vs the EMPIRICAL survival of the
+  // simulated first-failure times (a complete sample → S(t) = share of runs
+  // whose first failure came after t). The old "simulated" series was the
+  // share of runs with missionTime/failures > t, which is not a survival
+  // function at all (audit M-11).
   const survivalCurve: MCOutput['survivalCurve'] = [];
   const maxT = eta * 2.5;
   const step = maxT / 50;
-  // Pool all simulated TTFs for empirical survival (approximate from failure counts)
+  const firstTtfs = rtfRuns.map(r => r.firstTtf).sort((a, b) => a - b);
+  let idx = 0;
   for (let t = 0; t <= maxT; t += step) {
     const theoretical = Math.exp(-Math.pow(t / eta, beta)) * 100;
-    // Approximate empirical: fraction of runs where avg TTF > t
-    const empirical = (rtfRuns.filter(r => {
-      const avgTTF = r.failures > 0 ? missionTime / r.failures : missionTime;
-      return avgTTF > t;
-    }).length / rtfRuns.length) * 100;
+    while (idx < firstTtfs.length && firstTtfs[idx] <= t) idx++;
+    const empirical = firstTtfs.length ? ((firstTtfs.length - idx) / firstTtfs.length) * 100 : 0;
     survivalCurve.push({
       t: Math.round(t),
       simulated: Math.round(empirical * 10) / 10,
@@ -211,8 +237,8 @@ export function runMonteCarloSimulation(inputs: MCInputs): MCOutput {
     });
   }
 
-  const rtfPercentiles = calcPercentiles(rtfRuns);
-  const pmPercentiles = hasPM ? calcPercentiles(pmRuns) : null;
+  const rtfPercentiles = calcPercentiles(rtfRuns, missionTime);
+  const pmPercentiles = hasPM ? calcPercentiles(pmRuns, missionTime) : null;
 
   const histogramAo = buildHistogram(
     rtfRuns.map(r => r.availability),
@@ -236,9 +262,9 @@ export function runMonteCarloSimulation(inputs: MCInputs): MCOutput {
 // ─── Weibull MRR fit for auto-populate ──────────────────────
 // R-1: delegates to the shared censored-capable fitter (utils/weibull.ts) so
 // every Weibull surface uses ONE implementation. Pass suspensions when known.
-export function fitWeibullFromTTFs(times: number[], suspensions: number[] = []): { beta: number; eta: number; r2: number } | null {
+export function fitWeibullFromTTFs(times: number[], suspensions: number[] = []): { beta: number; eta: number; r2: number; nSuspensions: number } | null {
   const fit = fitWeibull(times, suspensions);
-  return fit ? { beta: Math.max(0.1, fit.beta), eta: Math.max(1, fit.eta), r2: fit.r2 } : null;
+  return fit ? { beta: Math.max(0.1, fit.beta), eta: Math.max(1, fit.eta), r2: fit.r2, nSuspensions: fit.nSuspensions } : null;
 }
 
 // ─── Lognormal fit for repair times ─────────────────────────

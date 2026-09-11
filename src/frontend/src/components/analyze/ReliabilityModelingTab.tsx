@@ -52,6 +52,7 @@ async function tellAddedMember(c: StudyCollaborator, kind: 'reliability study' |
     }
 }
 import { assetFailureBasis, FAILURE_QUERY_COLUMNS } from '../../eam/services/reliabilityMetrics';
+import { systemMetrics as computeSystemMetrics, systemAo as computeSystemAo } from '../../eam/lib/rbdEngine';
 
 // ── Composite state for undo/redo ────────────────────────────
 interface RBDState { blocks: RBDBlock[]; groups: RBDGroup[] }
@@ -663,40 +664,14 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
         setTimeout(() => setLinkToast(null), 6000);
     }, [genAssets, genSel, rbd, rbdLinkAsset]);
 
-    // ★ P1.3: Compute system-level metrics from RBD topology
+    // ★ P1.3: System-level metrics from the RBD topology — ONE engine
+    // (eam/lib/rbdEngine): exact k-of-n availability, standby flagged as the
+    // active-parallel bound, and MTBF = ∫R(t)dt rather than the average of the
+    // blocks (audit M-12 — the average was what "Send to RAM" carried across).
     const systemMetrics = useMemo(() => {
         const { blocks, groups } = rbd.state;
-        if (blocks.length === 0) return { ao: 0, mtbf: 0, mttr: 0 };
-
-        // Compute per-block availability
-        const blockAo = (b: RBDBlock) => b.mtbf / (b.mtbf + b.mttr);
-
-        // Group availability computation
-        const groupAo = (g: RBDGroup): number => {
-            const gBlocks = g.blocks.map(bid => blocks.find(b => b.id === bid)).filter(Boolean) as RBDBlock[];
-            if (gBlocks.length === 0) return 1;
-            if (g.type === 'series') {
-                return gBlocks.reduce((acc, b) => acc * blockAo(b), 1);
-            } else if (g.type === 'parallel') {
-                return 1 - gBlocks.reduce((acc, b) => acc * (1 - blockAo(b)), 1);
-            } else if (g.type === 'standby') {
-                return 1 - gBlocks.reduce((acc, b) => acc * (1 - blockAo(b)), 1);
-            }
-            return gBlocks.reduce((acc, b) => acc * blockAo(b), 1);
-        };
-
-        // System Ao = product of all group Ao values (groups in series)
-        const assignedBlockIds = new Set(groups.flatMap(g => g.blocks));
-        const ungroupedBlocks = blocks.filter(b => !assignedBlockIds.has(b.id));
-
-        let sysAo = groups.reduce((acc, g) => acc * groupAo(g), 1);
-        sysAo = ungroupedBlocks.reduce((acc, b) => acc * blockAo(b), sysAo);
-
-        // System MTBF/MTTR approximation
-        const avgMtbf = blocks.reduce((s, b) => s + b.mtbf, 0) / blocks.length;
-        const avgMttr = blocks.reduce((s, b) => s + b.mttr, 0) / blocks.length;
-
-        return { ao: sysAo, mtbf: avgMtbf, mttr: avgMttr };
+        if (blocks.length === 0) return { ao: 0, mtbf: 0, mttr: 0, approximate: false };
+        return computeSystemMetrics(blocks, groups);
     }, [rbd.state]);
 
     // ★ P1.3: Report metrics to parent for "Analyze & Investigate" context
@@ -809,20 +784,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
     }, []);
 
     // Helper: compute Ao for a study's block/group data
-    const studyAo = (s: RBDStudy): number => {
-        if (!s.blocks?.length) return 0;
-        const bAo = (b: RBDBlock) => b.mtbf / (b.mtbf + b.mttr);
-        const gAo = (g: RBDGroup): number => {
-            const gB = g.blocks.map(bid => s.blocks.find(b => b.id === bid)).filter(Boolean) as RBDBlock[];
-            if (!gB.length) return 1;
-            if (g.type === 'series') return gB.reduce((a, b) => a * bAo(b), 1);
-            return 1 - gB.reduce((a, b) => a * (1 - bAo(b)), 1);
-        };
-        const assigned = new Set(s.groups.flatMap(g => g.blocks));
-        const ungrouped = s.blocks.filter(b => !assigned.has(b.id));
-        const ao = s.groups.reduce((a, g) => a * gAo(g), 1);
-        return ungrouped.reduce((a, b) => a * bAo(b), ao);
-    };
+    const studyAo = (s: RBDStudy): number => (s.blocks?.length ? computeSystemAo(s.blocks, s.groups || []) : 0);
 
     // Auto-save to active study on RBD changes (debounced)
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1226,6 +1188,9 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                 <span className="text-slate-300">|</span>
                                 <span className="text-slate-500">MTTR:</span>
                                 <span className="font-semibold text-slate-700 font-mono">{Math.round(systemMetrics.mttr)}h</span>
+                                {systemMetrics.approximate && (
+                                    <span className="text-amber-600" title="A standby group's availability uses the active-parallel value — a conservative bound; repairable cold standby has no closed form here.">· standby ≈ bound</span>
+                                )}
                             </div>
                             {onSendToRAM && (
                                 <button onClick={() => onSendToRAM(systemMetrics.mtbf, systemMetrics.mttr, systemMetrics.ao)}

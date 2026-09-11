@@ -50,10 +50,12 @@ interface Props {
     /** Persist the decision text and/or a status transition. */
     onSaveDecision: (updates: { findings: string; status: ReliabilityStudyStatus }) => Promise<boolean>;
     canEdit?: boolean;
+    /** Four-eyes (0358): approve / reopen — never the author, unless an administrator. */
+    canApprove?: boolean;
 }
 
 export const ReliabilityStudyWorkspace: React.FC<Props> = ({
-    study, analyses, outcomes, onBack, onOpenTool, onOpenAnalysis, onSaveDecision, canEdit = true,
+    study, analyses, outcomes, onBack, onOpenTool, onOpenAnalysis, onSaveDecision, canEdit = true, canApprove = false,
 }) => {
     const obj = objectiveDef(study.objective);
     const [findings, setFindings] = useState(study.findings || '');
@@ -276,16 +278,18 @@ export const ReliabilityStudyWorkspace: React.FC<Props> = ({
                         </div>
                     )}
 
-                    {canEdit && (
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                onClick={() => save(study.status)}
-                                disabled={saving || study.status === 'approved'}
-                                className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 rounded-lg shadow-sm hover:bg-primary-700 disabled:opacity-40 transition-colors"
-                            >
-                                {saving ? 'Saving…' : 'Save decision'}
-                            </button>
-                            {study.status === 'active' && (
+                    {(canEdit || canApprove) && (
+                        <div className="flex flex-wrap gap-2 items-center">
+                            {canEdit && (
+                                <button
+                                    onClick={() => save(study.status)}
+                                    disabled={saving || study.status === 'approved'}
+                                    className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 rounded-lg shadow-sm hover:bg-primary-700 disabled:opacity-40 transition-colors"
+                                >
+                                    {saving ? 'Saving…' : 'Save decision'}
+                                </button>
+                            )}
+                            {canEdit && study.status === 'active' && (
                                 <button
                                     onClick={() => save('in_review')}
                                     disabled={saving}
@@ -294,7 +298,7 @@ export const ReliabilityStudyWorkspace: React.FC<Props> = ({
                                     Send for review
                                 </button>
                             )}
-                            {study.status === 'in_review' && (
+                            {study.status === 'in_review' && (canApprove ? (
                                 <button
                                     onClick={() => save('approved')}
                                     disabled={saving}
@@ -302,15 +306,22 @@ export const ReliabilityStudyWorkspace: React.FC<Props> = ({
                                 >
                                     Approve
                                 </button>
-                            )}
-                            {study.status === 'approved' && (
+                            ) : (
+                                <span className="text-[11px] text-slate-500">
+                                    Awaiting approval — by someone with reliability approval rights other than the author (four-eyes), or an administrator.
+                                </span>
+                            ))}
+                            {study.status === 'approved' && canApprove && (
                                 <button
                                     onClick={() => save('active')}
                                     disabled={saving}
                                     className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-colors"
                                 >
-                                    Reopen
+                                    Reopen (new revision)
                                 </button>
+                            )}
+                            {study.status === 'approved' && !canApprove && (
+                                <span className="text-[11px] text-slate-500">Approved and frozen — an approver or administrator can reopen it.</span>
                             )}
                         </div>
                     )}
