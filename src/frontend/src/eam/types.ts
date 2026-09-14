@@ -1124,6 +1124,10 @@ export interface RecurringJob {
 
   // RCM Strategy Link (SAE JA1011 / ISO 14224)
   rcmStrategy?: 'TIME_DIRECTED' | 'CONDITION_DIRECTED' | 'FAILURE_FINDING' | 'RUN_TO_FAILURE';
+  // 0299 structured provenance: why this PM exists (Weibull fit, RCM decision,
+  // SAP load file {plan, item, task_list, strategy, cadence_from}). Display,
+  // audit and import matching — generation logic never reads it.
+  origin?: Record<string, unknown>;
   functionalFailureCode?: string; // Dictionary: FUNCTIONAL_FAILURE
   failureModeCode?: string;       // Dictionary: FAILURE_MODE — what this PM prevents
 

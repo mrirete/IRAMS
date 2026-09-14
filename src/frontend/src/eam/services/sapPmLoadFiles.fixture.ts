@@ -201,10 +201,15 @@ export const SAP_PM_LOAD_FILES: Record<string, Record<string, string[][]>> = {
 
 /** Build one of the load files as the browser would hand it to parseImportFile. */
 export function sapPmLoadFile(name: keyof typeof SAP_PM_LOAD_FILES): File {
+    return sapPmLoadFileFrom(SAP_PM_LOAD_FILES[name], `SAMPLE_Load_File_${name}.xlsx`);
+}
+
+/** The same, from an edited copy of a workbook's sheets (a test's what-if). */
+export function sapPmLoadFileFrom(sheets: Record<string, string[][]>, fileName = 'SAMPLE_Load_File.xlsx'): File {
     const wb = XLSX.utils.book_new();
-    for (const [sheet, rows] of Object.entries(SAP_PM_LOAD_FILES[name])) {
+    for (const [sheet, rows] of Object.entries(sheets)) {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheet);
     }
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    return new File([buf], `SAMPLE_Load_File_${name}.xlsx`);
+    return new File([buf], fileName);
 }

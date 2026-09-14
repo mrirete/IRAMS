@@ -17,6 +17,8 @@ import { MOCK_RECURRING_JOBS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS }
 import { RecurringJob, Asset, WorkOrderType, JobJSA, JobLabor, JobInventory, JobFile, JobTask, InstructionBlock, Contact, JSAHazard, GenerationRule, LibraryTask } from '../types';
 import { CreatePMModal } from '../components/modals/CreatePMModal';
 import BulkImportModal from '../components/modals/BulkImportModal';
+import { sapCycleUnit, cadenceEquals, cadenceLabel, cadenceSuffix, isMeterUnit } from '../lib/sapCycles';
+import { splitOperationsByCadence } from '../lib/jobPlanImport';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { DatabaseService } from '../services/DatabaseService';
 import { supabase } from '../lib/supabase';
@@ -736,29 +738,81 @@ export const RecurringWork: React.FC = () => {
             (centres || []).map((c: any) => [String(c.code ?? '').toUpperCase(), c.id])
         );
 
+        // A SAP general task list is referenced by its group/counter
+        // ("30009001/01"), stamped on each schedule's origin by the schedule
+        // import. Unlike a PM code, one task list legitimately serves several
+        // schedules — the operations attach to every one of them.
+        const pmsByTaskList = new Map<string, RecurringJob[]>();
+        for (const pm of jobs) {
+            const origin = pm.origin as Record<string, unknown> | undefined;
+            const ref = String(origin?.task_list ?? '').toUpperCase();
+            // A package sibling ("…-12M") carries the task list too, but it is
+            // derived from its base schedule — re-importing the list must find
+            // the base and reuse the sibling, never give the sibling a sibling.
+            if (!ref || origin?.split_from) continue;
+            (pmsByTaskList.get(ref) ?? pmsByTaskList.set(ref, []).get(ref)!).push(pm);
+        }
+
         // Group operations by the schedule they belong to, preserving sheet order.
         interface Op { row: number; data: Record<string, string> }
-        const opsByPm = new Map<string, Op[]>();
+        const opsByPm = new Map<string, { pms: RecurringJob[]; ops: Op[] }>();
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
             const rowNo = Number(r.__row) || i + 2;
             const code = (r['pmcode'] || '').trim();
             if (!code) { tally(res, { row: rowNo, status: 'failed', reason: 'Missing pmCode' }); continue; }
             const key = code.toUpperCase();
-            const matches = pmsByCode.get(key);
-            if (!matches || matches.length === 0) {
-                tally(res, { row: rowNo, key: code, status: 'failed', reason: `PM schedule "${code}" not found — import schedules first` });
+            let matches = pmsByCode.get(key) ?? [];
+            let shared = false;
+            if (matches.length === 0 && pmsByTaskList.has(key)) { matches = pmsByTaskList.get(key)!; shared = true; }
+            if (matches.length === 0) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: key.includes('/')
+                    ? `No schedule uses task list ${code} — import the maintenance items (schedules) first`
+                    : `PM schedule "${code}" not found — import schedules first` });
                 continue;
             }
-            if (matches.length > 1) {
+            if (matches.length > 1 && !shared) {
                 tally(res, { row: rowNo, key: code, status: 'failed', reason: `PM code "${code}" matches ${matches.length} schedules — cannot tell which` });
                 continue;
             }
-            (opsByPm.get(key) ?? opsByPm.set(key, []).get(key)!).push({ row: rowNo, data: r });
+            (opsByPm.get(key) ?? opsByPm.set(key, { pms: matches, ops: [] }).get(key)!).ops.push({ row: rowNo, data: r });
         }
 
-        for (const [key, ops] of opsByPm) {
-            const pm = pmsByCode.get(key)![0];
+        const buildTasks = (ops: Op[], key: string) => ops.map((op, idx) => {
+            const d = op.data;
+            const seq = (idx + 1) * 10;
+            const centreCode = (d['workcentre'] || '').toUpperCase();
+            const centreId = centreCode ? centreByCode.get(centreCode) : undefined;
+            if (centreCode && !centreId && idx === 0) {
+                res.notes!.push(`Row ${op.row}: work centre "${d['workcentre']}" not found — operation imported without it.`);
+            }
+            const longText = (d['longtext'] || '').trim();
+            return {
+                id: `imp-${Date.now()}-${key}-${idx}`,
+                sequence: seq,
+                operationNo: (d['operationno'] || String(seq).padStart(4, '0')).trim(),
+                description: d['description'] || 'Imported operation',
+                estHours: parseFloat(d['esthours'] || '0') || 0,
+                status: 'PENDING',
+                controlKey: (d['controlkey'] || 'PM01').toUpperCase(),
+                workCenterId: centreId,
+                // The long text is what a technician actually reads on the
+                // work order, so it becomes a procedure block rather than
+                // being stashed somewhere the app never renders.
+                instructions: longText
+                    ? [{ id: `ib-${Date.now()}-${idx}`, type: 'PROCEDURE', content: longText, required: false }]
+                    : [],
+            } as unknown as JobTask;
+        });
+
+        const savePlan = async (pm: RecurringJob, ops: Op[], key: string) => {
+            const existing = await db.getPMTemplates(pm.id).catch(() => null);
+            await db.savePMTemplates(pm.id, { ...(existing || {}), tasks: buildTasks(ops, key) });
+            const replaced = (existing?.tasks ?? []).length;
+            if (replaced > 0) res.notes!.push(`${pm.code}: replaced an existing ${replaced}-step plan.`);
+        };
+
+        for (const [key, { pms, ops }] of opsByPm) {
             // Operation numbers order the plan; blanks keep sheet order behind them.
             const sorted = [...ops].sort((a, b) => {
                 const an = parseInt(a.data['operationno'] || '', 10);
@@ -769,44 +823,67 @@ export const RecurringWork: React.FC = () => {
                 return an - bn;
             });
 
-            const tasks = sorted.map((op, idx) => {
-                const d = op.data;
-                const seq = (idx + 1) * 10;
-                const centreCode = (d['workcentre'] || '').toUpperCase();
-                const centreId = centreCode ? centreByCode.get(centreCode) : undefined;
-                if (centreCode && !centreId) {
-                    res.notes!.push(`Row ${op.row}: work centre "${d['workcentre']}" not found — operation imported without it.`);
-                }
-                const longText = (d['longtext'] || '').trim();
-                return {
-                    id: `imp-${Date.now()}-${key}-${idx}`,
-                    sequence: seq,
-                    operationNo: (d['operationno'] || String(seq).padStart(4, '0')).trim(),
-                    description: d['description'] || 'Imported operation',
-                    estHours: parseFloat(d['esthours'] || '0') || 0,
-                    status: 'PENDING',
-                    controlKey: (d['controlkey'] || 'PM01').toUpperCase(),
-                    workCenterId: centreId,
-                    // The long text is what a technician actually reads on the
-                    // work order, so it becomes a procedure block rather than
-                    // being stashed somewhere the app never renders.
-                    instructions: longText
-                        ? [{ id: `ib-${Date.now()}-${idx}`, type: 'PROCEDURE', content: longText, required: false }]
-                        : [],
-                } as unknown as JobTask;
-            });
+            // A strategy task list carries a package (cadence) per operation.
+            // IREAMS has one cadence per schedule, so the schedule keeps the
+            // shortest package and each longer package becomes its own
+            // schedule beside it — the shape SAP itself schedules.
+            const split = splitOperationsByCadence(sorted.map(op => {
+                const iv = Number(op.data['frequencyinterval']);
+                const unit = sapCycleUnit(op.data['frequencyunit']);
+                return { op, cadence: iv > 0 && unit ? { interval: iv, unit } : null };
+            }));
 
-            try {
-                const existing = await db.getPMTemplates(pm.id).catch(() => null);
-                const templates = { ...(existing || {}), tasks };
-                await db.savePMTemplates(pm.id, templates);
-                const replaced = (existing?.tasks ?? []).length;
-                if (replaced > 0) {
-                    res.notes!.push(`${pm.code}: replaced an existing ${replaced}-step plan.`);
+            for (const pm of pms) {
+                try {
+                    await savePlan(pm, split.base.ops, key);
+                    const base = split.base.cadence;
+                    const own = { interval: pm.frequencyInterval, unit: sapCycleUnit(pm.frequencyUnit) };
+                    const origin = (pm.origin ?? {}) as Record<string, unknown>;
+                    if (base && origin.cadence_from === 'plan_text' && !(own.unit && cadenceEquals(base, { interval: own.interval, unit: own.unit }))) {
+                        // The schedule import could only guess the cadence from
+                        // the plan text; the package sheet is the authority.
+                        await db.updatePM(pm.id, {
+                            frequency_interval: base.interval, frequency_unit: base.unit.toLowerCase(),
+                            schedule_type: isMeterUnit(base.unit) ? 'READING' : 'TIME',
+                            origin: { ...origin, cadence_from: 'task_list_package' },
+                        } as any);
+                        res.notes!.push(`${pm.code}: cadence corrected to ${cadenceLabel(base)} from the task list packages.`);
+                    }
+                    for (const sib of split.siblings) {
+                        const cadence = sib.cadence!;
+                        const sibCode = `${pm.code}-${cadenceSuffix(cadence)}`;
+                        const pkgText = sib.ops[0]?.data['packagetext'] || cadenceLabel(cadence);
+                        let sibling = pmsByCode.get(sibCode.toUpperCase())?.[0];
+                        if (!sibling) {
+                            const assetId = pm.assignedAssets?.[0]?.assetId;
+                            if (!assetId) { sib.ops.forEach(op => tally(res, { row: op.row, key: sibCode, status: 'failed', reason: `${pm.code} has no asset to clone for the ${pkgText} package` })); continue; }
+                            const created = await db.createPM(buildPMStrategy({
+                                code: sibCode,
+                                title: `${pm.description} — ${pkgText}`,
+                                description: `${pm.description} — ${pkgText}`,
+                                assetId,
+                                scheduleType: isMeterUnit(cadence.unit) ? 'READING' : 'TIME',
+                                frequencyInterval: cadence.interval,
+                                frequencyUnit: cadence.unit.toLowerCase(),
+                                jobType: pm.jobType,
+                                priorityCode: pm.priority,
+                                leadTimeDays: pm.leadTimeDays,
+                                estDuration: pm.estDuration,
+                                estDowntime: pm.estDowntime,
+                                nextDueDate: pm.nextDueDate || undefined,
+                                origin: { ...origin, package: sib.ops[0]?.data['package'] || null, package_text: pkgText, split_from: pm.code, cadence_from: 'task_list_package' },
+                            }));
+                            sibling = { ...pm, id: String(created?.id ?? created?.[0]?.id ?? ''), code: sibCode } as RecurringJob;
+                            if (!sibling.id) throw new Error(`Could not create ${sibCode}`);
+                            pmsByCode.set(sibCode.toUpperCase(), [sibling]);
+                            res.notes!.push(`${pm.code}: package "${pkgText}" became its own schedule ${sibCode} (${sib.ops.length} operation${sib.ops.length === 1 ? '' : 's'}).`);
+                        }
+                        await savePlan(sibling, sib.ops, `${key}-${cadenceSuffix(cadence)}`);
+                    }
+                    sorted.forEach(op => tally(res, { row: op.row, key: pm.code, status: 'inserted' }));
+                } catch (e: unknown) {
+                    sorted.forEach(op => tally(res, { row: op.row, key: pm.code, status: 'failed', reason: errMessage(e) }));
                 }
-                sorted.forEach(op => tally(res, { row: op.row, key: pm.code, status: 'inserted' }));
-            } catch (e: unknown) {
-                sorted.forEach(op => tally(res, { row: op.row, key: pm.code, status: 'failed', reason: errMessage(e) }));
             }
         }
 
@@ -827,6 +904,8 @@ export const RecurringWork: React.FC = () => {
 
         // Tags were matched case-sensitively, so "gt-301" silently vanished.
         const assetByTag = new Map(dbAssets.map(a => [(a.tag || '').toUpperCase(), a.id]));
+        const centres = await db.getWorkCenters().catch(() => [] as any[]);
+        const centreByCode = new Map<string, string>((centres || []).map((c: any) => [String(c.code ?? '').toUpperCase(), c.id]));
 
         // The template's vocabulary is not the app's — translate rather than
         // defaulting everything to Preventive/MED.
@@ -869,7 +948,25 @@ export const RecurringWork: React.FC = () => {
                     // Both were collected by the template and thrown away here.
                     leadTimeDays: row['leadtimedays'] ? (parseInt(row['leadtimedays']) || undefined) : undefined,
                     nextDueDate: parseDateValue(row['nextduedate'] || '') || undefined,
+                    workCenterId: row['workcentre'] ? (centreByCode.get(row['workcentre'].toUpperCase()) ?? null) : undefined,
+                    // A SAP maintenance item remembers its plan, strategy and task
+                    // list, so the job-plan import can find it by task list and
+                    // knows whether the cadence was read from the plan text.
+                    origin: row['plan'] || row['tasklist'] ? {
+                        source: 'sap_load_file',
+                        plan: row['plan'] || null,
+                        plan_text: row['plantext'] || null,
+                        item: code,
+                        strategy: row['strategy'] || null,
+                        task_list: row['tasklist'] || null,
+                        order_type: row['ordertype'] || null,
+                        activity_type: row['activitytype'] || null,
+                        cadence_from: row['_cadencehint'] ? 'plan_text' : row['frequencyinterval'] ? 'plan_cycle' : 'sheet',
+                    } : undefined,
                 });
+                if (row['workcentre'] && !centreByCode.get(row['workcentre'].toUpperCase())) {
+                    res.notes!.push(`Row ${rowNo}: work centre "${row['workcentre']}" not found — schedule imported without it.`);
+                }
                 await db.createPM(payload);
                 if (row['rcmstrategy'] || row['costcenter'] || row['department']) {
                     res.notes!.push(`Row ${rowNo}: rcmStrategy / costCenter / department are not stored on a PM — set them on the job afterwards.`);

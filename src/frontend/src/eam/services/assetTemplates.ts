@@ -10,6 +10,7 @@ import { getLevels } from './hierarchyModel';
 import { CATEGORIES, CLASSES, TYPES, typesOf, isOtherCode } from '../../lib/iso14224Taxonomy';
 import { CLASS_PARAMETERS, CATEGORY_PARAMETERS } from '../../lib/iso14224Parameters';
 import { OPERATING_MODES, REDUNDANCY_OPTIONS, ENVIRONMENT_OPTIONS } from '../../lib/operatingContext';
+import { parseSapCycle, parseSapCycleText, parseCadenceHint, addCadence, isMeterUnit, cadenceLabel, sapCycleUnit } from '../lib/sapCycles';
 
 /** Native browser download — bypasses file-saver for reliable filenames */
 function downloadBlob(blob: Blob, filename: string): void {
@@ -959,6 +960,41 @@ export interface SapSheetProfile {
     fixup?: (r: Record<string, string>) => void;
     /** Per-row advisories the profile knows about (a mapping that needs a human check). */
     rowWarnings?: (r: Record<string, string>) => string[];
+    /**
+     * Fill rows from a sibling sheet of the same workbook, after fixup and
+     * before validation — a maintenance item's cycle lives on the plan sheet,
+     * an operation's package on the package sheet. `ctx.sheet(signature)`
+     * returns that sheet's data rows keyed by lowercased SAP field name, or
+     * null when the workbook has no such sheet.
+     */
+    enrich?: (rows: Record<string, string>[], ctx: { sheet: (signature: string[]) => Record<string, string>[] | null }) => void;
+}
+
+/**
+ * Data rows of the first sheet in a workbook whose header carries every
+ * field in `signature`, keyed by lowercased field name. Duplicate field
+ * names (the load files repeat UNITC, POINT, VORNR…) resolve last-non-empty.
+ */
+export function readSapSheet(wb: XLSX.WorkBook, signature: string[]): Record<string, string>[] | null {
+    for (const name of wb.SheetNames) {
+        const raw: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 });
+        if (raw.length < 2) continue;
+        const hi = findHeaderRow(raw);
+        const keys = (raw[hi] ?? []).map(h => String(h ?? '').trim().toLowerCase());
+        if (!signature.every(s => keys.includes(s))) continue;
+        return raw.slice(hi + 1)
+            .filter(r => r.some(c => c !== undefined && c !== null && c !== ''))
+            .filter(r => !isDescriptionRow(r))
+            .map(r => {
+                const row: Record<string, string> = {};
+                keys.forEach((k, i) => {
+                    const v = String(r[i] ?? '').trim();
+                    if (k && (v || !(k in row))) row[k] = v;
+                });
+                return row;
+            });
+    }
+    return null;
 }
 
 /**
@@ -980,6 +1016,15 @@ export function readingTypeFromCharacteristic(atnam: string): string {
 const SAP_MTART_MAP: Record<string, string> = {
     ERSA: 'SPARE', VERB: 'CONSUMABLE', HIBE: 'CONSUMABLE', FHMI: 'TOOL', UNBW: 'MATERIAL', NLAG: 'MATERIAL',
 };
+// Vanilla maintenance activity types (ILART). Order types are client
+// configuration, so the activity type decides the job type and PM02 is only
+// recognised, never relied on.
+const SAP_ILART_MAP: Record<string, string> = { '001': 'INSPECTION', '002': 'PM', '003': 'CM', '004': 'PM' };
+const SAP_ORDER_TYPES = new Set(['PM01', 'PM02', 'PM03', 'PM04', 'PM05', 'PM06']);
+const SAP_PRIOK_MAP: Record<string, string> = { '1': 'EMERGENCY', '2': 'HIGH', '3': 'MEDIUM', '4': 'LOW' };
+// Operation control keys: PM01 internal, PM02 external (IREAMS's vocabulary);
+// consultants also write INT / EXT.
+const SAP_CONTROL_KEYS: Record<string, string> = { INT: 'PM01', EXT: 'PM02', PM01: 'PM01', PM02: 'PM02', PM03: 'PM02' };
 
 export const SAP_PROFILES: SapSheetProfile[] = [
     {
@@ -1000,6 +1045,109 @@ export const SAP_PROFILES: SapSheetProfile[] = [
         fixup: (r) => {
             if (!r['value'] && r['cntrr']) r['value'] = r['cntrr'];       // counters carry the total reading
             if (!r['readingtype'] && r['point']) r['readingtype'] = r['point'];
+        },
+    },
+    {
+        // Maintenance ITEMS (MPOS) in the consultant load-file layout → PM
+        // schedules. One schedule per item: the item carries the equipment,
+        // the order type and the task list; the plan sheet of the SAME workbook
+        // (MPLA + MMPT, joined on WARPL) carries the cycle and start date.
+        // A single-cycle plan gives an exact cadence. A strategy plan (STRAT
+        // set, cycle block empty) does not — its packages are on the task
+        // list — so the cadence is read from the consultant's "1M/12M" shorthand
+        // at the head of the plan text, flagged, and the job-plan import later
+        // splits the schedule by package.
+        name: 'SAP maintenance items (load file)', type: 'recurring',
+        signature: ['warpl', 'wapos', 'pstxt'],
+        aliases: {
+            wapos: 'code', pstxt: 'description', equnr: 'assettag', tplnr: 'assettag',
+            gewrk: 'workcentre', wpgrp: 'plannergroup', auart: 'ordertype', ilart: 'activitytype',
+            plnnr: 'tasklistgroup', plnal: 'tasklistcounter', plnty: 'tasklisttype', warpl: 'plan',
+        },
+        fixup: (r) => {
+            r['scheduletype'] = r['scheduletype'] || 'TIME';
+            const ilart = (r['activitytype'] || '').trim();
+            r['jobtype'] = r['jobtype'] || SAP_ILART_MAP[ilart] || 'PM';
+            const prio = (r['priok'] || '').trim();
+            if (prio && SAP_PRIOK_MAP[prio]) r['priority'] = SAP_PRIOK_MAP[prio];
+            else delete r['priority'];
+            if (r['tasklistgroup']) r['tasklist'] = `${r['tasklistgroup']}/${(r['tasklistcounter'] || '01').padStart(2, '0')}`;
+        },
+        enrich: (rows, ctx) => {
+            const plans = ctx.sheet(['warpl', 'wptxt']);
+            const byPlan = new Map((plans ?? []).map(p => [p['warpl'], p]));
+            for (const r of rows) {
+                const p = byPlan.get(r['plan'] || '');
+                if (!p) { r['_planmissing'] = plans ? 'plan' : 'sheet'; continue; }
+                if (!r['description']) r['description'] = p['wptxt'] || '';
+                r['plantext'] = p['wptxt'] || '';
+                if (p['strat']) r['strategy'] = p['strat'];
+                const cycle = parseSapCycle(p['zykl1'], p['zeieh']);
+                const hint = cycle ? null : parseCadenceHint(p['wptxt']) ?? parseCadenceHint(r['description']);
+                const cadence = cycle ?? hint;
+                if (cadence && !r['frequencyinterval']) {
+                    r['frequencyinterval'] = String(cadence.interval);
+                    r['frequencyunit'] = cadence.unit;
+                    r['scheduletype'] = isMeterUnit(cadence.unit) || p['point'] ? 'READING' : 'TIME';
+                    if (hint) r['_cadencehint'] = cadenceLabel(hint);
+                }
+                const start = parseDateValue(p['stadt'] || '');
+                if (start && cadence && !r['nextduedate']) r['nextduedate'] = addCadence(start, cadence) ?? '';
+            }
+        },
+        rowWarnings: (r) => {
+            const w: string[] = [];
+            if (r['_planmissing'] === 'sheet') w.push('No Maintenance Plan sheet in this workbook — cycle and start date unknown; add frequencyInterval / frequencyUnit columns or import the plan workbook');
+            if (r['_planmissing'] === 'plan') w.push(`Plan ${r['plan']} is not on the Maintenance Plan sheet — cycle unknown`);
+            if (r['_cadencehint']) w.push(`Cadence ${r['_cadencehint']} read from the plan text "${r['plantext']}" — strategy ${r['strategy'] || ''} packages are on the task list; the job-plan import splits by package`);
+            else if (r['strategy'] && !r['frequencyinterval']) w.push(`Strategy ${r['strategy']} plan: cadence is on the task list packages, not in this workbook — add frequencyInterval / frequencyUnit columns`);
+            if (r['ordertype'] && !SAP_ORDER_TYPES.has(r['ordertype'].toUpperCase())) w.push(`Order type ${r['ordertype']} is client configuration — check it means preventive`);
+            return w;
+        },
+    },
+    {
+        // General task-list OPERATIONS (PLPO) in the load-file layout → job
+        // plans. The operation knows only its task list (PLNNR/PLNAL); the
+        // schedule import stamps that reference on each schedule's origin, so
+        // operations attach to every schedule using the list. The package
+        // sheet of the same workbook (PLWP, joined on group/counter/operation)
+        // gives each operation its cadence, and the job-plan import splits a
+        // strategy schedule into one schedule per package.
+        name: 'SAP task list operations (load file)', type: 'jobplan',
+        signature: ['plnnr', 'plnal', 'vornr', 'ltxa1'],
+        aliases: {
+            vornr: 'operationno', ltxa1: 'description', longtext: 'longtext', arbpl: 'workcentre',
+            steus: 'controlkey', arbei: 'esthours', arbeh: 'workunit', anzzl: 'numpersons', dauno: 'duration', daune: 'durationunit',
+            plnnr: 'tasklistgroup', plnal: 'tasklistcounter',
+        },
+        fixup: (r) => {
+            r['pmcode'] = `${r['tasklistgroup']}/${(r['tasklistcounter'] || '01').padStart(2, '0')}`;
+            const wu = (r['workunit'] || 'H').toUpperCase();
+            const hrs = Number(String(r['esthours'] || '').replace(',', '.'));
+            if (!isNaN(hrs) && r['esthours']) r['esthours'] = String(wu === 'MIN' ? hrs / 60 : wu === 'TAG' || wu === 'DAY' ? hrs * 8 : hrs);
+            const ck = (r['controlkey'] || '').toUpperCase();
+            r['controlkey'] = SAP_CONTROL_KEYS[ck] ?? ck;
+        },
+        enrich: (rows, ctx) => {
+            const packages = ctx.sheet(['plnnr', 'vornr', 'paket']);
+            if (!packages) return;
+            const key = (g: string, c: string, op: string) => `${g}/${(c || '01').padStart(2, '0')}/${op.padStart(4, '0')}`;
+            const byOp = new Map(packages.map(p => [key(p['plnnr'], p['plnal'], p['vornr'] || ''), p]));
+            for (const r of rows) {
+                const p = byOp.get(key(r['tasklistgroup'], r['tasklistcounter'], r['operationno'] || ''));
+                if (!p) continue;
+                r['package'] = p['paket'] || '';
+                r['packagetext'] = p['ktex1'] || '';
+                r['strategy'] = p['strat'] || '';
+                const cadence = parseSapCycleText(p['ktex1']);
+                if (cadence) { r['frequencyinterval'] = String(cadence.interval); r['frequencyunit'] = cadence.unit; }
+            }
+        },
+        rowWarnings: (r) => {
+            const w: string[] = [];
+            if (r['package'] && !r['frequencyinterval']) w.push(`Package ${r['package']} text "${r['packagetext']}" is not a cadence IREAMS can read (e.g. "1 MONTH")`);
+            if (r['durationunit'] && !sapCycleUnit(r['durationunit'])) w.push(`Duration unit ${r['durationunit']} not recognised`);
+            return w;
         },
     },
     {
@@ -1296,7 +1444,9 @@ export function parseImportFile(file: File, forceType?: ImportType, sheetName?: 
 
                 const seenKeys = new Set<string>(); // For duplicate detection
 
-                const parsedRows: ParsedRow[] = dataRows.map(({ r: row, sheetRow }) => {
+                // Pass 1 aliases and fixes up every row; a profile may then fill
+                // rows from a sibling sheet; pass 2 validates what it sees.
+                const prepared = dataRows.map(({ r: row, sheetRow }) => {
                     const rowData: Record<string, string> = {};
                     keys.forEach((h, i) => {
                         const v = String(row[i] ?? '').trim();
@@ -1305,7 +1455,13 @@ export function parseImportFile(file: File, forceType?: ImportType, sheetName?: 
                         if (v || !(h in rowData)) rowData[h] = v;
                     });
                     if (sapProfile?.fixup) sapProfile.fixup(rowData);
+                    return { rowData, sheetRow };
+                });
+                if (sapProfile?.enrich) {
+                    sapProfile.enrich(prepared.map(p => p.rowData), { sheet: sig => readSapSheet(wb, sig) });
+                }
 
+                const parsedRows: ParsedRow[] = prepared.map(({ rowData, sheetRow }) => {
                     const errors: string[] = [];
                     const warnings: string[] = sapProfile?.rowWarnings ? sapProfile.rowWarnings(rowData) : [];
 
