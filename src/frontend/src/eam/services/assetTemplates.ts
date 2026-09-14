@@ -1129,18 +1129,40 @@ export const SAP_PROFILES: SapSheetProfile[] = [
             r['controlkey'] = SAP_CONTROL_KEYS[ck] ?? ck;
         },
         enrich: (rows, ctx) => {
-            const packages = ctx.sheet(['plnnr', 'vornr', 'paket']);
-            if (!packages) return;
             const key = (g: string, c: string, op: string) => `${g}/${(c || '01').padStart(2, '0')}/${op.padStart(4, '0')}`;
-            const byOp = new Map(packages.map(p => [key(p['plnnr'], p['plnal'], p['vornr'] || ''), p]));
-            for (const r of rows) {
-                const p = byOp.get(key(r['tasklistgroup'], r['tasklistcounter'], r['operationno'] || ''));
-                if (!p) continue;
-                r['package'] = p['paket'] || '';
-                r['packagetext'] = p['ktex1'] || '';
-                r['strategy'] = p['strat'] || '';
-                const cadence = parseSapCycleText(p['ktex1']);
-                if (cadence) { r['frequencyinterval'] = String(cadence.interval); r['frequencyunit'] = cadence.unit; }
+            const opKey = (r: Record<string, string>) => key(r['tasklistgroup'], r['tasklistcounter'], r['operationno'] || '');
+
+            const packages = ctx.sheet(['plnnr', 'vornr', 'paket']);
+            if (packages) {
+                const byOp = new Map(packages.map(p => [key(p['plnnr'], p['plnal'], p['vornr'] || ''), p]));
+                for (const r of rows) {
+                    const p = byOp.get(opKey(r));
+                    if (!p) continue;
+                    r['package'] = p['paket'] || '';
+                    r['packagetext'] = p['ktex1'] || '';
+                    r['strategy'] = p['strat'] || '';
+                    const cadence = parseSapCycleText(p['ktex1']);
+                    if (cadence) { r['frequencyinterval'] = String(cadence.interval); r['frequencyunit'] = cadence.unit; }
+                }
+            }
+
+            // Components (PLMZ): the materials an operation plans to use. SAP's
+            // field is IDNRK (or MATNR); this consultant's sheet says STLNR_W.
+            // They become the job plan's planned parts, linked to inventory by
+            // part number when it exists there.
+            const components = ctx.sheet(['plnnr', 'vornr', 'idnrk']) ?? ctx.sheet(['plnnr', 'vornr', 'matnr']) ?? ctx.sheet(['plnnr', 'vornr', 'stlnr_w']);
+            if (components) {
+                const byOp = new Map<string, { code: string; qty: string; uom: string; category: string }[]>();
+                for (const c of components) {
+                    const code = (c['idnrk'] || c['matnr'] || c['stlnr_w'] || '').trim();
+                    if (!code) continue;
+                    const k = key(c['plnnr'], c['plnal'], c['vornr'] || '');
+                    (byOp.get(k) ?? byOp.set(k, []).get(k)!).push({ code, qty: c['imeng'] || c['menge'] || '1', uom: c['imein'] || c['meins'] || '', category: c['postp'] || '' });
+                }
+                for (const r of rows) {
+                    const list = byOp.get(opKey(r));
+                    if (list) r['materials'] = JSON.stringify(list);
+                }
             }
         },
         rowWarnings: (r) => {

@@ -65,15 +65,17 @@ const KEYS = {
     '50099001': `${P}-50099001`, '50099002': `${P}-50099002`,
     '60099001': `${P}-60099001`, '60099002': `${P}-60099002`,
     '30009001': `${P}-30009001`, '30009002': `${P}-30009002`,
+    'MNMEC-PP': `${P}-MNMEC`,
 };
 const tmp = mkdtempSync(join(tmpdir(), 'zzsappm-'));
 const files = [];
-const prefixed = (name) => {
+const prefixed = (name, extraRows = {}) => {
     const wb = XLSX.read(readFileSync(join(DIR, `SAMPLE_Load_File_${name}.xlsx`)), { type: 'buffer' });
     const out = XLSX.utils.book_new();
     for (const s of wb.SheetNames) {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1, defval: '', raw: false })
             .map(r => r.map(c => KEYS[String(c).trim()] ?? c));
+        for (const extra of extraRows[s] ?? []) rows.push(extra);
         XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(rows), s);
     }
     const p = join(tmp, `${name}.xlsx`);
@@ -82,7 +84,26 @@ const prefixed = (name) => {
     return p;
 };
 const fPlan = prefixed('Maintenance_Plan_Item');
-const fTaskList = prefixed('General_Task_List');
+// Two planned materials on the annual operation: one that exists in inventory
+// (imported below), one that does not — it must survive as a text line.
+const fTaskList = prefixed('General_Task_List', {
+    'Components': [
+        ['SMC00000001', `${P}-30009001`, '01', '0030', `${P}-FLT`, '4', 'EA', 'L', '', ''],
+        ['SMC00000002', `${P}-30009001`, '01', '0030', `${P}-NOPE`, '1', 'EA', 'L', '', ''],
+    ],
+});
+const fMaterial = (() => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Migration object: Product (Material)'], ['Load after equipment.'], ['Row 4 = SAP field name (keep).'],
+        ['MATNR', 'MAKTX', 'MTART', 'MEINS', 'WERKS', 'VPRSV', 'STPRS', 'VERPR'],
+        [`${P}-FLT`, 'UAT air inlet filter (SAP PM load)', 'ERSA', 'EA', '2000', 'V', '', '245.00'],
+    ]), 'Sheet1');
+    const p = join(tmp, 'material.xlsx');
+    writeFileSync(p, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+    files.push(p);
+    return p;
+})();
 const fEquipment = (() => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
@@ -145,12 +166,20 @@ async function openRecurringImport(page) {
 
 const cleanup = async () => sql(`
     WITH aa AS (SELECT id FROM assets WHERE tag LIKE '${P}%' OR equipment_number LIKE '${P}%'),
+         it AS (SELECT id FROM inventory_items WHERE part_number LIKE '${P}%'),
          d1 AS (DELETE FROM recurring_work WHERE code LIKE '${P}%' OR asset_id IN (SELECT id::text FROM aa) RETURNING 1),
          d2 AS (DELETE FROM reading_definitions WHERE asset_id IN (SELECT id FROM aa) RETURNING 1),
-         d3 AS (DELETE FROM assets WHERE id IN (SELECT id FROM aa) RETURNING 1)
-    SELECT (SELECT count(*) FROM d1) + (SELECT count(*) FROM d2) + (SELECT count(*) FROM d3) AS removed`);
+         d3 AS (DELETE FROM assets WHERE id IN (SELECT id FROM aa) RETURNING 1),
+         d4 AS (DELETE FROM work_centers WHERE code LIKE '${P}%' RETURNING 1),
+         d5 AS (DELETE FROM inventory_transactions WHERE item_id IN (SELECT id FROM it) RETURNING 1),
+         d6 AS (DELETE FROM inventory_stock WHERE item_id IN (SELECT id FROM it) RETURNING 1),
+         d7 AS (DELETE FROM inventory_items WHERE id IN (SELECT id FROM it) RETURNING 1)
+    SELECT (SELECT count(*) FROM d1) + (SELECT count(*) FROM d2) + (SELECT count(*) FROM d3) + (SELECT count(*) FROM d4)
+         + (SELECT count(*) FROM d5) + (SELECT count(*) FROM d6) + (SELECT count(*) FROM d7) AS removed`);
 
-const pre = await sql(`SELECT (SELECT count(*) FROM assets WHERE tag LIKE '${P}%') + (SELECT count(*) FROM recurring_work WHERE code LIKE '${P}%') AS n`);
+const leftovers = () => sql(`SELECT (SELECT count(*) FROM assets WHERE tag LIKE '${P}%') + (SELECT count(*) FROM recurring_work WHERE code LIKE '${P}%')
+    + (SELECT count(*) FROM work_centers WHERE code LIKE '${P}%') + (SELECT count(*) FROM inventory_items WHERE part_number LIKE '${P}%') AS n`);
+const pre = await leftovers();
 if (Number(pre[0].n) > 0) { console.log(`⚠ ${pre[0].n} leftover row(s) from a previous run — sweeping first`); await cleanup(); }
 
 console.log(`SAP PM load-file journey (${BASE})\n`);
@@ -179,6 +208,13 @@ try {
     check(a.length === 2, `both probe assets landed (${a.map(x => x.tag).join(', ')})`);
     const pumpId = a.find(x => x.tag === `${P}-P101`)?.id;
 
+    console.log('\n1b — Material sheet → the spare the task list plans');
+    await page.goto(`${BASE}/inventory?action=import`, { waitUntil: 'domcontentloaded' });
+    await sleep(6000);
+    await runModal(page, fMaterial, 'material');
+    const mat = await sql(`SELECT id, unit_cost FROM inventory_items WHERE part_number = '${P}-FLT'`);
+    check(mat.length === 1, 'spare landed in inventory');
+
     // ── 2. Maintenance plan workbook → schedules ───────────────────────────
     console.log('\n2 — Maintenance_Plan_Item.xlsx → PM schedules (Recurring Jobs › Import › Recurring Jobs)');
     await openRecurringImport(page);
@@ -198,7 +234,11 @@ try {
         check(o.source === 'sap_load_file' && o.task_list === `${P}-30009001/01`, `origin carries the task list (${o.task_list})`);
         check(o.strategy === 'MONWOH' && o.cadence_from === 'plan_text', `origin says strategy ${o.strategy}, cadence from ${o.cadence_from}`);
     }
-    check(/work centre "MNMEC-PP" not found/i.test(t2), 'unknown SAP work centre reported, not silently dropped');
+    const wc = await sql(`SELECT id, code, name, category FROM work_centers WHERE code = '${P}-MNMEC'`);
+    check(wc.length === 1, `unknown SAP work centre created from the code (${wc[0]?.code}, category ${wc[0]?.category})`);
+    const wcLink = await sql(`SELECT work_center_id FROM recurring_work WHERE code = '${P}-60099001'`);
+    check(wc.length === 1 && wcLink[0]?.work_center_id === wc[0].id, 'schedule linked to the created work centre');
+    check(/created from the SAP code/i.test(t2), 'the creation is explained on the completion screen');
 
     // ── 3. Task list workbook → job plans, split by package ────────────────
     console.log('\n3 — General_Task_List.xlsx → job plans (operations attach by task list; annual package splits)');
@@ -215,6 +255,16 @@ try {
     check(!!sib && Number(sib.frequency_interval) === 12 && /^months$/i.test(sib.frequency_unit), `sibling cadence 12 months (${sib?.frequency_interval} ${sib?.frequency_unit})`);
     check(!!sib && sib.origin?.split_from === `${P}-60099001` && sib.origin?.package === '12', `sibling origin: split from ${sib?.origin?.split_from}, package ${sib?.origin?.package}`);
     check(/became its own schedule/i.test(t3), 'the split is explained on the completion screen');
+    const inv = await sql(`SELECT i->>'description' AS description, i->>'inventoryId' AS item_id, (i->>'estQty')::numeric AS qty, i->>'uom' AS uom, (i->>'estUnitCost')::numeric AS cost
+                           FROM recurring_work rw, jsonb_array_elements(COALESCE(rw.templates->'inventory', '[]'::jsonb)) i
+                           WHERE rw.code = '${P}-60099001-12M' ORDER BY 1`);
+    check(inv.length === 2, `the annual operation carries its two planned materials (${inv.length})`);
+    const linked = inv.find(x => x.item_id === mat[0]?.id), textLine = inv.find(x => x.description === `${P}-NOPE`);
+    check(!!linked && Number(linked.qty) === 4 && linked.uom === 'EA' && Number(linked.cost) === 245, `known part linked to inventory with qty and unit cost (${linked?.qty} ${linked?.uom} @ ${linked?.cost})`);
+    check(!!textLine && !textLine.item_id, 'unknown part kept as a text line, not dropped');
+    check(/not in inventory/i.test(t3), 'the unlinked material is reported on the completion screen');
+    const invBase = await sql(`SELECT jsonb_array_length(COALESCE(templates->'inventory', '[]'::jsonb)) AS n FROM recurring_work WHERE code = '${P}-60099001'`);
+    check(Number(invBase[0].n) === 0, 'the monthly schedule plans no materials (the components belong to operation 0030)');
     const m = await sql(`SELECT count(*) AS n FROM recurring_work WHERE code LIKE '${P}-60099002%'`);
     check(Number(m[0].n) === 2, `the motor item split the same way (${m[0].n} schedules)`);
 
@@ -242,7 +292,7 @@ try {
         findings.push(`cleanup failed: ${e.message} — ${P}% rows may remain`);
     }
     for (const f of files) { try { unlinkSync(f); } catch { /* ignore */ } }
-    const left = await sql(`SELECT (SELECT count(*) FROM assets WHERE tag LIKE '${P}%') + (SELECT count(*) FROM recurring_work WHERE code LIKE '${P}%') AS n`);
+    const left = await leftovers();
     if (String(left[0].n) !== '0') findings.push(`${left[0].n} leftover row(s) after cleanup`);
 }
 

@@ -19,11 +19,48 @@ import { CreatePMModal } from '../components/modals/CreatePMModal';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { sapCycleUnit, cadenceEquals, cadenceLabel, cadenceSuffix, isMeterUnit } from '../lib/sapCycles';
 import { splitOperationsByCadence } from '../lib/jobPlanImport';
+
+/**
+ * A work-centre code on an imported schedule or operation (SAP GEWRK / ARBPL)
+ * that IREAMS does not know yet is created from the code — the way the
+ * source-list import creates vendors from LIFNR — so the plan lands whole and
+ * the rate and capacity are set afterwards in Dictionaries. Returns the id,
+ * or undefined when the code is blank or the create failed (reported once).
+ */
+async function ensureWorkCentre(
+    db: ReturnType<typeof DatabaseService.getInstance>,
+    centreByCode: Map<string, string>,
+    code: string | undefined,
+    res: ImportResult,
+    reported: Set<string>,
+): Promise<string | undefined> {
+    const key = (code || '').trim().toUpperCase();
+    if (!key) return undefined;
+    const known = centreByCode.get(key);
+    if (known) return known;
+    try {
+        await db.saveWorkCenter({ code: code!.trim(), name: code!.trim(), category: 'IMPORTED' });
+        const refreshed = await db.getWorkCenters();
+        for (const c of refreshed) centreByCode.set(String(c.code ?? '').toUpperCase(), c.id);
+        const id = centreByCode.get(key);
+        if (id && !reported.has(key)) {
+            reported.add(key);
+            res.notes!.push(`Work centre "${code!.trim()}" created from the SAP code — set its rate and capacity in Dictionaries › Work Centres.`);
+        }
+        return id;
+    } catch (e: unknown) {
+        if (!reported.has(key)) {
+            reported.add(key);
+            res.notes!.push(`Work centre "${code!.trim()}" could not be created (${errMessage(e)}) — imported without it.`);
+        }
+        return undefined;
+    }
+}
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { DatabaseService } from '../services/DatabaseService';
 import { supabase } from '../lib/supabase';
 import { buildPMStrategy } from '../lib/pmStrategy';
-import { emptyResult, tally, errMessage } from '../services/importTypes';
+import { emptyResult, tally, errMessage, type ImportResult } from '../services/importTypes';
 import { parseDateValue } from '../services/assetTemplates';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { NotificationService } from '../services/NotificationService';
@@ -778,36 +815,65 @@ export const RecurringWork: React.FC = () => {
             (opsByPm.get(key) ?? opsByPm.set(key, { pms: matches, ops: [] }).get(key)!).ops.push({ row: rowNo, data: r });
         }
 
-        const buildTasks = (ops: Op[], key: string) => ops.map((op, idx) => {
-            const d = op.data;
-            const seq = (idx + 1) * 10;
-            const centreCode = (d['workcentre'] || '').toUpperCase();
-            const centreId = centreCode ? centreByCode.get(centreCode) : undefined;
-            if (centreCode && !centreId && idx === 0) {
-                res.notes!.push(`Row ${op.row}: work centre "${d['workcentre']}" not found — operation imported without it.`);
+        const reportedCentres = new Set<string>();
+        const itemByCode = new Map<string, any>();
+        for (const it of inventoryItems) {
+            if (it.code) itemByCode.set(String(it.code).toUpperCase(), it);
+            if (it.materialNumber) itemByCode.set(String(it.materialNumber).toUpperCase(), it);
+        }
+        const unlinkedMaterials = new Set<string>();
+
+        const buildPlan = async (ops: Op[], key: string) => {
+            const tasks: JobTask[] = [];
+            const inventory: JobInventory[] = [];
+            for (let idx = 0; idx < ops.length; idx++) {
+                const op = ops[idx];
+                const d = op.data;
+                const seq = (idx + 1) * 10;
+                const centreId = await ensureWorkCentre(db, centreByCode, d['workcentre'], res, reportedCentres);
+                const longText = (d['longtext'] || '').trim();
+                const taskId = `imp-${Date.now()}-${key}-${idx}`;
+                tasks.push({
+                    id: taskId,
+                    sequence: seq,
+                    operationNo: (d['operationno'] || String(seq).padStart(4, '0')).trim(),
+                    description: d['description'] || 'Imported operation',
+                    estHours: parseFloat(d['esthours'] || '0') || 0,
+                    status: 'PENDING',
+                    controlKey: (d['controlkey'] || 'PM01').toUpperCase(),
+                    workCenterId: centreId,
+                    // The long text is what a technician actually reads on the
+                    // work order, so it becomes a procedure block rather than
+                    // being stashed somewhere the app never renders.
+                    instructions: longText
+                        ? [{ id: `ib-${Date.now()}-${idx}`, type: 'PROCEDURE', content: longText, required: false }]
+                        : [],
+                } as unknown as JobTask);
+                // Planned materials (SAP task-list components) → the plan's
+                // parts, linked to inventory by part number when it exists.
+                let materials: { code: string; qty: string; uom: string }[] = [];
+                try { materials = d['materials'] ? JSON.parse(d['materials']) : []; } catch { materials = []; }
+                for (const m of materials) {
+                    const item = itemByCode.get(m.code.toUpperCase());
+                    if (!item) unlinkedMaterials.add(m.code);
+                    inventory.push({
+                        id: `inv-${Date.now()}-${key}-${idx}-${inventory.length}`,
+                        inventoryId: item?.id || '',
+                        description: item?.description || m.code,
+                        uom: m.uom || item?.uom || 'EA',
+                        estQty: parseFloat(m.qty) || 1,
+                        estUnitCost: Number(item?.itemCost) || 0,
+                        jobTaskId: taskId,
+                    });
+                }
             }
-            const longText = (d['longtext'] || '').trim();
-            return {
-                id: `imp-${Date.now()}-${key}-${idx}`,
-                sequence: seq,
-                operationNo: (d['operationno'] || String(seq).padStart(4, '0')).trim(),
-                description: d['description'] || 'Imported operation',
-                estHours: parseFloat(d['esthours'] || '0') || 0,
-                status: 'PENDING',
-                controlKey: (d['controlkey'] || 'PM01').toUpperCase(),
-                workCenterId: centreId,
-                // The long text is what a technician actually reads on the
-                // work order, so it becomes a procedure block rather than
-                // being stashed somewhere the app never renders.
-                instructions: longText
-                    ? [{ id: `ib-${Date.now()}-${idx}`, type: 'PROCEDURE', content: longText, required: false }]
-                    : [],
-            } as unknown as JobTask;
-        });
+            return { tasks, inventory };
+        };
 
         const savePlan = async (pm: RecurringJob, ops: Op[], key: string) => {
             const existing = await db.getPMTemplates(pm.id).catch(() => null);
-            await db.savePMTemplates(pm.id, { ...(existing || {}), tasks: buildTasks(ops, key) });
+            const { tasks, inventory } = await buildPlan(ops, key);
+            await db.savePMTemplates(pm.id, { ...(existing || {}), tasks, inventory });
             const replaced = (existing?.tasks ?? []).length;
             if (replaced > 0) res.notes!.push(`${pm.code}: replaced an existing ${replaced}-step plan.`);
         };
@@ -887,6 +953,9 @@ export const RecurringWork: React.FC = () => {
             }
         }
 
+        if (unlinkedMaterials.size > 0) {
+            res.notes!.push(`${unlinkedMaterials.size} planned material code(s) not in inventory — kept as text lines (${[...unlinkedMaterials].slice(0, 5).join(', ')}${unlinkedMaterials.size > 5 ? '…' : ''}); import the materials and re-import the task list to link them.`);
+        }
         if (res.inserted > 0) {
             res.notes!.push('Job plans flow onto work orders when the schedule next generates.');
         }
@@ -906,6 +975,7 @@ export const RecurringWork: React.FC = () => {
         const assetByTag = new Map(dbAssets.map(a => [(a.tag || '').toUpperCase(), a.id]));
         const centres = await db.getWorkCenters().catch(() => [] as any[]);
         const centreByCode = new Map<string, string>((centres || []).map((c: any) => [String(c.code ?? '').toUpperCase(), c.id]));
+        const reportedCentres = new Set<string>();
 
         // The template's vocabulary is not the app's — translate rather than
         // defaulting everything to Preventive/MED.
@@ -948,7 +1018,7 @@ export const RecurringWork: React.FC = () => {
                     // Both were collected by the template and thrown away here.
                     leadTimeDays: row['leadtimedays'] ? (parseInt(row['leadtimedays']) || undefined) : undefined,
                     nextDueDate: parseDateValue(row['nextduedate'] || '') || undefined,
-                    workCenterId: row['workcentre'] ? (centreByCode.get(row['workcentre'].toUpperCase()) ?? null) : undefined,
+                    workCenterId: row['workcentre'] ? ((await ensureWorkCentre(db, centreByCode, row['workcentre'], res, reportedCentres)) ?? null) : undefined,
                     // A SAP maintenance item remembers its plan, strategy and task
                     // list, so the job-plan import can find it by task list and
                     // knows whether the cadence was read from the plan text.
@@ -964,9 +1034,6 @@ export const RecurringWork: React.FC = () => {
                         cadence_from: row['_cadencehint'] ? 'plan_text' : row['frequencyinterval'] ? 'plan_cycle' : 'sheet',
                     } : undefined,
                 });
-                if (row['workcentre'] && !centreByCode.get(row['workcentre'].toUpperCase())) {
-                    res.notes!.push(`Row ${rowNo}: work centre "${row['workcentre']}" not found — schedule imported without it.`);
-                }
                 await db.createPM(payload);
                 if (row['rcmstrategy'] || row['costcenter'] || row['department']) {
                     res.notes!.push(`Row ${rowNo}: rcmStrategy / costCenter / department are not stored on a PM — set them on the job afterwards.`);

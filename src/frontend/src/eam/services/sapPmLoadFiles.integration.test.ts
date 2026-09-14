@@ -174,6 +174,24 @@ describe('General task list workbook → job plans (operations with their packag
         ]);
     });
 
+    it('components (PLMZ) become the operation\'s planned materials, keyed by group/counter/operation', async () => {
+        const rows = SAP_PM_LOAD_FILES['General_Task_List'];
+        const comps = rows['Components'].map(r => [...r]);
+        // Field row: PLNNR, PLNAL, VORNR, STLNR_W, IMENG, IMEIN, POSTP, RGEKZ, DISP
+        comps.push(['SMC00000001', '30009001', '01', '0030', 'BRG-0041', '2', 'EA', 'L', '', '']);
+        comps.push(['SMC00000002', '30009001', '01', '0030', 'SEAL-0007', '1', 'EA', 'L', '', '']);
+        comps.push(['SMC00000003', '30009002', '01', '0030', 'LUB-0012', '4', 'L', 'L', '', '']);
+        const res = await parseImportFile(sapPmLoadFileFrom({ ...rows, 'Components': comps }));
+        expect(res.type).toBe('jobplan');
+        expect(res.errorCount).toBe(0);
+        expect(res.rows[0].data['materials']).toBeUndefined();          // op 0010 plans no parts
+        expect(JSON.parse(res.rows[2].data['materials'])).toEqual([
+            { code: 'BRG-0041', qty: '2', uom: 'EA', category: 'L' },
+            { code: 'SEAL-0007', qty: '1', uom: 'EA', category: 'L' },
+        ]);
+        expect(JSON.parse(res.rows[5].data['materials'])).toEqual([{ code: 'LUB-0012', qty: '4', uom: 'L', category: 'L' }]);
+    });
+
     it('each operation carries its strategy package cadence from the package sheet', async () => {
         const res = await parseImportFile(sapPmLoadFile('General_Task_List'));
         const cadences = res.rows.map(r => `${r.data['package']}:${r.data['frequencyinterval']} ${r.data['frequencyunit']}`);
