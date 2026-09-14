@@ -220,7 +220,9 @@ export class DataMapper {
             dateUsed: record.date_used,
             costCenter: undefined,
             uom: 'EA', // Default to EA if missing
-            jobTaskId: record.job_task_id // New Mapping
+            jobTaskId: record.job_task_id, // New Mapping
+            // NULL counts as issued — those rows predate the flag (0245 reads it the same way).
+            isPlanned: record.is_planned === true,
         };
     }
 

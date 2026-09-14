@@ -9,6 +9,23 @@ interface SignaturePadProps {
     label?: string;
 }
 
+// Backing-store scale. Kept at 2 so a stroke stays crisp on a phone screen.
+const SCALE = 2;
+
+/** Paints the pad ground and the dashed signing guide. Takes CSS pixels. */
+const paintBackdrop = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(16, height - 20);
+    ctx.lineTo(width - 16, height - 20);
+    ctx.stroke();
+    ctx.setLineDash([]);
+};
+
 /**
  * Canvas-based digital signature capture pad.
  * Draws smooth lines via pointer events; outputs a base64 PNG data URL.
@@ -19,27 +36,50 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onCapture, existingS
     const [hasStrokes, setHasStrokes] = useState(false);
     const lastPoint = useRef<{ x: number; y: number } | null>(null);
 
-    // Set canvas size and background
+    // Size the backing store to the element, and keep it in step.
+    //
+    // The pad used to measure itself exactly once, on mount. On a phone that
+    // measurement was taken before the surrounding card had settled — and it was
+    // never retaken on rotation — so the backing store no longer matched the
+    // element and every stroke landed offset from the finger. A ResizeObserver
+    // re-sizes and repaints, carrying any strokes already drawn across.
+    //
+    // The effect also re-runs when an existing signature is cleared: that path
+    // mounts a fresh canvas, which previously came back unsized and unpainted.
+    // (hasStrokes is reset by whichever control did the clearing, not here.)
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        canvas.width = rect.width * 2; // retina
-        canvas.height = rect.height * 2;
-        const ctx = canvas.getContext('2d')!;
-        ctx.scale(2, 2);
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(0, 0, rect.width, rect.height);
-        // Draw guide line
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(16, rect.height - 20);
-        ctx.lineTo(rect.width - 16, rect.height - 20);
-        ctx.stroke();
-        ctx.setLineDash([]);
-    }, []);
+
+        const resize = () => {
+            const { width, height } = canvas.getBoundingClientRect();
+            if (!width || !height) return;
+            const w = Math.round(width * SCALE);
+            const h = Math.round(height * SCALE);
+            if (canvas.width === w && canvas.height === h) return;
+
+            // Carry existing strokes over the resize rather than wiping a signature.
+            let carried: HTMLCanvasElement | null = null;
+            if (canvas.width && canvas.height) {
+                carried = document.createElement('canvas');
+                carried.width = canvas.width;
+                carried.height = canvas.height;
+                carried.getContext('2d')?.drawImage(canvas, 0, 0);
+            }
+
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d')!;
+            ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+            paintBackdrop(ctx, width, height);
+            if (carried) ctx.drawImage(carried, 0, 0, width, height);
+        };
+
+        resize();
+        const observer = new ResizeObserver(resize);
+        observer.observe(canvas);
+        return () => observer.disconnect();
+    }, [existingSignature]);
 
     const getPos = (e: React.PointerEvent) => {
         const canvas = canvasRef.current!;
@@ -86,16 +126,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onCapture, existingS
         if (!canvas) return;
         const ctx = canvas.getContext('2d')!;
         const rect = canvas.getBoundingClientRect();
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(0, 0, rect.width, rect.height);
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(16, rect.height - 20);
-        ctx.lineTo(rect.width - 16, rect.height - 20);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        paintBackdrop(ctx, rect.width, rect.height);
         setHasStrokes(false);
         onCapture('');
     };
@@ -108,8 +139,8 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onCapture, existingS
                     <StorageImage value={existingSignature} alt="Signature" className="h-12 object-contain flex-1" />
                     {!disabled && (
                         <button
-                            onClick={() => onCapture('')}
-                            className="text-xs text-slate-400 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50 transition"
+                            onClick={() => { setHasStrokes(false); onCapture(''); }}
+                            className="text-xs text-slate-400 hover:text-red-500 p-2 rounded hover:bg-red-50 transition flex-shrink-0"
                             title="Clear signature"
                         >
                             <RotateCcw size={14} />
@@ -126,12 +157,13 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onCapture, existingS
             <div className={`relative border-2 rounded-lg overflow-hidden ${disabled ? 'border-slate-200 opacity-50' : 'border-dashed border-slate-300 hover:border-blue-400'} transition`}>
                 <canvas
                     ref={canvasRef}
-                    className="w-full cursor-crosshair"
-                    style={{ height: 80, touchAction: 'none' }}
+                    className="w-full cursor-crosshair h-28 sm:h-20"
+                    style={{ touchAction: 'none' }}
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
                     onPointerLeave={onPointerUp}
+                    onPointerCancel={onPointerUp}
                 />
                 {!hasStrokes && !disabled && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

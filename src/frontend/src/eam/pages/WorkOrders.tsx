@@ -81,7 +81,7 @@ import ersApi from '../services/ERSApiClient';
 import { JSATab, isRealJsaId } from '../components/JSATab';
 
 type ViewMode = 'LIST' | 'DETAIL' | 'PM_LIST' | 'MY_WORK';
-type TabId = 'details' | 'tasks' | 'jsa' | 'resources' | 'cost' | 'files' | 'analysis' | 'discussion';
+type TabId = 'details' | 'tasks' | 'jsa' | 'cost' | 'files' | 'analysis' | 'discussion';
 
 // Members of the wo_status Postgres enum (0000 + 0148). The STATUS_CODE
 // dictionary is a merged list that also carries request/PM statuses, which
@@ -1105,6 +1105,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const lastPersistedRef = useRef<WorkOrder>(job);
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [costRefreshKey, setCostRefreshKey] = useState(0); // bumped after a time confirmation to re-roll the Cost tab
+    // A task link on the Resources & Cost tab opens THAT task on the Tasks tab.
+    // The old Resources tab took the id and then dropped it on the floor.
+    const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
     const [showCompleteModal, setShowCompleteModal] = useState(false);
     const [modalFailureMode, setModalFailureMode] = useState('');
     const [modalFailureCause, setModalFailureCause] = useState('');
@@ -1278,8 +1281,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         { id: 'details', label: 'Details', icon: FileText },
         { id: 'tasks', label: 'Tasks', icon: ClipboardList },
         { id: 'jsa', label: 'Safety (JSA)', icon: Shield },
-        { id: 'resources', label: 'Resources', icon: Layers },
-        { id: 'cost', label: 'Cost', icon: DollarSign },
+        // Resources folded into Cost (2026-09-14): they were one subject at two
+        // grains — people and part lines vs operations and money — and the two
+        // tabs disagreed on actual hours because Resources fell back to the
+        // plan when nothing was confirmed.
+        { id: 'cost', label: 'Resources & Cost', icon: DollarSign },
         { id: 'files', label: 'Files', icon: Paperclip },
         { id: 'analysis', label: 'Analysis & History', icon: AlertOctagon }, // Merged Tab
         { id: 'discussion', label: 'Discussion', icon: MessageSquare },
@@ -2312,11 +2318,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             dictionaries={dictionaries}
                             onSave={handleSave}
                             saving={isSaving}
+                            focusTaskId={focusTaskId}
                         />
                     )}
                     {activeTab === 'jsa' && <JSATab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
-                    {activeTab === 'resources' && <ResourcesTab job={localJob} users={users} contacts={contacts} onNavigateToTask={(taskId) => { setActiveTab('tasks'); }} dictionaries={dictionaries} />}
-                    {activeTab === 'cost' && <CostTab job={localJob} refreshKey={costRefreshKey} />}
+                    {activeTab === 'cost' && (
+                        <CostTab
+                            job={localJob}
+                            refreshKey={costRefreshKey}
+                            users={users}
+                            contacts={contacts}
+                            dictionaries={dictionaries}
+                            onOpenTask={(taskId) => { setFocusTaskId(taskId); setActiveTab('tasks'); }}
+                        />
+                    )}
                     {activeTab === 'files' && <FilesTab job={localJob} onUpdate={updateJob} tasks={localJob.tasks || []} />}
                     {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} bomItems={bomItems} registeredSubunits={registeredSubunits} journalPreset={journalPreset} />}
                     {activeTab === 'discussion' && localJob.id && (
@@ -5295,7 +5310,14 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refreshKey }) => {
+const CostTab: React.FC<{
+    job: WorkOrder;
+    refreshKey: number;
+    users: any[];
+    contacts: any[];
+    dictionaries: DictionaryEntry[];
+    onOpenTask: (taskId: string) => void;
+}> = ({ job, refreshKey, users, contacts, dictionaries, onOpenTask }) => {
     const [actuals, setActuals] = useState<OrderActuals | null>(null);
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
     const [costCenters, setCostCenters] = useState<{ id: string; code: string; name: string }[]>([]);
@@ -5341,6 +5363,77 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
 
     const plannedLabour = rows.reduce((s, r) => s + r.plannedCost, 0);
     const actualLabour = actuals?.labourCost ?? rows.reduce((s, r) => s + r.actualCost, 0);
+
+    // ── Who is on the job, and what has been issued (from the former Resources tab) ──
+    //
+    // Plan-vs-actual HOURS belong to the operations table: plan is per craft
+    // line and per operation, and actual is the confirmations rolled up by
+    // the database. What this adds is the staffing picture — who is on the
+    // job, on which operations, what each person has confirmed, and which
+    // planned craft roles still have nobody in them. Nothing here falls back
+    // to the plan when no actual exists; that fallback is what made the two
+    // tabs disagree.
+    const craftRoles = useMemo(() => dictionaries.filter(d => d.type === 'CONTACT_TYPE' && d.active), [dictionaries]);
+    const craftLabel = (code?: string) => craftRoles.find(r => r.code === code)?.description || code || 'Labour';
+    const opLabel = (taskId?: string) => {
+        const t = taskId ? (job.tasks || []).find(x => x.id === taskId) : undefined;
+        return t ? (t.description || `Op ${t.operationNo || t.sequence}`) : undefined;
+    };
+    type CrewRow = { key: string; name: string; craft: string; open: boolean; plannedHours: number; confirmedHours: number; ops: Map<string, string> };
+    const crew = useMemo(() => {
+        const byKey = new Map<string, CrewRow>();
+        const row = (key: string, init: () => CrewRow) => { let r = byKey.get(key); if (!r) { r = init(); byKey.set(key, r); } return r; };
+        // contact_id holds a contact id on legacy lines and a user id on confirmations (the column FKs users).
+        const person = (id: string) => {
+            const u = users.find((x: any) => x.id === id);
+            const c = contacts.find((x: any) => x.id === id) || (u ? contacts.find((x: any) => x.id === u.contactId) : undefined);
+            if (!u && !c) return null;
+            return { name: c?.name || `${c?.firstName || ''} ${c?.lastName || ''}`.trim() || u?.username || id.slice(0, 8), craft: c?.title as string | undefined };
+        };
+        for (const l of job.labor || []) {
+            const posted = l.confirmationNo != null;
+            const p = l.contactId ? person(l.contactId) : null;
+            let r: CrewRow;
+            if (!p) {
+                if (posted) continue;                       // a confirmation without a resolvable person is not a staffing fact
+                const craft = craftLabel(l.contactType);
+                r = row(`open:${l.contactType}:${l.jobTaskId || ''}`, () => ({ key: `open:${l.contactType}:${l.jobTaskId || ''}`, name: craft, craft, open: true, plannedHours: 0, confirmedHours: 0, ops: new Map() }));
+                r.plannedHours += (l.estDuration || 0) * (l.headcount || 1);
+            } else {
+                r = row(l.contactId!, () => ({ key: l.contactId!, name: p.name, craft: p.craft || craftLabel(l.contactType), open: false, plannedHours: 0, confirmedHours: 0, ops: new Map() }));
+                if (posted) r.confirmedHours += l.actualDuration || 0;
+                else r.plannedHours += l.estDuration || 0;
+            }
+            if (l.jobTaskId) r.ops.set(l.jobTaskId, opLabel(l.jobTaskId) || 'Operation');
+        }
+        // Step assignees with no craft line are still on the job — listed, with no invented hours.
+        for (const t of job.tasks || []) {
+            for (const uid of t.assignedUserIds || []) {
+                const p = person(uid);
+                if (!p) continue;
+                row(uid, () => ({ key: uid, name: p.name, craft: p.craft || 'Technician', open: false, plannedHours: 0, confirmedHours: 0, ops: new Map() }))
+                    .ops.set(t.id, opLabel(t.id) || 'Operation');
+            }
+        }
+        return [...byKey.values()].sort((a, b) => Number(a.open) - Number(b.open) || b.confirmedHours - a.confirmedHours || a.name.localeCompare(b.name));
+    }, [job.labor, job.tasks, users, contacts, craftRoles]);
+    const people = crew.filter(c => !c.open);
+    const openRoles = crew.filter(c => c.open);
+    const unstaffedHours = openRoles.reduce((s, r) => s + r.plannedHours, 0);
+    const confirmedHours = people.reduce((s, r) => s + r.confirmedHours, 0);
+
+    // Part lines with their true state. The old "Act. Q" column was the planned
+    // quantity under another name — the mapper writes the same number to both.
+    const partLines = useMemo(() => (job.inventory || []).map(p => {
+        const reserved = p.isPlanned === true || (p.isPlanned === undefined && p.id.startsWith('new-'));
+        return {
+            id: p.id, description: p.description || 'Part', uom: p.uom || 'EA',
+            qty: p.estQty || 0, value: (p.estQty || 0) * (p.estUnitCost || 0),
+            reserved, taskId: p.jobTaskId, opName: opLabel(p.jobTaskId),
+        };
+    }), [job.inventory, job.tasks]);
+    const issuedValue = partLines.filter(p => !p.reserved).reduce((s, p) => s + p.value, 0);
+    const reservedValue = partLines.filter(p => p.reserved).reduce((s, p) => s + p.value, 0);
     const partsCost = actuals?.partsCost ?? 0;
     const serviceCost = actuals?.serviceCost ?? 0;
     const anyWorkCenters = rows.some(r => r.wcLabel !== '—');
@@ -5427,8 +5520,8 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
         <div className="space-y-4">
             <div className="flex items-center gap-2">
                 <DollarSign size={16} className="text-slate-400" />
-                <h3 className="text-sm font-bold text-slate-700">Operation Cost &amp; Settlement</h3>
-                <span className="text-[11px] text-slate-400">planned vs confirmed-actual labour</span>
+                <h3 className="text-sm font-bold text-slate-700">Resources &amp; Cost</h3>
+                <span className="text-[11px] text-slate-400 hidden sm:inline">people, materials, and what the job cost</span>
                 {/* Read the FLAG, not the status: 0284 freezes at CLOSED, and a
                     badge inferred from status lies on any row where they differ. */}
                 {(job.costFrozen || job.status === 'CLOSED') && (
@@ -5490,7 +5583,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
 
             {loading ? (
                 <LoadingState label="Loading cost roll-up…" className="h-40" />
-            ) : rows.length === 0 ? (
+            ) : rows.length === 0 && crew.length === 0 && partLines.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 bg-white border border-slate-200 rounded-card">
                     <ClipboardList size={32} className="mx-auto mb-2 opacity-20" />
                     <p className="text-sm">No operations yet. Add tasks on the <strong>Tasks</strong> tab and assign each a work center to cost it.</p>
@@ -5575,6 +5668,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                         </div>
                     )}
 
+                    {rows.length > 0 && (
                     <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm min-w-[720px]">
@@ -5607,6 +5701,120 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                             </table>
                         </div>
                     </div>
+                    )}
+
+                    {/* ── Crew ─────────────────────────────────────────────── */}
+                    <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
+                        <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <h4 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5"><Users size={12} className="text-blue-600" /> Crew</h4>
+                            <span className="text-[11px] text-slate-500 tabular-nums">
+                                {people.length} {people.length === 1 ? 'person' : 'people'} · {confirmedHours.toFixed(1)}h confirmed
+                            </span>
+                            {openRoles.length > 0 && (
+                                <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 tabular-nums">
+                                    {openRoles.length} open {openRoles.length === 1 ? 'role' : 'roles'} · {unstaffedHours.toFixed(1)}h unstaffed
+                                </span>
+                            )}
+                        </div>
+                        {crew.length === 0 ? (
+                            <p className="p-5 text-center text-xs text-slate-400">Nobody on this job yet. Plan craft lines or assign people on the <strong>Tasks</strong> tab.</p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs min-w-[520px]">
+                                    <thead>
+                                        <tr className="text-[10px] uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                                            <th className="text-left font-semibold px-3 py-2">Person</th>
+                                            <th className="text-left font-semibold px-2 py-2">Craft</th>
+                                            <th className="text-left font-semibold px-2 py-2">Operations</th>
+                                            <th className="text-right font-semibold px-2 py-2">Planned h</th>
+                                            <th className="text-right font-semibold px-3 py-2">Confirmed h</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {crew.map(r => (
+                                            <tr key={r.key} className={r.open ? 'bg-amber-50/40' : ''}>
+                                                <td className="px-3 py-2">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${r.open ? 'bg-amber-100 text-amber-600 border border-dashed border-amber-400' : 'bg-blue-600 text-white'}`}>
+                                                            {r.open ? '?' : r.name.slice(0, 2).toUpperCase()}
+                                                        </div>
+                                                        <span className={`truncate max-w-[160px] ${r.open ? 'text-amber-700 italic' : 'font-semibold text-slate-800'}`}>
+                                                            {r.open ? `${r.name} — nobody assigned` : r.name}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-2 py-2 text-slate-500">{r.craft}</td>
+                                                <td className="px-2 py-2">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {[...r.ops.entries()].map(([id, name]) => (
+                                                            <button key={id} type="button" onClick={() => onOpenTask(id)} title="Open this operation on the Tasks tab"
+                                                                className="text-[10px] text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded px-1.5 py-0.5 truncate max-w-[150px]">
+                                                                {name}
+                                                            </button>
+                                                        ))}
+                                                        {r.ops.size === 0 && <span className="text-slate-400 italic">Order level</span>}
+                                                    </div>
+                                                </td>
+                                                <td className="px-2 py-2 text-right tabular-nums text-slate-500">{r.plannedHours > 0 ? r.plannedHours.toFixed(1) : '—'}</td>
+                                                <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800">{r.open ? '—' : r.confirmedHours.toFixed(1)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Parts & materials ────────────────────────────────── */}
+                    <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
+                        <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <h4 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5"><Package size={12} className="text-amber-600" /> Parts &amp; materials</h4>
+                            <span className="text-[11px] text-slate-500 tabular-nums">
+                                {partLines.length} {partLines.length === 1 ? 'line' : 'lines'} · {money(issuedValue)} issued
+                                {reservedValue > 0 && <> · {money(reservedValue)} reserved</>}
+                            </span>
+                        </div>
+                        {partLines.length === 0 ? (
+                            <p className="p-5 text-center text-xs text-slate-400">No parts on this job. Add them to an operation on the <strong>Tasks</strong> tab.</p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs min-w-[520px]">
+                                    <thead>
+                                        <tr className="text-[10px] uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                                            <th className="text-left font-semibold px-3 py-2">Part</th>
+                                            <th className="text-left font-semibold px-2 py-2">Operation</th>
+                                            <th className="text-right font-semibold px-2 py-2">Qty</th>
+                                            <th className="text-right font-semibold px-2 py-2">Value</th>
+                                            <th className="text-left font-semibold px-3 py-2">State</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {partLines.map(p => (
+                                            <tr key={p.id}>
+                                                <td className="px-3 py-2 text-slate-800 font-medium max-w-[220px] truncate" title={p.description}>{p.description}</td>
+                                                <td className="px-2 py-2">
+                                                    {p.taskId ? (
+                                                        <button type="button" onClick={() => onOpenTask(p.taskId!)} title="Open this operation on the Tasks tab"
+                                                            className="text-[10px] text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded px-1.5 py-0.5 truncate max-w-[150px]">
+                                                            {p.opName || 'Operation'}
+                                                        </button>
+                                                    ) : <span className="text-slate-400 italic">Order level</span>}
+                                                </td>
+                                                <td className="px-2 py-2 text-right tabular-nums text-slate-700">{p.qty} <span className="text-slate-400">{p.uom}</span></td>
+                                                <td className="px-2 py-2 text-right tabular-nums text-slate-700">{money(p.value)}</td>
+                                                <td className="px-3 py-2">
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.reserved ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                                                        {p.reserved ? 'Reserved' : 'Issued'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
                     {(job as any).scope === 'PROJECT' && (() => {
                         const spent = actualLabour + partsCost + serviceCost;
                         const budget = (job as any).budgetApproved || plannedTotal || 1;
@@ -5675,6 +5883,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
 
                     <p className="text-[11px] text-slate-400">
                         Actuals roll up from time confirmations posted on the Tasks tab (Do-work mode). Each confirmation is valued at its posted rate (person → craft → work centre, snapshotted at posting); the operation's planned/work-centre rate applies only to rows posted without one.
+                        Crew and part lines are planned and assigned on the Tasks tab; a part is Reserved until the order reaches TECO and it is issued from stores.
                     </p>
                 </>
             )}
@@ -5695,10 +5904,12 @@ const TasksTab: React.FC<{
     dictionaries: DictionaryEntry[];
     onSave?: () => void;
     saving?: boolean;
-}> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, onOperationConfirmed, dictionaries, onSave, saving = false }) => {
+    /** Task to open on arrival — set by a task link on the Resources & Cost tab. */
+    focusTaskId?: string | null;
+}> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, onOperationConfirmed, dictionaries, onSave, saving = false, focusTaskId = null }) => {
     const confirm = useConfirm();
     const tasks = job.tasks || [];
-    const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+    const [expandedTaskId, setExpandedTaskId] = useState<string | null>(focusTaskId);
     const [editorTab, setEditorTab] = useState<'instructions' | 'resources'>('instructions');
     // WM-2b: active work centers for the per-operation picker (loaded once).
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
@@ -7354,288 +7565,6 @@ const TaskEditor: React.FC<{
         </div>
     );
 };
-
-
-const ResourcesTab: React.FC<{
-    job: WorkOrder;
-    users: any[];
-    contacts: any[];
-    onNavigateToTask: (taskId: string) => void;
-    dictionaries: DictionaryEntry[];
-}> = ({ job, users, contacts, onNavigateToTask, dictionaries }) => {
-
-    // Craft role lookup helper
-    const craftRoles = useMemo(() => dictionaries.filter(d => d.type === 'CONTACT_TYPE' && d.active), [dictionaries]);
-    const getCraftLabel = (code: string) => craftRoles.find(r => r.code === code)?.description || code || 'Labour';
-
-    // --- LABOR AGGREGATION (from tasks + standalone labor records) ---
-    const labourSummary = useMemo(() => {
-        const entries: { userId: string; userName: string; craft: string; taskName: string; taskId: string; estHours: number; actHours: number; isPlanning: boolean }[] = [];
-
-        // 1. From task assignments (actual user assignments)
-        (job.tasks || []).forEach(task => {
-            (task.assignedUserIds || []).forEach(userId => {
-                const u = users.find((us: any) => us.id === userId);
-                const c = u ? contacts.find((co: any) => co.id === u.contactId) : null;
-                entries.push({
-                    userId,
-                    userName: c?.name || u?.username || userId.substring(0, 8),
-                    craft: c?.title || 'Technician',
-                    taskName: task.description || `Task ${task.sequence}`,
-                    taskId: task.id,
-                    estHours: task.estHours || 0,
-                    actHours: task.actualHours || 0,
-                    isPlanning: false,
-                });
-            });
-        });
-
-        // 2. From standalone labor records (work_order_labor)
-        (job.labor || []).forEach(l => {
-            // contact_id may hold a contact id (legacy lines) or a user id (confirmations — the column FKs users(id)).
-            const c = l.contactId
-                ? (contacts.find((co: any) => co.id === l.contactId)
-                    || contacts.find((co: any) => co.id === users.find((us: any) => us.id === l.contactId)?.contactId))
-                : null;
-            const taskRef = l.jobTaskId ? (job.tasks || []).find(t => t.id === l.jobTaskId) : null;
-            const hasRealPerson = !!(l.contactId && c);
-            entries.push({
-                userId: l.contactId || l.id,
-                userName: hasRealPerson ? (c!.name || `${(c as any)?.firstName || ''} ${(c as any)?.lastName || ''}`.trim() || l.contactId!.substring(0, 8)) : `${getCraftLabel(l.contactType)} (Unassigned)`,
-                craft: hasRealPerson ? (c!.title || getCraftLabel(l.contactType)) : getCraftLabel(l.contactType),
-                taskName: taskRef ? (taskRef.description || `Task ${taskRef.sequence}`) : 'General',
-                taskId: l.jobTaskId || '',
-                estHours: l.estDuration || 0,
-                actHours: l.actualDuration || l.estDuration || 0,
-                isPlanning: !hasRealPerson,
-            });
-        });
-
-        return entries;
-    }, [job.tasks, job.labor, users, contacts, craftRoles]);
-
-    // --- PARTS AGGREGATION ---
-    const partsSummary = useMemo(() => {
-        const inventory = job.inventory || [];
-        return inventory.map(part => {
-            const taskRef = part.jobTaskId ? (job.tasks || []).find(t => t.id === part.jobTaskId) : null;
-            return {
-                partId: part.id,
-                description: part.description || 'Unknown Part',
-                uom: part.uom || 'EA',
-                estQty: part.estQty || 0,
-                actQty: part.actualQty ?? part.estQty ?? 0,
-                taskName: taskRef ? (taskRef.description || `Task ${taskRef.sequence}`) : 'Unassigned',
-                taskId: part.jobTaskId || '',
-            };
-        });
-    }, [job.tasks, job.inventory]);
-
-    // --- KPI CALCULATIONS ---
-    const assignedPeople = labourSummary.filter(l => !l.isPlanning);
-    const planningRoles = labourSummary.filter(l => l.isPlanning);
-    const uniquePeople = new Set(assignedPeople.map(l => l.userId)).size;
-    const unfilledRoles = planningRoles.length;
-    const totalEstHours = labourSummary.reduce((s, l) => s + l.estHours, 0);
-    const totalActHours = labourSummary.reduce((s, l) => s + l.actHours, 0);
-
-    // --- GROUPING ---
-    const labourByPerson = useMemo(() => {
-        const map = new Map<string, typeof labourSummary>();
-        labourSummary.forEach(entry => {
-            const existing = map.get(entry.userId) || [];
-            existing.push(entry);
-            map.set(entry.userId, existing);
-        });
-        return Array.from(map.entries());
-    }, [labourSummary]);
-
-    const partsByTask = useMemo(() => {
-        const map = new Map<string, typeof partsSummary>();
-        partsSummary.forEach(entry => {
-            const key = entry.taskId || '__unassigned__';
-            const existing = map.get(key) || [];
-            existing.push(entry);
-            map.set(key, existing);
-        });
-        return Array.from(map.entries());
-    }, [partsSummary]);
-
-    return (
-        <div className="space-y-3 md:space-y-4 animate-in fade-in duration-300">
-            {/* KPI Stats Header */}
-            <div className="grid grid-cols-3 gap-2 md:gap-3">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-50 border border-blue-100 rounded-lg p-3 text-center">
-                    <div className="text-xl md:text-2xl font-black text-blue-700">{uniquePeople}{unfilledRoles > 0 && <span className="text-xs font-medium text-amber-500 ml-1">+{unfilledRoles} open</span>}</div>
-                    <div className="text-[10px] text-blue-500 font-bold uppercase mt-0.5">Assigned</div>
-                </div>
-                <div className="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-100 rounded-lg p-3 text-center">
-                    <div className="text-xl md:text-2xl font-black text-emerald-700">{totalActHours.toFixed(1)}<span className="text-xs font-medium text-emerald-400">/{totalEstHours.toFixed(1)}</span></div>
-                    <div className="text-[10px] text-emerald-500 font-bold uppercase mt-0.5">Act / Plan Hrs</div>
-                </div>
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-lg p-3 text-center">
-                    <div className="text-xl md:text-2xl font-black text-amber-700">{partsSummary.length}</div>
-                    <div className="text-[10px] text-amber-500 font-bold uppercase mt-0.5">Part Lines</div>
-                </div>
-            </div>
-
-            {/* Labor Summary Table */}
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                <div className="px-3 py-2.5 md:px-4 md:py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-xs md:text-sm">
-                        <Users size={14} className="text-blue-600" /> Labor Summary
-                    </h3>
-                    <span className="text-[10px] text-slate-400 font-medium">{uniquePeople} {uniquePeople === 1 ? 'person' : 'people'} � {totalEstHours.toFixed(1)}h planned</span>
-                </div>
-                {labourByPerson.length === 0 ? (
-                    <div className="p-6 text-center text-slate-400 text-xs">
-                        <Users size={28} className="mx-auto mb-2 opacity-20" />
-                        No labour assigned. Assign people to tasks in the <strong>Tasks</strong> tab.
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                            <thead>
-                                <tr className="text-[10px] text-slate-400 uppercase font-bold border-b border-slate-100">
-                                    <th className="text-left px-3 py-2">Person</th>
-                                    <th className="text-left px-2 py-2 hidden sm:table-cell">Craft</th>
-                                    <th className="text-left px-2 py-2 hidden md:table-cell">Task</th>
-                                    <th className="text-right px-2 py-2 w-16">Plan H</th>
-                                    <th className="text-right px-3 py-2 w-16">Act. H</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {labourByPerson.map(([userId, entries]) => (
-                                    <React.Fragment key={userId}>
-                                        {entries.map((entry, i) => (
-                                            <tr key={`${userId}-${i}`} className={`hover:bg-slate-50/50 transition ${entry.isPlanning ? 'bg-amber-50/30' : ''}`}>
-                                                {i === 0 && (
-                                                    <td className="px-3 py-2 align-top" rowSpan={entries.length}>
-                                                        <div className="flex items-center gap-2">
-                                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold shadow-sm flex-shrink-0 ${entry.isPlanning ? 'bg-amber-100 text-amber-600 border-2 border-dashed border-amber-300' : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'}`}>
-                                                                {entry.isPlanning ? '?' : entry.userName.substring(0, 2).toUpperCase()}
-                                                            </div>
-                                                            <span className={`truncate max-w-[120px] ${entry.isPlanning ? 'text-amber-700 italic text-[11px] font-medium' : 'font-semibold text-slate-800'}`}>{entry.userName}</span>
-                                                        </div>
-                                                    </td>
-                                                )}
-                                                <td className="px-2 py-2 text-slate-500 hidden sm:table-cell">{entry.craft}</td>
-                                                <td className="px-2 py-2 hidden md:table-cell">
-                                                    {entry.taskId ? (
-                                                        <button
-                                                            onClick={() => onNavigateToTask(entry.taskId)}
-                                                            className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[140px] block"
-                                                        >
-                                                            {entry.taskName}
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-slate-400 italic">{entry.taskName}</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-medium text-slate-600">{entry.estHours.toFixed(1)}</td>
-                                                <td className={`px-3 py-2 text-right font-bold ${entry.actHours > entry.estHours ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                    {entry.actHours.toFixed(1)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </React.Fragment>
-                                ))}
-                            </tbody>
-                            <tfoot>
-                                <tr className="border-t border-slate-200 bg-slate-50/50 font-bold text-[11px]">
-                                    <td className="px-3 py-2 text-slate-500 uppercase" colSpan={1}>Total</td>
-                                    <td className="hidden sm:table-cell"></td>
-                                    <td className="hidden md:table-cell"></td>
-                                    <td className="px-2 py-2 text-right text-slate-600">{totalEstHours.toFixed(1)}</td>
-                                    <td className={`px-3 py-2 text-right ${totalActHours > totalEstHours ? 'text-red-600' : 'text-emerald-600'}`}>{totalActHours.toFixed(1)}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            {/* Parts & Materials Table */}
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                <div className="px-3 py-2.5 md:px-4 md:py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-xs md:text-sm">
-                        <Package size={14} className="text-amber-600" /> Parts & Materials
-                    </h3>
-                    <span className="text-[10px] text-slate-400 font-medium">{partsSummary.length} {partsSummary.length === 1 ? 'item' : 'items'}</span>
-                </div>
-                {partsSummary.length === 0 ? (
-                    <div className="p-6 text-center text-slate-400 text-xs">
-                        <Package size={28} className="mx-auto mb-2 opacity-20" />
-                        No parts required. Add parts to tasks in the <strong>Tasks</strong> tab.
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                            <thead>
-                                <tr className="text-[10px] text-slate-400 uppercase font-bold border-b border-slate-100">
-                                    <th className="text-left px-3 py-2">Part</th>
-                                    <th className="text-center px-2 py-2 w-12">UOM</th>
-                                    <th className="text-left px-2 py-2 hidden md:table-cell">Task</th>
-                                    <th className="text-right px-2 py-2 w-14">Plan Q</th>
-                                    <th className="text-right px-3 py-2 w-14">Act. Q</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {partsByTask.map(([taskKey, parts]) => (
-                                    <React.Fragment key={taskKey}>
-                                        {parts.map((part, i) => (
-                                            <tr key={part.partId} className="hover:bg-slate-50/50 transition">
-                                                <td className="px-3 py-2 text-slate-700 font-medium truncate max-w-[160px]">{part.description}</td>
-                                                <td className="px-2 py-2 text-center">
-                                                    <span className="text-[9px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded">{part.uom}</span>
-                                                </td>
-                                                <td className="px-2 py-2 hidden md:table-cell">
-                                                    {part.taskId ? (
-                                                        <button
-                                                            onClick={() => onNavigateToTask(part.taskId)}
-                                                            className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[120px] block"
-                                                        >
-                                                            {part.taskName}
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-slate-400 italic text-[10px]">Unassigned</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-2 py-2 text-right font-medium text-slate-600">{part.estQty}</td>
-                                                <td className={`px-3 py-2 text-right font-bold ${part.actQty > part.estQty ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                    {part.actQty}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </React.Fragment>
-                                ))}
-                            </tbody>
-                            <tfoot>
-                                <tr className="border-t border-slate-200 bg-slate-50/50 font-bold text-[11px]">
-                                    <td className="px-3 py-2 text-slate-500 uppercase">Total</td>
-                                    <td></td>
-                                    <td className="hidden md:table-cell"></td>
-                                    <td className="px-2 py-2 text-right text-slate-600">{partsSummary.reduce((s, p) => s + p.estQty, 0)}</td>
-                                    <td className="px-3 py-2 text-right text-emerald-600">{partsSummary.reduce((s, p) => s + p.actQty, 0)}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            {/* Info Notice */}
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-start gap-2">
-                <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
-                <div className="text-[10px] text-blue-700">
-                    <strong>Resource management is task-based.</strong> To add or edit labour assignments and parts, go to the <strong>Tasks</strong> tab and expand a task.
-                    This view summarises people, hours, and materials across all tasks — costs and settlement live on the <strong>Cost</strong> tab.
-                </div>
-            </div>
-        </div>
-    );
-};
-
 
 
 

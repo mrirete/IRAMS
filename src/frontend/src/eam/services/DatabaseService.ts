@@ -6518,11 +6518,19 @@ export class DatabaseService {
         const dbJSA = DataMapper.toDBJobJSA(jsa, woId);
         let jsaId = existing?.id;
 
-        // The 0210 restrictive policy blocks hazard writes while the stored
+        // The 0212 restrictive policy blocks hazard writes while the STORED
         // status is AUTHORIZED. So order matters: when locking (payload says
-        // AUTHORIZED) write hazards first, status last; when unlocking or
-        // staying unlocked, write status first so the hazards can follow.
+        // AUTHORIZED, row does not yet) write hazards first, status last; when
+        // unlocking or staying unlocked, write status first so the hazards can
+        // follow.
+        //
+        // When the row is already AUTHORIZED and stays AUTHORIZED, the hazards
+        // must not be touched at all. The UI refuses hazard edits in that
+        // state, so the payload carries the rows the DB already holds; writing
+        // them anyway hit the lock and surfaced as a raw policy error on every
+        // re-signed signature and every offline replay of a sign-off.
         const locking = jsa.status === 'AUTHORIZED';
+        const alreadyLocked = existing?.status === 'AUTHORIZED';
 
         const writeAssessment = async () => {
             const { error } = await supabase.from('jsa_assessments').update(dbJSA).eq('id', existing!.id);
@@ -6550,7 +6558,9 @@ export class DatabaseService {
         };
 
         if (existing) {
-            if (locking) {
+            if (locking && alreadyLocked) {
+                await writeAssessment();
+            } else if (locking) {
                 await writeHazards();
                 await writeAssessment();
             } else {

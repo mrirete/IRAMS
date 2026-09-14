@@ -1062,6 +1062,8 @@ export interface JobInventory {
   actualUnitCost?: number;
   dateUsed?: string;
   jobTaskId?: string; // Linked Task
+  /** Read-only. true = still a reservation (work_order_parts.is_planned); false or NULL = issued. */
+  isPlanned?: boolean;
 }
 
 export interface JobJournal {
