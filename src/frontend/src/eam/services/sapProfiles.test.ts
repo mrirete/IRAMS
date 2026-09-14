@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSapProfile, findHeaderRow, SAP_PROFILES } from './assetTemplates';
+import { resolveSapProfile, findHeaderRow, SAP_PROFILES, isDescriptionRow, readingTypeFromCharacteristic } from './assetTemplates';
 
 const lower = (h: string[]) => h.map(x => x.toLowerCase());
 
@@ -77,5 +77,63 @@ describe('SAP source list (0296)', () => {
   it('does not shadow the material or stock sheets', () => {
     expect(resolveSapProfile(lower(['MATNR', 'MAKTX', 'LIFNR']))!.name).toBe('SAP material master');
     expect(resolveSapProfile(lower(['MATNR', 'BUDAT', 'MENGE']))!.name).toBe('SAP inventory balances');
+  });
+});
+
+describe('SAP measuring points — consultant load-file layout', () => {
+  const LOAD_FILE_HEADER = ['Field', 'POINT', 'PSORT', 'PTTXT', 'MPOBJ', 'EQUNR', 'TPLNR', 'MPTYP', 'ATNAM', 'MSEHI', 'DECIM', 'INDCT', 'MRMIN', 'MRMAX'];
+  it('MSEHI tells the load-file layout from the cockpit sheet (both carry MPOBJ + ATNAM)', () => {
+    expect(resolveSapProfile(lower(LOAD_FILE_HEADER))!.name).toBe('SAP measuring points (load file)');
+    expect(resolveSapProfile(lower(['MPOBJ', 'MPTYP', 'PSORT', 'PTTXT', 'ATNAM', 'MRNGU']))!.name).toBe('SAP measuring points');
+  });
+  it('the "Field" label names the header row even when no field is recognisable', () => {
+    const rows = [
+      ['Information', 'PM - Maintenance Plan'],
+      ['Header', 'Basic Data', 'Basic Data'],
+      ['Table', 'MPLA', 'MPLA'],
+      ['Field', 'WARPL', 'WPTXT'],
+      ['Field Description', 'Maintenance Plan', 'MaintPlanText'],
+      ['SMP10000001', '50099001', '1M/12M,PUMP P-101,MECH'],
+    ];
+    expect(findHeaderRow(rows)).toBe(3);
+  });
+  it('the six documentation rows under the header are never data', () => {
+    for (const label of ['Field Description', 'Data Type', 'Length', 'Mandatory', 'BRD', 'ASSIGNED']) {
+      expect(isDescriptionRow([label, 'x', 'y'])).toBe(true);
+    }
+    expect(isDescriptionRow(['TMP01000001', 'MP-00000001', '1'])).toBe(false);
+    expect(isDescriptionRow(['SITE-HOU', 'Houston Production Site'])).toBe(false);
+  });
+  it('fixup: equipment from EQUNR (MPOBJ = "IEQ" is a prefix), type from ATNAM, unit made readable, range as band', () => {
+    const p = SAP_PROFILES.find(x => x.name === 'SAP measuring points (load file)')!;
+    const r: Record<string, string> = {
+      assettag: 'ES0654503', mpobj: 'IEQ', position: '3', pointname: 'PUMP NDE HORIZONDAL VIBRATION',
+      atnam: 'MP_VIBRATION', unit: 'MMS', mrmin: '5.40', mrmax: '8.50', counter: '',
+    };
+    p.fixup!(r);
+    expect(r.assettag).toBe('ES0654503');
+    expect(r.readingtype).toBe('VIBRATION');
+    expect(r.unit).toBe('mm/s');
+    expect(r.minwarning).toBe('5.40');
+    expect(r.maxwarning).toBe('8.50');
+    expect(p.rowWarnings!(r).join(' ')).toMatch(/measurement-range/);
+  });
+  it('fixup: a real object number resolves; alarm limits beat the range when both are present', () => {
+    const p = SAP_PROFILES.find(x => x.name === 'SAP measuring points (load file)')!;
+    const r: Record<string, string> = { assettag: '', mpobj: 'IE000000000010004521', atnam: 'YB_HOURS', unit: 'H', counter: 'X', minwarning: '', maxwarning: '7.1', mrmin: '0', mrmax: '20' };
+    p.fixup!(r);
+    expect(r.assettag).toBe('10004521');
+    expect(r.readingtype).toBe('HOURS');
+    expect(r.unit).toBe('h');
+    expect(r.counter).toBe('YES');
+    expect(r.minwarning).toBe('0');      // range fills the gap…
+    expect(r.maxwarning).toBe('7.1');    // …but never overrides ATVUP
+  });
+  it('readingTypeFromCharacteristic strips the customer prefix only', () => {
+    expect(readingTypeFromCharacteristic('MP_TEMPERATURE')).toBe('TEMPERATURE');
+    expect(readingTypeFromCharacteristic('ZMP_VIBRATION')).toBe('VIBRATION');
+    expect(readingTypeFromCharacteristic('YB_HOURS')).toBe('HOURS');
+    expect(readingTypeFromCharacteristic('VIBRATION')).toBe('VIBRATION');
+    expect(readingTypeFromCharacteristic('mp_current')).toBe('CURRENT');
   });
 });

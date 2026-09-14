@@ -701,16 +701,24 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
 
     const assets = await fetchAssetsByTag(rows.map(r => r['assettag'] || ''));
 
-    // Existing reading points, keyed asset+type.
+    // Existing reading points, keyed asset+type (first one wins — where the
+    // logs land) and asset+type+name (a pump carries eight VIBRATION points:
+    // DE/NDE × horizontal/vertical/axial; they must not collapse into one).
     const defByKey = new Map<string, string>();
+    const defByName = new Map<string, string>();
+    const nameKey = (assetId: string, type: string, name: string) => `${assetId}::${type}::${name.trim().toUpperCase()}`;
     const assetIds = [...new Set([...assets.values()].map(a => a.id))];
     for (const part of chunk(assetIds, LOOKUP_CHUNK)) {
         const { data, error } = await supabase
             .from('reading_definitions')
-            .select('id, asset_id, reading_type_code')
+            .select('id, asset_id, reading_type_code, name')
             .in('asset_id', part);
         if (error) throw new Error(`Reading point lookup failed: ${error.message}`);
-        for (const d of data ?? []) defByKey.set(`${d.asset_id}::${d.reading_type_code}`, d.id);
+        for (const d of data ?? []) {
+            const k = `${d.asset_id}::${d.reading_type_code}`;
+            if (!defByKey.has(k)) defByKey.set(k, d.id);
+            if (d.name) defByName.set(nameKey(d.asset_id, d.reading_type_code, String(d.name)), d.id);
+        }
     }
 
     interface LogDraft { row: number; key: string; log: Record<string, unknown> }
@@ -742,7 +750,11 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
             if (num(r['minwarning']) !== null) patch.min_warning = num(r['minwarning']);
             if (num(r['maxwarning']) !== null) patch.max_warning = num(r['maxwarning']);
             const dk0 = `${asset.id}::${type}`;
-            const existingDef = defByKey.get(dk0);
+            // A named point matches by name; an unnamed one falls back to the
+            // asset's first point of that type (the cockpit sheets carry a
+            // distinct PSORT per point, so type alone was enough there).
+            const name = (r['pointname'] || '').trim();
+            const existingDef = name ? defByName.get(nameKey(asset.id, type, name)) : defByKey.get(dk0);
             if (existingDef) {
                 if (Object.keys(patch).length === 0) {
                     tally(res, { row, key: `${tag} ${type}`, status: 'skipped', reason: 'Reading point already exists — nothing to change' });
@@ -756,7 +768,8 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
                     .insert({ asset_id: asset.id, reading_type_code: type, name: r['pointname'] || `${type.charAt(0)}${type.slice(1).toLowerCase()} (imported)`, unit: r['unit'] || null, ...patch })
                     .select('id').single();
                 if (error) { tally(res, { row, key: `${tag} ${type}`, status: 'failed', reason: error.message }); continue; }
-                defByKey.set(dk0, data.id as string);
+                if (!defByKey.has(dk0)) defByKey.set(dk0, data.id as string);
+                if (name) defByName.set(nameKey(asset.id, type, name), data.id as string);
                 pointsCreated += 1;
                 tally(res, { row, key: `${tag} ${type}`, status: 'inserted' });
             }

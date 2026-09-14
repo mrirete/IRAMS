@@ -721,4 +721,42 @@ describe('importReadings: SAP measuring points and documents', () => {
         expect(log.definition_id).toBe('def-1');
         expect(log.reading_value).toBe(48210);
     });
+
+    it('eight VIBRATION points on one pump stay eight points — matched by name, not type', async () => {
+        seedAsset();
+        const ends = ['DE', 'NDE'], axes = ['HORIZONTAL', 'VERTICAL', 'AXIAL'];
+        const rows = ends.flatMap(e => axes.map(a => ({
+            assettag: '2000001222', readingtype: 'VIBRATION', date: '', value: '',
+            pointname: `PUMP ${e} ${a} VIBRATION`, unit: 'mm/s', minwarning: '5.40', maxwarning: '8.50',
+        })));
+        rows.push(
+            { assettag: '2000001222', readingtype: 'TEMPERATURE', date: '', value: '', pointname: 'PUMP DE BEARING TEMP', unit: '°C', minwarning: '', maxwarning: '' },
+            { assettag: '2000001222', readingtype: 'TEMPERATURE', date: '', value: '', pointname: 'PUMP NDE BEARING TEMP', unit: '°C', minwarning: '', maxwarning: '' },
+        );
+        const res = await importReadings(rows);
+        expect(res.inserted).toBe(8);
+        expect(res.failed).toBe(0);
+        const defs = inserted.reading_definitions ?? [];
+        expect(defs).toHaveLength(8);
+        expect(new Set(defs.map(d => d.name)).size).toBe(8);
+        expect(defs.filter(d => d.reading_type_code === 'VIBRATION')).toHaveLength(6);
+        expect(defs.find(d => d.name === 'PUMP NDE AXIAL VIBRATION')?.max_warning).toBe(8.5);
+        expect(inserted.reading_logs ?? []).toHaveLength(0);
+    });
+
+    it('re-importing the same load file updates each point by name instead of adding duplicates', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push(
+            { id: 'def-h', asset_id: 'a-9', reading_type_code: 'VIBRATION', name: 'PUMP DE HORIZONTAL VIBRATION' },
+            { id: 'def-v', asset_id: 'a-9', reading_type_code: 'VIBRATION', name: 'PUMP DE VERTICAL VIBRATION' },
+        );
+        const res = await importReadings([
+            { assettag: '2000001222', readingtype: 'VIBRATION', date: '', value: '', pointname: 'pump de vertical vibration', maxwarning: '7.1' },
+            { assettag: '2000001222', readingtype: 'VIBRATION', date: '', value: '', pointname: 'PUMP DE AXIAL VIBRATION', maxwarning: '7.1' },
+        ]);
+        expect(res.updated).toBe(1);
+        expect(res.inserted).toBe(1);
+        expect((updates.reading_definitions ?? [])[0].__id).toBe('def-v');   // case-insensitive name match
+        expect((inserted.reading_definitions ?? [])[0].name).toBe('PUMP DE AXIAL VIBRATION');
+    });
 });

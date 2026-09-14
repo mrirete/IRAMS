@@ -898,8 +898,18 @@ export interface ParseResult {
  * called "REQUIRED — Functional location label".
  */
 export function isDescriptionRow(row: unknown[]): boolean {
-    return (row ?? []).some(c => /^\s*required\s*[—–-]/i.test(String(c ?? '')));
+    const cells = row ?? [];
+    if (cells.some(c => /^\s*required\s*[—–-]/i.test(String(c ?? '')))) return true;
+    // The consultant load-file layout keeps a label column: "Field" on the
+    // header row, then Field Description / Data Type / Length / Mandatory /
+    // BRD / ASSIGNED rows under it — six rows of documentation before the
+    // first data row (whose label is the load-row key, SMP10000001…).
+    return LOAD_FILE_META_LABELS.has(String(cells[0] ?? '').trim().toLowerCase());
 }
+
+const LOAD_FILE_META_LABELS = new Set([
+    'information', 'header', 'table', 'field', 'field description', 'data type', 'length', 'mandatory', 'brd', 'assigned',
+]);
 
 /** Resolve which sheet of a workbook to parse, and what every sheet holds. */
 export function resolveWorkbookSheet(
@@ -947,6 +957,24 @@ export interface SapSheetProfile {
     aliases: Record<string, string>;
     /** Per-row patch after aliasing, before validation. */
     fixup?: (r: Record<string, string>) => void;
+    /** Per-row advisories the profile knows about (a mapping that needs a human check). */
+    rowWarnings?: (r: Record<string, string>) => string[];
+}
+
+/**
+ * SAP unit keys as they appear in load files → what IREAMS shows. Only the
+ * codes that would otherwise read as nonsense on a Readings tab; anything
+ * else passes through untouched.
+ */
+const SAP_UNIT_MAP: Record<string, string> = { MMS: 'mm/s', GC: '°C', HRS: 'h', H: 'h', KMH: 'km/h', KPA: 'kPa', BAR: 'bar' };
+
+/**
+ * Reading type from an SAP characteristic name: MP_VIBRATION → VIBRATION,
+ * ZMP_TEMPERATURE → TEMPERATURE, YB_HOURS → HOURS. The characteristic is the
+ * key SAP itself uses; the customer prefix is noise.
+ */
+export function readingTypeFromCharacteristic(atnam: string): string {
+    return atnam.trim().toUpperCase().replace(/^[A-Z0-9]{1,3}_(?:MP_)?/, '').replace(/^MP_/, '');
 }
 
 const SAP_MTART_MAP: Record<string, string> = {
@@ -972,6 +1000,45 @@ export const SAP_PROFILES: SapSheetProfile[] = [
         fixup: (r) => {
             if (!r['value'] && r['cntrr']) r['value'] = r['cntrr'];       // counters carry the total reading
             if (!r['readingtype'] && r['point']) r['readingtype'] = r['point'];
+        },
+    },
+    {
+        // Measuring points in the consultant LOAD-FILE layout (IMPTT field
+        // names, a label column, six documentation rows under the header).
+        // Differences from the cockpit sheet below: the equipment is in EQUNR
+        // (MPOBJ holds the object-type prefix "IEQ", not a number), the unit is
+        // the characteristic unit MSEHI, PSORT is a position number (1, 2, 3…)
+        // so the reading type comes from the characteristic name, and the
+        // limits are MRMIN/MRMAX — SAP's measurement RANGE, which these files
+        // use as the warning band. Must sit before the cockpit profile: both
+        // carry MPOBJ + ATNAM, only this one carries MSEHI.
+        name: 'SAP measuring points (load file)', type: 'readings',
+        signature: ['mpobj', 'atnam', 'msehi'],
+        aliases: {
+            equnr: 'assettag', tplnr: 'assettag', pttxt: 'pointname', msehi: 'unit', psort: 'position',
+            indct: 'counter', atvlo: 'minwarning', atvup: 'maxwarning',
+        },
+        fixup: (r) => {
+            // A real object number (IE0000000000010000123) still resolves; the
+            // bare type prefix never does.
+            if (!r['assettag'] && r['mpobj'] && !/^I(EQ|FL)$/i.test(r['mpobj'])) r['assettag'] = r['mpobj'].replace(/^IE0*/i, '');
+            // Alarm limits (ATVLO/ATVUP) win; the range (MRMIN/MRMAX) is the
+            // fallback and is flagged below so nobody mistakes it for a band.
+            if (!r['minwarning'] && r['mrmin']) r['minwarning'] = r['mrmin'];
+            if (!r['maxwarning'] && r['mrmax']) r['maxwarning'] = r['mrmax'];
+            if (r['atnam']) r['readingtype'] = readingTypeFromCharacteristic(r['atnam']);
+            else if (r['position'] && isNaN(Number(r['position']))) r['readingtype'] = r['position'];
+            const unit = (r['unit'] || '').trim();
+            if (unit) r['unit'] = SAP_UNIT_MAP[unit.toUpperCase()] ?? unit;
+            // A counter reading point (INDCT = X) has no band; keep only the flag.
+            if (r['counter']) r['counter'] = /^x$/i.test(r['counter']) ? 'YES' : r['counter'];
+        },
+        rowWarnings: (r) => {
+            const w: string[] = [];
+            if (r['mrmin'] || r['mrmax']) {
+                w.push('MRMIN/MRMAX are SAP\'s measurement-range limits — imported as the warning band; confirm on the asset\'s Readings tab');
+            }
+            return w;
         },
     },
     {
@@ -1083,6 +1150,15 @@ export function findHeaderRow(rawRows: unknown[][], maxScan = 8): number {
     Object.values(REQUIRED_FIELDS).flat().forEach(h => known.add(h));
     ['assettag', 'readingtype', 'itemcost', 'qtyonhand', 'equipmentnumber', 'hierarchylevel',
         'parenttag', 'serialnumber', 'inventorycode', 'manufacturer', 'model'].forEach(h => known.add(h));
+
+    // The consultant load-file layout labels its own header row: column A says
+    // "Field" (Table / Header / Information above it, the documentation rows
+    // below). That label is the answer whatever the field names are — a
+    // maintenance-plan sheet has no name IREAMS recognises yet, and it must
+    // still be read as a sheet with a header, not as prose.
+    for (let i = 0; i < Math.min(maxScan, rawRows.length); i++) {
+        if (String(rawRows[i]?.[0] ?? '').trim().toLowerCase() === 'field') return i;
+    }
 
     // Best row wins, minimum 2 exact-token matches (a sparse sheet like the
     // SAP source list has only MATNR + LIFNR as recognisable names; title and
@@ -1231,7 +1307,7 @@ export function parseImportFile(file: File, forceType?: ImportType, sheetName?: 
                     if (sapProfile?.fixup) sapProfile.fixup(rowData);
 
                     const errors: string[] = [];
-                    const warnings: string[] = [];
+                    const warnings: string[] = sapProfile?.rowWarnings ? sapProfile.rowWarnings(rowData) : [];
 
                     // A measuring-point sheet defines reading points without logging
                     // a reading — date/value are only required on actual readings.
