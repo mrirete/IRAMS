@@ -17,6 +17,17 @@ const IS_DEV = import.meta.env.DEV;
 const ADMIN_PASSWORD = IS_DEV && typeof __DEV_ADMIN_PASSWORD__ !== 'undefined' ? __DEV_ADMIN_PASSWORD__ : '';
 const TEST_PASSWORD = IS_DEV && typeof __DEV_TEST_PASSWORD__ !== 'undefined' ? __DEV_TEST_PASSWORD__ : '';
 const ADMIN_USERNAMES = new Set(['admin001', 'mrirete']);
+// The panel used to list users from the DB before sign-in. 0361 closed that
+// anonymous read, so the list came back empty and the panel went dead. These
+// are the accounts verified to accept the dev passwords (2026-09-14); the DB
+// list still wins whenever it is available.
+const DEV_QUICK_SWITCH_FALLBACK: { username: string; name: string; role: string }[] = [
+    { username: 'admin001', name: 'System Admin', role: 'SUPER_ADMIN' },
+    { username: 'k.syrus', name: 'K. Syrus', role: 'RELIABILITY_ENG' },
+    { username: 'john.doe', name: 'John Doe', role: 'RELIABILITY_ENG' },
+    { username: 'j.tech', name: 'J. Tech', role: 'TECHNICIAN' },
+    { username: 'j.supeervisor', name: 'J. Supervisor', role: 'SUPERVISOR' },
+];
 
 // ── Stats for the dashboard preview ──
 const LIVE_STATS = [
@@ -105,13 +116,13 @@ export const Login: React.FC = () => {
                             role: contact?.defaultType || contact?.types?.[0] || 'User'
                         };
                     });
-                    setTestUsers(userList);
+                    setTestUsers(userList.length > 0 ? userList : DEV_QUICK_SWITCH_FALLBACK);
                 } else {
-                    setTestUsers([]);
+                    setTestUsers(DEV_QUICK_SWITCH_FALLBACK);
                 }
             } catch (e) {
-                console.error("Could not load test users from DB:", e);
-                setTestUsers([]);
+                console.warn('Could not load test users from DB (expected before sign-in since 0361) — using the static dev roster:', e);
+                setTestUsers(DEV_QUICK_SWITCH_FALLBACK);
             } finally {
                 setLoadingUsers(false);
             }

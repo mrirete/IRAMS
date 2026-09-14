@@ -692,8 +692,17 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                         </div>
                     </div>
 
-                    {/* Hazard Cards */}
-                    <div className="space-y-4">
+                    {/* Hazard Cards. Once all three sign-offs are in, the hazard rows are
+                        frozen server-side (0212). A disabled fieldset makes every input,
+                        select, chip and delete button inside read-only in one place, so the
+                        page looks locked instead of only toasting on the first keystroke. */}
+                    {isAuthorized && (job.jsa.hazards || []).length > 0 && (
+                        <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                            <ShieldCheck size={14} className="text-green-600 flex-shrink-0 mt-0.5" />
+                            <span>This assessment is authorized and its hazards are locked. Clear a sign-off below to make changes; authorization is withdrawn until all three sign again.</span>
+                        </div>
+                    )}
+                    <fieldset disabled={isAuthorized} className={`space-y-4 min-w-0 ${isAuthorized ? 'opacity-95 [&_input]:bg-slate-50 [&_select]:bg-slate-50 [&_textarea]:bg-slate-50 [&_button]:cursor-not-allowed' : ''}`}>
                         {(job.jsa.hazards || []).map((h, idx) => {
                             const score = typeof h.riskScore === 'number' ? h.riskScore : ((h as any).consequence || 1) * ((h as any).likelihood || 1);
                             const level = (h as any).riskLevel || getWORiskLevel(typeof score === 'number' ? score : 1);
@@ -887,7 +896,7 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                 <p className="text-slate-400 text-sm">No hazards identified yet. Click "+ Hazard" to start building the risk assessment.</p>
                             </div>
                         )}
-                    </div>
+                    </fieldset>
                 </div>
             </details>
 
