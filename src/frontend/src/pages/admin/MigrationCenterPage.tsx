@@ -22,6 +22,7 @@ import { importService } from '../../eam/services/ImportService';
 import { supabase } from '../../eam/lib/supabase';
 import { emptyResult, tally, errMessage, type ImportResult } from '../../eam/services/importTypes';
 import { downloadUnresolvedCodes, type ImportType } from '../../eam/services/assetTemplates';
+import { phaseTemplatesFor } from './migrationTemplates';
 import { useToast } from '../../eam/contexts/ToastContext';
 import { assessmentService } from '../../eam/services/AssessmentService';
 import type { IntakeDimensionKey } from '../../eam/services/IntakeQuickAnalysis';
@@ -51,6 +52,10 @@ interface Phase {
 }
 
 const NEEDS_REGISTER = { phase: 1, needs: 'the asset register', met: (c: Counts) => c.assets > 0 };
+
+const SOURCE_LABELS: Record<string, string> = {
+    sap_pm: 'SAP PM', maximo: 'IBM Maximo', maintainx: 'MaintainX', emaint: 'eMaint', limble: 'Limble', fiix: 'Fiix', upkeep: 'UpKeep',
+};
 
 const PHASES: Phase[] = [
     {
@@ -184,6 +189,7 @@ export const MigrationCenterPage: React.FC = () => {
     // import_batches.source_system vocabulary. Threaded into importAssets so a
     // foreign CMMS's own ids are kept (erp_object_map) rather than discarded.
     const [sourceSystem, setSourceSystem] = useState('spreadsheet');
+    const sourceLabel = SOURCE_LABELS[sourceSystem] ?? 'your system';
     const [inviting, setInviting] = useState(false);
     const [harvesting, setHarvesting] = useState(false);
 
@@ -413,6 +419,7 @@ export const MigrationCenterPage: React.FC = () => {
                     // will not open. Until counts load, treat as locked (fail safe).
                     const blockers = complete ? [] : (p.requires ?? []).filter((r) => !counts || !r.met(counts));
                     const locked = blockers.length > 0;
+                    const phaseTemplates = phaseTemplatesFor(sourceSystem, p.n);
                     return (
                         <div key={p.n}
                             className={`rounded-2xl border bg-white p-5 transition-colors ${complete ? 'border-emerald-200' : 'border-slate-200'}`}>
@@ -506,6 +513,32 @@ export const MigrationCenterPage: React.FC = () => {
                                             </button>
                                         )}
                                     </div>
+                                    {/* The source system decides which files a user is handed for
+                                        this step — a SAP shop gets the cockpit workbook and the PM
+                                        load files, in the layouts the importers read as they arrive. */}
+                                    {phaseTemplates.length > 0 && (
+                                        <div className="mt-2.5 flex flex-wrap items-start gap-2">
+                                            <span className="text-xs text-slate-500 py-1.5">Templates for {sourceLabel}:</span>
+                                            {phaseTemplates.map(t => (
+                                                <button
+                                                    key={t.id}
+                                                    onClick={t.download}
+                                                    title={t.hint}
+                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-colors"
+                                                >
+                                                    <Download size={12} /> {t.label}
+                                                </button>
+                                            ))}
+                                            <span className="basis-full text-[11px] text-slate-400">
+                                                {phaseTemplates.map(t => t.hint).join(' ')}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {p.n === 7 && sourceSystem !== 'spreadsheet' && sourceSystem !== 'other' && (
+                                        <p className="mt-2 text-[11px] text-slate-400">
+                                            The wizard offers the {sourceLabel} history and register templates in your system's own export layout.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>

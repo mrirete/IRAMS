@@ -4,12 +4,12 @@
  * column, "Field" on the header row, six documentation rows under it, SAP
  * field names from IMPTT / MPLA / MPOS / PLKO / PLPO, load rows keyed TMP…/SMP….
  *
- * Fixture = the real workbooks verbatim (sapPmLoadFiles.fixture.ts), defects
+ * Fixture = the real workbooks verbatim (sapPmLoadFiles.ts, also the downloadable templates), defects
  * included — MPOBJ holding "IEQ", MRMIN/MRMAX used as bands, duplicate names.
  */
 import { describe, it, expect } from 'vitest';
 import { parseImportFile } from './assetTemplates';
-import { sapPmLoadFile, sapPmLoadFileFrom, SAP_PM_LOAD_FILES } from './sapPmLoadFiles.fixture';
+import { sapPmLoadFile, sapPmLoadFileFrom, SAP_PM_LOAD_FILES } from './sapPmLoadFiles';
 
 describe('Measuring point load file → reading points', () => {
     it('lists the sheets: the sample key is documentation, the data sheet is readings', async () => {

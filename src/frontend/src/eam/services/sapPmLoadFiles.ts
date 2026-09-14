@@ -1,12 +1,14 @@
 /**
- * The consultant's SAP PM load files, verbatim — one header row per sheet
+ * The SAP PM load-file templates — the consultant's three workbooks, verbatim — one header row per sheet
  * (the "Field" row), a label column, six documentation rows under the header,
  * then load rows keyed SMP…/SMI…/SQ…/TMP…/SMO…/SMK…. Generated from the three
- * SAMPLE_Load_File_*.xlsx workbooks; every cell is as the author typed it,
+ * SAMPLE_Load_File_*.xlsx workbooks. Offered as downloads on the Migration
+ * Center (SAP PM source) and used as the import tests' fixture; every cell is as the author typed it,
  * defects included (duplicate field names, "IEQ" in MPOBJ, range limits used
  * as bands) — the tests prove the importer copes with the file as it arrives.
  */
 import * as XLSX from 'xlsx';
+import { downloadWorkbook } from './assetTemplates';
 
 export const SAP_PM_LOAD_FILES: Record<string, Record<string, string[][]>> = {
     'Maintenance_Plan_Item': {
@@ -212,4 +214,22 @@ export function sapPmLoadFileFrom(sheets: Record<string, string[][]>, fileName =
     }
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     return new File([buf], fileName);
+}
+
+export const SAP_PM_LOAD_FILE_LABELS: Record<keyof typeof SAP_PM_LOAD_FILES, string> = {
+    Maintenance_Plan_Item: 'Maintenance plan & item load file',
+    Measuring_Points: 'Measuring point load file',
+    General_Task_List: 'General task list load file',
+};
+
+/** Download one of the SAP PM load-file templates, sample rows included. */
+export function downloadSapPmLoadFile(name: keyof typeof SAP_PM_LOAD_FILES): void {
+    const wb = XLSX.utils.book_new();
+    for (const [sheet, rows] of Object.entries(SAP_PM_LOAD_FILES[name])) {
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const width = Math.max(...rows.map(r => r.length));
+        ws['!cols'] = Array.from({ length: width }, (_, i) => ({ wch: i === 0 ? 18 : 16 }));
+        XLSX.utils.book_append_sheet(wb, ws, sheet);
+    }
+    downloadWorkbook(wb, `SAMPLE_Load_File_${name}.xlsx`);
 }
