@@ -1094,6 +1094,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // managers. 0340 enforces the same at the database; the button was
     // visible to every role before (P1-8).
     const canFinancialClose = jdPerms?.finops?.edit === true;
+    // Money on the work order follows workOrders.viewCosts. Roles without it
+    // (technician, supervisor, storekeeper, internal) still need the crew and
+    // the part lines, so the tab stays and only the money leaves it.
+    const canViewCosts = jdPerms?.workOrders?.viewCosts === true;
     const navigate = useNavigate();
     const promptModal = usePrompt();
     // Local state to manage edits during the session (e.g. adding failure data before completion)
@@ -1285,7 +1289,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         // grains — people and part lines vs operations and money — and the two
         // tabs disagreed on actual hours because Resources fell back to the
         // plan when nothing was confirmed.
-        { id: 'cost', label: 'Resources & Cost', icon: DollarSign },
+        { id: 'cost', label: canViewCosts ? 'Resources & Cost' : 'Resources', icon: canViewCosts ? DollarSign : Layers },
         { id: 'files', label: 'Files', icon: Paperclip },
         { id: 'analysis', label: 'Analysis & History', icon: AlertOctagon }, // Merged Tab
         { id: 'discussion', label: 'Discussion', icon: MessageSquare },
@@ -2329,6 +2333,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             users={users}
                             contacts={contacts}
                             dictionaries={dictionaries}
+                            canViewCosts={canViewCosts}
                             onOpenTask={(taskId) => { setFocusTaskId(taskId); setActiveTab('tasks'); }}
                         />
                     )}
@@ -5316,8 +5321,10 @@ const CostTab: React.FC<{
     users: any[];
     contacts: any[];
     dictionaries: DictionaryEntry[];
+    /** workOrders.viewCosts — false hides every monetary figure and the ledger, keeps crew, parts and hours. */
+    canViewCosts: boolean;
     onOpenTask: (taskId: string) => void;
-}> = ({ job, refreshKey, users, contacts, dictionaries, onOpenTask }) => {
+}> = ({ job, refreshKey, users, contacts, dictionaries, canViewCosts, onOpenTask }) => {
     const [actuals, setActuals] = useState<OrderActuals | null>(null);
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
     const [costCenters, setCostCenters] = useState<{ id: string; code: string; name: string }[]>([]);
@@ -5457,7 +5464,7 @@ const CostTab: React.FC<{
     const canSettle = costPermissions?.finops?.edit === true;
 
     useEffect(() => {
-        if (!job.id || job.id.startsWith('new-')) return;
+        if (!job.id || job.id.startsWith('new-') || !canViewCosts) return;
         let active = true;
         Promise.all([
             FinOpsService.getCostAllocations(job.id),
@@ -5472,7 +5479,7 @@ const CostTab: React.FC<{
             setSettlement(settled);
         }).catch(() => { /* advisory only — never block the cost roll-up */ });
         return () => { active = false; };
-    }, [job.id, job.assetId, job.type, plannedTotal, postKey]);
+    }, [job.id, job.assetId, job.type, plannedTotal, postKey, canViewCosts]);
 
     const handleSettle = async () => {
         setSettling(true);
@@ -5519,9 +5526,9 @@ const CostTab: React.FC<{
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2">
-                <DollarSign size={16} className="text-slate-400" />
-                <h3 className="text-sm font-bold text-slate-700">Resources &amp; Cost</h3>
-                <span className="text-[11px] text-slate-400 hidden sm:inline">people, materials, and what the job cost</span>
+                {canViewCosts ? <DollarSign size={16} className="text-slate-400" /> : <Layers size={16} className="text-slate-400" />}
+                <h3 className="text-sm font-bold text-slate-700">{canViewCosts ? <>Resources &amp; Cost</> : 'Resources'}</h3>
+                <span className="text-[11px] text-slate-400 hidden sm:inline">{canViewCosts ? 'people, materials, and what the job cost' : 'people, materials, and hours'}</span>
                 {/* Read the FLAG, not the status: 0284 freezes at CLOSED, and a
                     badge inferred from status lies on any row where they differ. */}
                 {(job.costFrozen || job.status === 'CLOSED') && (
@@ -5535,7 +5542,7 @@ const CostTab: React.FC<{
                 order. The cards below recompute live from current rows — shown
                 for detail, but when they drift from the snapshot, the snapshot
                 wins and the drift is flagged, not hidden. */}
-            {job.costFrozen && (job.frozenLaborCost !== undefined || job.frozenMaterialCost !== undefined) && (() => {
+            {canViewCosts && job.costFrozen && (job.frozenLaborCost !== undefined || job.frozenMaterialCost !== undefined) && (() => {
                 const fl = job.frozenLaborCost ?? 0;
                 const fm = job.frozenMaterialCost ?? 0;
                 const liveTotal = actualLabour + partsCost + serviceCost;
@@ -5555,9 +5562,9 @@ const CostTab: React.FC<{
                 );
             })()}
 
-            {(anomaly?.isAnomaly || warrantyCheck?.underWarranty) && (
+            {((canViewCosts && anomaly?.isAnomaly) || warrantyCheck?.underWarranty) && (
                 <div className="space-y-2">
-                    {anomaly?.isAnomaly && (
+                    {canViewCosts && anomaly?.isAnomaly && (
                         <div className={`p-2.5 rounded border flex items-start gap-2 text-xs ${anomaly.severity === 'HIGH' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
                             <TrendingUp size={14} className="mt-0.5 shrink-0" />
                             <div>
@@ -5590,6 +5597,7 @@ const CostTab: React.FC<{
                 </div>
             ) : (
                 <>
+                    {canViewCosts && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <SummaryCard label="Labour" planned={plannedLabour} actual={actualLabour} />
                         <div className="bg-white border border-slate-200 rounded-card p-4">
@@ -5619,10 +5627,11 @@ const CostTab: React.FC<{
                             <div className="mt-1 text-xs text-primary-600/70 tabular-nums">Plan {money(plannedTotal)} · labour + parts + services · settlement basis</div>
                         </div>
                     </div>
+                    )}
 
                     {/* FI-1 — settlement status. The order-to-cost spine ends here:
                         cost confirmed on the order vs cost the ledger actually has. */}
-                    {settlement && (() => {
+                    {canViewCosts && settlement && (() => {
                         const unsettled = settlement.unsettledVariance;
                         const clear = Math.abs(unsettled) < 0.01;
                         const done = settlement.woState === 'done';
@@ -5662,25 +5671,27 @@ const CostTab: React.FC<{
                         );
                     })()}
 
-                    {!anyWorkCenters && (
+                    {!anyWorkCenters && rows.length > 0 && (
                         <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
-                            No operations have a work center assigned yet — assign one on the Tasks tab so labour is costed at the work-center rate and settles to its cost center.
+                            {canViewCosts
+                                ? 'No operations have a work center assigned yet — assign one on the Tasks tab so labour is costed at the work-center rate and settles to its cost center.'
+                                : 'No operations have a work center assigned yet — assign one on the Tasks tab.'}
                         </div>
                     )}
 
                     {rows.length > 0 && (
                     <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm min-w-[720px]">
+                            <table className={`w-full text-sm ${canViewCosts ? 'min-w-[720px]' : 'min-w-[480px]'}`}>
                                 <thead>
                                     <tr className="text-[10px] uppercase tracking-wide text-slate-500 border-b border-slate-200 bg-slate-50">
                                         <th className="text-left font-semibold px-3 py-2">Op</th>
                                         <th className="text-left font-semibold px-3 py-2">Operation</th>
                                         <th className="text-left font-semibold px-3 py-2">Work Center</th>
-                                        <th className="text-right font-semibold px-3 py-2">Plan (h · cost)</th>
-                                        <th className="text-right font-semibold px-3 py-2">Actual (h · cost)</th>
-                                        <th className="text-right font-semibold px-3 py-2">Var</th>
-                                        <th className="text-left font-semibold px-3 py-2">Settles to</th>
+                                        <th className="text-right font-semibold px-3 py-2">{canViewCosts ? 'Plan (h · cost)' : 'Plan h'}</th>
+                                        <th className="text-right font-semibold px-3 py-2">{canViewCosts ? 'Actual (h · cost)' : 'Actual h'}</th>
+                                        {canViewCosts && <th className="text-right font-semibold px-3 py-2">Var</th>}
+                                        {canViewCosts && <th className="text-left font-semibold px-3 py-2">Settles to</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -5688,13 +5699,15 @@ const CostTab: React.FC<{
                                         <tr key={r.id} className="border-b border-slate-100 last:border-0">
                                             <td className="px-3 py-2 font-mono text-xs text-slate-500">{r.opNo}</td>
                                             <td className="px-3 py-2 text-slate-700 max-w-[200px] truncate" title={r.desc}>{r.desc}</td>
-                                            <td className="px-3 py-2 text-slate-600">{r.wcLabel}{r.rate ? <span className="text-slate-400"> @{r.rate}/h</span> : null}</td>
-                                            <td className="px-3 py-2 text-right tabular-nums text-slate-500">{r.plannedHours || 0}h · {money(r.plannedCost)}</td>
-                                            <td className="px-3 py-2 text-right tabular-nums text-slate-800 font-medium">{r.actualHours || 0}h · {money(r.actualCost)}</td>
-                                            <td className={`px-3 py-2 text-right tabular-nums font-semibold ${r.varianceCost > 0.5 ? 'text-red-600' : r.varianceCost < -0.5 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                                {r.actualCost > 0 ? `${r.varianceCost >= 0 ? '+' : ''}${money(r.varianceCost)}` : '—'}
-                                            </td>
-                                            <td className="px-3 py-2 text-xs text-slate-500 max-w-[180px] truncate" title={r.settlesTo}>{r.settlesTo}</td>
+                                            <td className="px-3 py-2 text-slate-600">{r.wcLabel}{canViewCosts && r.rate ? <span className="text-slate-400"> @{r.rate}/h</span> : null}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-slate-500">{r.plannedHours || 0}h{canViewCosts && <> · {money(r.plannedCost)}</>}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-slate-800 font-medium">{r.actualHours || 0}h{canViewCosts && <> · {money(r.actualCost)}</>}</td>
+                                            {canViewCosts && (
+                                                <td className={`px-3 py-2 text-right tabular-nums font-semibold ${r.varianceCost > 0.5 ? 'text-red-600' : r.varianceCost < -0.5 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                    {r.actualCost > 0 ? `${r.varianceCost >= 0 ? '+' : ''}${money(r.varianceCost)}` : '—'}
+                                                </td>
+                                            )}
+                                            {canViewCosts && <td className="px-3 py-2 text-xs text-slate-500 max-w-[180px] truncate" title={r.settlesTo}>{r.settlesTo}</td>}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -5770,8 +5783,10 @@ const CostTab: React.FC<{
                         <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-x-3 gap-y-1">
                             <h4 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5"><Package size={12} className="text-amber-600" /> Parts &amp; materials</h4>
                             <span className="text-[11px] text-slate-500 tabular-nums">
-                                {partLines.length} {partLines.length === 1 ? 'line' : 'lines'} · {money(issuedValue)} issued
-                                {reservedValue > 0 && <> · {money(reservedValue)} reserved</>}
+                                {partLines.length} {partLines.length === 1 ? 'line' : 'lines'}
+                                {canViewCosts
+                                    ? <> · {money(issuedValue)} issued{reservedValue > 0 && <> · {money(reservedValue)} reserved</>}</>
+                                    : <> · {partLines.filter(p => !p.reserved).length} issued · {partLines.filter(p => p.reserved).length} reserved</>}
                             </span>
                         </div>
                         {partLines.length === 0 ? (
@@ -5784,7 +5799,7 @@ const CostTab: React.FC<{
                                             <th className="text-left font-semibold px-3 py-2">Part</th>
                                             <th className="text-left font-semibold px-2 py-2">Operation</th>
                                             <th className="text-right font-semibold px-2 py-2">Qty</th>
-                                            <th className="text-right font-semibold px-2 py-2">Value</th>
+                                            {canViewCosts && <th className="text-right font-semibold px-2 py-2">Value</th>}
                                             <th className="text-left font-semibold px-3 py-2">State</th>
                                         </tr>
                                     </thead>
@@ -5801,7 +5816,7 @@ const CostTab: React.FC<{
                                                     ) : <span className="text-slate-400 italic">Order level</span>}
                                                 </td>
                                                 <td className="px-2 py-2 text-right tabular-nums text-slate-700">{p.qty} <span className="text-slate-400">{p.uom}</span></td>
-                                                <td className="px-2 py-2 text-right tabular-nums text-slate-700">{money(p.value)}</td>
+                                                {canViewCosts && <td className="px-2 py-2 text-right tabular-nums text-slate-700">{money(p.value)}</td>}
                                                 <td className="px-3 py-2">
                                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.reserved ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
                                                         {p.reserved ? 'Reserved' : 'Issued'}
@@ -5815,7 +5830,7 @@ const CostTab: React.FC<{
                         )}
                     </div>
 
-                    {(job as any).scope === 'PROJECT' && (() => {
+                    {canViewCosts && (job as any).scope === 'PROJECT' && (() => {
                         const spent = actualLabour + partsCost + serviceCost;
                         const budget = (job as any).budgetApproved || plannedTotal || 1;
                         const pct = Math.min(100, (spent / budget) * 100);
@@ -5844,7 +5859,7 @@ const CostTab: React.FC<{
                         );
                     })()}
 
-                    {allocations.length > 0 && (
+                    {canViewCosts && allocations.length > 0 && (
                         <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
                             <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">Cost Ledger Postings</div>
                             <table className="w-full text-left text-xs">
@@ -5882,8 +5897,9 @@ const CostTab: React.FC<{
                     )}
 
                     <p className="text-[11px] text-slate-400">
-                        Actuals roll up from time confirmations posted on the Tasks tab (Do-work mode). Each confirmation is valued at its posted rate (person → craft → work centre, snapshotted at posting); the operation's planned/work-centre rate applies only to rows posted without one.
-                        Crew and part lines are planned and assigned on the Tasks tab; a part is Reserved until the order reaches TECO and it is issued from stores.
+                        Actuals roll up from time confirmations posted on the Tasks tab (Do-work mode).
+                        {canViewCosts && <> Each confirmation is valued at its posted rate (person → craft → work centre, snapshotted at posting); the operation's planned/work-centre rate applies only to rows posted without one.</>}
+                        {' '}Crew and part lines are planned and assigned on the Tasks tab; a part is Reserved until the order reaches TECO and it is issued from stores.
                     </p>
                 </>
             )}
