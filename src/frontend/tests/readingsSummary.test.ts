@@ -13,9 +13,31 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-    summarizeWindow, downsample, normalizeBuckets, bucketsFromManualLogs,
+    summarizeWindow, summarizeUntimed, downsample, normalizeBuckets, bucketsFromManualLogs,
     type WindowBucket,
 } from '../supabase/functions/agent-run/readingsSummary.ts';
+
+describe('summarizeUntimed — the projection sparkline', () => {
+    it('reports order and values, never a rate or a span', () => {
+        const s = summarizeUntimed([4.0, 4.1, 4.3, 4.6, 5.0], { unit: 'mm/s', bands: { warn_high: 4.5, crit_high: 7.1 } });
+        expect(s.n_points).toBe(5);
+        expect(s.first).toBe(4);
+        expect(s.last).toBe(5);
+        expect(s.direction).toBe('rising');
+        expect(s.pct_change).toBe(25);
+        expect(s.slope_per_day).toBeNull();
+        expect(s.drift_pct_of_mean).toBeNull();
+        expect(s.span_days).toBe(0);
+        expect(s.coverage_pct).toBe(0);
+        expect(s.excursions.warn_high).toBe(2);     // 4.6, 5.0
+        expect(s.headline).toBe('untimed projection, last 5 sample(s): rising 25% (4 → 5 mm/s); 2 of 5 outside warning; no timestamps — order only, no rate');
+    });
+    it('tolerates strings and junk, and says when empty', () => {
+        expect(summarizeUntimed(['1.5', 'x', null, 1.5]).n_points).toBe(2);
+        expect(summarizeUntimed([]).headline).toBe('no readings (projection empty)');
+        expect(summarizeUntimed([7]).direction).toBe('unknown');
+    });
+});
 
 const T0 = Date.parse('2026-09-01T00:00:00Z');
 const HOUR = 3_600_000;

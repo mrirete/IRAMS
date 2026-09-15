@@ -141,6 +141,32 @@ describe('query_readings — live feed', () => {
         expect(s.bands).toEqual({ crit_low: 520, crit_high: 560 });
     });
 
+    it('falls back to the untimed projection when the history table is empty for the tag', async () => {
+        // K-601's real shape on 2026-09-15: a seeded 50-point sparkline, no points history.
+        const projOnly: Script = {
+            ...script,
+            tables: {
+                ...script.tables,
+                ers_sensor_readings: () => [{ tag: 'BOILER_OUTLET_STEAM_TEMP', unit: '°C', alarm_low: 520, alarm_high: 560, readings: [530, 531, 533, 536, 540, 546, 551] }],
+            },
+            rpc: () => ({ data: [], error: null }),
+        };
+        const c = ctx(fakeDb(projOnly));
+        const r = await queryReadings.run({ asset_tag: 'B-101' }, c);
+        const s = (r.data as { series: Array<Record<string, unknown>> }).series[0];
+        expect(s.source).toBe('projection');
+        expect(s.n_points).toBe(7);
+        expect(s.direction).toBe('rising');
+        expect(s.slope_per_day).toBeNull();            // no timestamps → no rate
+        expect(s.coverage_pct).toBe(0);
+        expect(String(s.headline)).toMatch(/^untimed projection, last 7 sample\(s\): rising/);
+        expect(String(s.headline)).toContain('no timestamps');
+        expect((s.excursions as { crit_high: number }).crit_high).toBe(1);   // 551 > 550
+        expect(r.sources[0].kind).toBe('ers_sensor_readings');
+        expect(r.warnings?.some((w) => /untimed sample/.test(w))).toBe(true);
+        expect(r.warnings?.some((w) => /Manual Condition Data only/.test(w))).toBe(false);
+    });
+
     it('degrades honestly when 0362 is not applied (RPC error)', async () => {
         const broken: Script = { ...script, rpc: () => ({ data: null, error: { message: 'function sem_readings_window does not exist' } }) };
         const r = await queryReadings.run({ asset_tag: 'B-101' }, ctx(fakeDb(broken)));

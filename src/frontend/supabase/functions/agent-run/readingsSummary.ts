@@ -237,6 +237,39 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
   };
 }
 
+/**
+ * The 50-point projection on ers_sensor_readings has values but no timestamps
+ * (a tenant seeded before 0236, or a feed that only ever wrote the sparkline).
+ * Order is all we know, so: no span, no rate, coverage 0 — and the headline
+ * says "untimed" so nobody reads a rate into it.
+ */
+export function summarizeUntimed(values: unknown[], opts: { bands?: Bands | null; unit?: string | null } = {}): SeriesSummary {
+  const vals = (values ?? []).map((v) => (typeof v === "string" ? Number(v) : v)).filter(isNum) as number[];
+  const n = vals.length;
+  const minute = 60_000;
+  const buckets: WindowBucket[] = vals.map((v, i) => ({ ts: new Date(i * minute).toISOString(), n: 1, min: v, avg: v, max: v, last: v }));
+  const s = summarizeWindow(buckets, { from: new Date(0), to: new Date(Math.max(1, n) * minute), bands: opts.bands, unit: opts.unit });
+  if (n === 0) return { ...s, headline: "no readings (projection empty)" };
+  const unit = (opts.unit ?? "").trim();
+  const u = unit ? ` ${unit}` : "";
+  const dir: Direction = n < 2 ? "unknown" : s.pct_change !== null && s.pct_change >= DIRECTION_MIN_DRIFT_PCT ? "rising" : s.pct_change !== null && s.pct_change <= -DIRECTION_MIN_DRIFT_PCT ? "falling" : "flat";
+  const parts = [
+    `untimed projection, last ${n} sample(s): ${dir === "rising" || dir === "falling" ? `${dir} ${round(Math.abs(s.pct_change ?? 0), 1)}%` : dir === "flat" ? "flat" : "single value"} (${round(s.first ?? 0, 2)} → ${round(s.last ?? 0, 2)}${u})`,
+  ];
+  if (s.excursions.crit_high || s.excursions.crit_low) parts.push(`${s.excursions.crit_high + s.excursions.crit_low} of ${n} beyond CRITICAL`);
+  else if (s.excursions.warn_high || s.excursions.warn_low) parts.push(`${s.excursions.warn_high + s.excursions.warn_low} of ${n} outside warning`);
+  parts.push("no timestamps — order only, no rate");
+  return {
+    ...s,
+    span_days: 0,
+    coverage_pct: 0,
+    slope_per_day: null,
+    drift_pct_of_mean: null,
+    direction: dir,
+    headline: parts.join("; "),
+  };
+}
+
 /** Manual reading_logs rows → n=1 buckets, so one summariser serves both paths. */
 export function bucketsFromManualLogs(
   logs: Array<{ reading_date: string | null; reading_time?: string | null; reading_value: number | string | null }>,

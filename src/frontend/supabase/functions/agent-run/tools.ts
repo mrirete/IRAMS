@@ -16,6 +16,7 @@ import {
   bucketsFromManualLogs,
   downsample,
   normalizeBuckets,
+  summarizeUntimed,
   summarizeWindow,
   type Bands,
   type SeriesSummary,
@@ -1711,7 +1712,8 @@ const READ_MAX_SERIES = 12;
 interface SeriesOut {
   tag: string;
   unit: string | null;
-  source: "sensor" | "manual";
+  /** sensor = timestamped history; projection = the untimed last-50 sparkline; manual = rounds. */
+  source: "sensor" | "projection" | "manual";
   bands: Bands;
   summary: SeriesSummary;
   buckets?: WindowBucket[];
@@ -1746,10 +1748,10 @@ async function summarizeAssetSeries(
     ctx.db.from("reading_definitions")
       .select("id, name, unit, sensor_tag, reading_type_code, min_warning, max_warning, min_critical, max_critical")
       .eq("asset_id", assetId).eq("is_active", true).limit(100),
-    ctx.db.from("ers_sensor_readings").select("tag, unit, alarm_low, alarm_high").eq("asset_id", assetId).limit(100),
+    ctx.db.from("ers_sensor_readings").select("tag, unit, alarm_low, alarm_high, readings").eq("asset_id", assetId).limit(100),
   ]);
   const defs = (defQ.data ?? []) as ReadingDefRow[];
-  const live = (liveQ.data ?? []) as { tag: string; unit: string | null; alarm_low: number | null; alarm_high: number | null }[];
+  const live = (liveQ.data ?? []) as { tag: string; unit: string | null; alarm_low: number | null; alarm_high: number | null; readings?: unknown }[];
 
   const defForTag = (tag: string): ReadingDefRow | undefined => {
     const t = tag.toLowerCase();
@@ -1780,6 +1782,14 @@ async function summarizeAssetSeries(
       } else {
         buckets = normalizeBuckets((data ?? []) as Record<string, unknown>[]);
       }
+    }
+    // History table empty for this tag but the projection holds a sparkline:
+    // say what we have (values in order) and exactly what we don't (dates).
+    const proj = Array.isArray(t.readings) ? (t.readings as unknown[]) : [];
+    if (buckets.length === 0 && proj.length > 0) {
+      series.push({ tag: t.tag, unit, source: "projection", bands, summary: summarizeUntimed(proj, { bands, unit }) });
+      warnings.push(`${t.tag}: no timestamped history in the window — summarised the projection's last ${proj.length} untimed sample(s) instead (order only, no rate).`);
+      continue;
     }
     series.push({
       tag: t.tag, unit, source: "sensor", bands,
@@ -1817,7 +1827,7 @@ async function summarizeAssetSeries(
 
   if (series.length === 0) {
     warnings.push("No reading points on this asset — no live feed and no Condition Data definitions. Nothing can be said about its signals.");
-  } else if (!series.some((s) => s.source === "sensor")) {
+  } else if (!series.some((s) => s.source === "sensor") && series.some((s) => s.source === "manual") && !series.some((s) => s.source === "projection")) {
     warnings.push("Manual Condition Data only (no live feed): trends are at route cadence, not continuous.");
   }
   return { series, from: fromIso, to: toIso, warnings };
@@ -1867,7 +1877,7 @@ const queryReadings: AgentTool = {
     }
 
     const sources = series.map((s) => ({
-      kind: s.source === "sensor" ? "ers_sensor_reading_points" : "reading_logs",
+      kind: s.source === "sensor" ? "ers_sensor_reading_points" : s.source === "projection" ? "ers_sensor_readings" : "reading_logs",
       ref: `${assetId}|${s.tag}|${windowKey}`,
       label: `${asset!.tag} ${s.tag}: ${s.summary.n_points} samples, ${windowKey}`,
     }));
@@ -1883,7 +1893,7 @@ const queryReadings: AgentTool = {
           ...s.summary,
           buckets: s.buckets,
         })),
-        note: "direction is 'rising'/'falling' only when the fitted trend moves the signal by ≥2% of its mean across the window; excursions count buckets, not samples; coverage_pct < 50 means most of the window has no data — say so rather than extrapolate. Manual series are at route cadence.",
+        note: "direction is 'rising'/'falling' only when the fitted trend moves the signal by ≥2% of its mean across the window; excursions count buckets, not samples; coverage_pct < 50 means most of the window has no data — say so rather than extrapolate. Manual series are at route cadence. source 'projection' = the last ≤50 stored samples with NO timestamps: report order and values, never a rate or a date.",
       },
       sources: sources.length ? sources : [{ kind: "assets", ref: assetId, label: `no reading points on ${asset.tag}` }],
       warnings: warnings.length ? warnings : undefined,
