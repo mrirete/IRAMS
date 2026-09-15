@@ -27,6 +27,17 @@ export interface SensorEvidence {
     value?: number | null;
     limit?: number | null;
     unit?: string;
+    /**
+     * Which detector spoke. 'band' (default) = the value crossed a fixed
+     * limit. 'regime-residual' = the value is inside its band but off the
+     * asset's own baseline AT THIS LOAD (lib/predict/regimeBaseline) — the
+     * "current-at-this-load" catch a band cannot make.
+     */
+    basis?: 'band' | 'regime-residual';
+    /** regime-residual only: what the baseline expected at the current load, and how many σ off. */
+    expected?: number | null;
+    z?: number | null;
+    loadTag?: string;
 }
 
 export interface SpectralEvidence {
@@ -161,7 +172,13 @@ interface Candidate {
 }
 
 const sensorSummary = (s: SensorEvidence) => {
-    const v = s.value != null ? `${s.value}${s.unit ? ` ${s.unit}` : ''}` : 'reading';
+    const u = s.unit ? ` ${s.unit}` : '';
+    const v = s.value != null ? `${s.value}${u}` : 'reading';
+    if (s.basis === 'regime-residual') {
+        const exp = s.expected != null ? ` vs ${s.expected}${u} expected at this load${s.loadTag ? ` (${s.loadTag})` : ''}` : '';
+        const z = s.z != null ? `, ${Math.abs(s.z).toFixed(1)}σ` : '';
+        return `${s.tag}: ${v} ${s.direction}${exp}${z} — inside its band`;
+    }
     const l = s.limit != null ? ` (limit ${s.limit})` : '';
     return `${s.tag}: ${v} ${s.direction}${l}`;
 };

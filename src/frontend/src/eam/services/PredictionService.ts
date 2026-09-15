@@ -38,6 +38,27 @@ import {
     diagnoseEvidence,
     type DiagnosisResult, type SensorEvidence, type SpectralEvidence, type AssetPriors,
 } from '../../lib/predict/diagnosisRules';
+import {
+    alignSeries, fitRegime, evaluateRegime, describeFinding, MIN_BASELINE_PAIRS,
+    type RegimeFinding,
+} from '../../lib/predict/regimeBaseline';
+
+/** A point the regime detector fired on, with what it needs to explain itself. */
+interface RegimeFired {
+    finding: RegimeFinding;
+    loadTag: string;
+    loadUnit: string;
+    baselineDays: number;
+}
+
+/** One firing point in the alert scan — a band breach, a trend, or a regime residual. */
+interface FiredPoint {
+    s: SensorReading;
+    breachHigh: boolean;
+    breachLow: boolean;
+    trendAnomaly: boolean;
+    regime?: RegimeFired;
+}
 
 // ─── Types ───────────────────────────────────────────────────
 export interface TwinState {
@@ -125,10 +146,27 @@ export interface SensorReading {
     operator_action?: string | null;
 }
 
+/**
+ * Regime-aware baseline (lib/predict/regimeBaseline): which tag sets the
+ * duty, so every other point is judged "at this load" rather than against a
+ * fixed band. Optional — without a loadTag the alert scan is bands only.
+ */
+export interface RegimeConfig {
+    /** The tag that sets the duty — steam flow, throughput, motor load, speed. */
+    loadTag: string;
+    /** Healthy history to fit against (default 30, clamped 7–90). */
+    baselineDays?: number;
+    /** 2 for fan-law shaped relationships; default 1. */
+    degree?: 1 | 2;
+    /** Points that should not be judged against the load (e.g. ambient). */
+    excludeTags?: string[];
+}
+
 /** Stored under assets.properties.predict (0005 JSONB — no schema change). */
 export interface AssetPredictConfig {
     rated_rpm?: number | null;
     bearings?: BearingSpec[];
+    regime?: RegimeConfig;
 }
 
 /** A stored vibration time-waveform + its computed spectral features (0206). */
@@ -740,7 +778,7 @@ class PredictionService {
         );
 
         let suppressed = 0;
-        const fired: { s: SensorReading; breachHigh: boolean; breachLow: boolean; trendAnomaly: boolean }[] = [];
+        const fired: FiredPoint[] = [];
         for (const s of sensors) {
             if (s.current_value == null) continue;
 
@@ -778,24 +816,40 @@ class PredictionService {
             if (breachHigh || breachLow || trendAnomaly) fired.push({ s, breachHigh, breachLow, trendAnomaly });
         }
 
+        // Regime-aware deviation (slice 3): a point INSIDE its band whose
+        // relationship to the load tag has shifted — the "current-at-this-load"
+        // catch that fixed limits cannot make. Only when the asset names a
+        // load tag; skipped for tags that already fired on a band.
+        const firedTags = new Set(fired.map(f => f.s.tag.toLowerCase()));
+        for (const r of await this._scanRegime(assetId, sensors)) {
+            const key = r.s.tag.toLowerCase();
+            if (firedTags.has(key)) continue;
+            if (openTags.has(key)) { suppressed++; continue; }
+            fired.push({ s: r.s, breachHigh: false, breachLow: false, trendAnomaly: false, regime: r.regime });
+        }
+
         // Diagnosis layer (0215): ONE evidence bundle across all firing points —
         // cross-signal rules (bearing temp + vibration → LUB) need the full
         // picture, and every alert from this scan shares the same plant state.
         const diagnosis = fired.length > 0 ? await this._diagnoseFiring(assetId, fired) : null;
 
         let alertsCreated = 0;
-        for (const { s, breachHigh, breachLow, trendAnomaly } of fired) {
-            const severity: 'low' | 'medium' | 'high' | 'critical' = breachHigh && trendAnomaly
-                ? 'high' : breachHigh || breachLow ? 'medium' : 'low';
+        for (const { s, breachHigh, breachLow, trendAnomaly, regime } of fired) {
+            const severity: 'low' | 'medium' | 'high' | 'critical' = regime
+                ? (Math.abs(regime.finding.z) >= 5 ? 'high' : 'medium')
+                : breachHigh && trendAnomaly ? 'high' : breachHigh || breachLow ? 'medium' : 'low';
 
-            const alertType: 'threshold_breach' | 'trend_deviation' | 'anomaly' =
-                breachHigh || breachLow ? 'threshold_breach' : trendAnomaly ? 'trend_deviation' : 'anomaly';
+            const alertType: 'threshold_breach' | 'trend_deviation' | 'anomaly' = regime
+                ? 'anomaly'
+                : breachHigh || breachLow ? 'threshold_breach' : trendAnomaly ? 'trend_deviation' : 'anomaly';
 
-            let description = breachHigh
-                ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm high of ${s.alarm_high} ${s.unit}. Trend: ${s.trend}.`
-                : breachLow
-                    ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm low of ${s.alarm_low} ${s.unit}. Trend: ${s.trend}.`
-                    : `${s.tag} shows ${s.trend} trend with current value ${s.current_value} ${s.unit}.`;
+            let description = regime
+                ? `${describeFinding(regime.finding, s.tag, regime.loadTag, s.unit, regime.loadUnit, regime.baselineDays)} Inside its alarm band — a fixed limit would not have caught this.`
+                : breachHigh
+                    ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm high of ${s.alarm_high} ${s.unit}. Trend: ${s.trend}.`
+                    : breachLow
+                        ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm low of ${s.alarm_low} ${s.unit}. Trend: ${s.trend}.`
+                        : `${s.tag} shows ${s.trend} trend with current value ${s.current_value} ${s.unit}.`;
             // AG layer: carry the rationalized operator response onto the alert.
             if (s.operator_action) description += ` Operator action: ${s.operator_action}`;
 
@@ -833,9 +887,61 @@ class PredictionService {
      * confirmed WO failure history). Every lookup is best-effort: a missing
      * table or empty set means fewer evidence items, never a failed scan.
      */
+    /**
+     * Regime-aware scan (slice 3, 2026-09-15). For every live point on the
+     * asset except the load tag itself, fit y = f(load) over a healthy
+     * baseline window (hourly rollups, ending a day ago so today's fault is
+     * not in its own baseline), then score the last day's hourly pairs.
+     * Reads through sem_readings_window (0362) — on a tenant without it, or
+     * with no load tag configured, this returns nothing and the scan is
+     * bands only. Every number in a finding is recomputable by hand.
+     */
+    private async _scanRegime(assetId: string, sensors: SensorReading[]): Promise<{ s: SensorReading; regime: RegimeFired }[]> {
+        const rc = (await this.getAssetPredictConfig(assetId)).regime;
+        if (!rc?.loadTag?.trim()) return [];
+        const load = sensors.find(s => s.tag.toLowerCase() === rc.loadTag.trim().toLowerCase());
+        if (!load || load.id.startsWith('manual-')) return [];
+        const baselineDays = Math.min(90, Math.max(7, Number(rc.baselineDays) || 30));
+        const exclude = new Set((rc.excludeTags ?? []).map(t => t.toLowerCase()));
+
+        const DAY = 86_400_000;
+        const now = Date.now();
+        const bFrom = now - baselineDays * DAY, bTo = now - DAY, cFrom = now - DAY;
+        const bMax = Math.min(1000, baselineDays * 24), cMax = 24;
+        const win = async (tag: string, fromMs: number, toMs: number, max: number) => {
+            const { data, error } = await supabase.rpc('sem_readings_window', {
+                p_asset_id: assetId, p_tag: tag, p_from: new Date(fromMs).toISOString(), p_to: new Date(toMs).toISOString(), p_max_buckets: max,
+            });
+            if (error) throw error;
+            return ((data ?? []) as { bucket_ts: string; avg_value: number | string }[]).map(r => ({ ts: String(r.bucket_ts), avg: Number(r.avg_value) }));
+        };
+
+        let loadBase: { ts: string; avg: number }[], loadCur: { ts: string; avg: number }[];
+        try {
+            [loadBase, loadCur] = await Promise.all([win(load.tag, bFrom, bTo, bMax), win(load.tag, cFrom, now, cMax)]);
+        } catch {
+            return [];   // pre-0362 tenant, or the RPC is unavailable — bands only
+        }
+        if (loadBase.length < MIN_BASELINE_PAIRS || loadCur.length === 0) return [];
+
+        const out: { s: SensorReading; regime: RegimeFired }[] = [];
+        const candidates = sensors.filter(s => s.tag !== load.tag && !exclude.has(s.tag.toLowerCase()) && !s.id.startsWith('manual-')).slice(0, 12);
+        for (const s of candidates) {
+            try {
+                const [yBase, yCur] = await Promise.all([win(s.tag, bFrom, bTo, bMax), win(s.tag, cFrom, now, cMax)]);
+                const fit = fitRegime(alignSeries(yBase, loadBase), { degree: rc.degree === 2 ? 2 : 1 });
+                const finding = evaluateRegime(fit, alignSeries(yCur, loadCur));
+                if (finding) out.push({ s, regime: { finding, loadTag: load.tag, loadUnit: load.unit, baselineDays } });
+            } catch {
+                /* one tag failing must not stop the scan */
+            }
+        }
+        return out;
+    }
+
     private async _diagnoseFiring(
         assetId: string,
-        fired: { s: SensorReading; breachHigh: boolean; breachLow: boolean; trendAnomaly: boolean }[],
+        fired: FiredPoint[],
     ): Promise<DiagnosisResult | null> {
         const { data: assetRow } = await supabase.from('assets')
             .select('name, tag, asset_class, asset_category, asset_type_code')
@@ -846,14 +952,28 @@ class PredictionService {
             assetClass: assetRow.asset_class, assetCategory: assetRow.asset_category, assetType: assetRow.asset_type_code,
         } : null).cls;
 
-        const sensors: SensorEvidence[] = fired.map(({ s, breachHigh, breachLow }) => ({
-            tag: s.tag,
-            kind: sensorKind(s.tag),
-            direction: breachHigh ? 'high' : breachLow ? 'low' : 'rising',
-            value: s.current_value,
-            limit: breachHigh ? s.alarm_high : breachLow ? s.alarm_low : null,
-            unit: s.unit,
-        }));
+        const sensors: SensorEvidence[] = fired.map(({ s, breachHigh, breachLow, regime }) => regime
+            ? {
+                tag: s.tag,
+                kind: sensorKind(s.tag),
+                direction: regime.finding.direction,
+                value: regime.finding.value,
+                limit: null,
+                unit: s.unit,
+                basis: 'regime-residual' as const,
+                expected: regime.finding.expected,
+                z: regime.finding.z,
+                loadTag: regime.loadTag,
+            }
+            : {
+                tag: s.tag,
+                kind: sensorKind(s.tag),
+                direction: breachHigh ? 'high' : breachLow ? 'low' : 'rising',
+                value: s.current_value,
+                limit: breachHigh ? s.alarm_high : breachLow ? s.alarm_low : null,
+                unit: s.unit,
+                basis: 'band' as const,
+            });
 
         // Latest waveform capture → spectral evidence (flags derived from the
         // same persisted features the panel computed).

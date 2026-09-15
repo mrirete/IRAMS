@@ -182,18 +182,34 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
     const [history, setHistory] = useState<WaveformCapture[] | null>(null);
     const [bearings, setBearings] = useState<BearingSpec[]>([]);
     const [showBearings, setShowBearings] = useState(false);
+    // Regime baseline (slice 3): which tag sets the duty. Saved on blur.
+    const [loadTag, setLoadTag] = useState('');
+    const [baselineDays, setBaselineDays] = useState('30');
 
     // Asset Predict config: default RPM from the nameplate, bearing specs for
-    // named-race matching (assets.properties.predict).
+    // named-race matching, load tag for the regime baseline (assets.properties.predict).
     useEffect(() => {
         let alive = true;
         predictionService.getAssetPredictConfig(assetId).then(cfg => {
             if (!alive) return;
             setBearings(cfg.bearings ?? []);
             if (cfg.rated_rpm) setRpm(prev => (prev.trim() ? prev : String(cfg.rated_rpm)));
+            setLoadTag(cfg.regime?.loadTag ?? '');
+            setBaselineDays(String(cfg.regime?.baselineDays ?? 30));
         });
         return () => { alive = false; };
     }, [assetId]);
+
+    const persistRegime = async () => {
+        const cfg = await predictionService.getAssetPredictConfig(assetId);
+        const days = Math.min(90, Math.max(7, Number(baselineDays) || 30));
+        const tag = loadTag.trim();
+        await predictionService.saveAssetPredictConfig(assetId, {
+            ...cfg,
+            regime: tag ? { ...(cfg.regime ?? { loadTag: tag }), loadTag: tag, baselineDays: days } : undefined,
+        });
+        setBaselineDays(String(days));
+    };
 
     const persistConfig = async (next: BearingSpec[]) => {
         setBearings(next);
@@ -293,6 +309,18 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Running speed (RPM, optional)</label>
                         <input type="number" value={rpm} onChange={e => setRpm(e.target.value)} placeholder="enables 1×/2× order checks"
                             className="w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Load / regime tag (optional)</label>
+                        <div className="flex gap-2 mt-1">
+                            <input type="text" value={loadTag} onChange={e => setLoadTag(e.target.value)} onBlur={persistRegime}
+                                placeholder="e.g. STEAM_FLOW — judges every other point at this load"
+                                className="flex-1 min-w-0 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
+                            <input type="number" value={baselineDays} onChange={e => setBaselineDays(e.target.value)} onBlur={persistRegime}
+                                min={7} max={90} title="Baseline days (7–90)"
+                                className="w-16 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">The alert scan then flags a point that is inside its band but off this asset's own baseline at the current load.</p>
                     </div>
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Point / tag</label>
