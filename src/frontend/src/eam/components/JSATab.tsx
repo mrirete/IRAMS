@@ -11,6 +11,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { DataMapper } from '../services/DataMapper';
 import { aiEngine, type JSAHazardSuggestion } from '../services/AIAnalysisEngine';
 import { SignaturePad } from './ui/SignaturePad';
+import { proposeIsolationFromDrawings } from '../../lib/pidIsolation';
 
 // A freshly initialized JSA has no DB row yet — its id is empty (or a legacy
 // "jsa-<timestamp>" placeholder) until the first debounced save round-trips.
@@ -461,6 +462,62 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
         }
     };
 
+    const normTag = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    /**
+     * Walk the stored P&ID upstream of the work order's asset and put the
+     * bounding valves on the permit as PROPOSED (0364). The graph proposes;
+     * the supervisor accepts each one at the equipment. A feed that leaves
+     * the sheet without a valve is reported, never silently dropped.
+     */
+    const handleProposeFromPid = async (permit: any) => {
+        const assetId: string | null = job.assetId ?? null;
+        let tag: string | null = (job as any).assetCode || null;
+        if (!assetId && !tag) {
+            showToast('This work order has no asset — nothing to look up on a drawing.', 'error');
+            return;
+        }
+        try {
+            const db = DatabaseService.getInstance();
+            if (!tag && assetId) {
+                const assets = await db.getAssets();
+                tag = (assets.find((x: any) => x.id === assetId) as any)?.tag ?? null;
+            }
+            const found = proposeIsolationFromDrawings(await db.getPidDrawings(), assetId, tag);
+            if (found.length === 0) {
+                showToast(`No stored P&ID shows ${tag || 'this asset'} — draw it in Analyze › P&ID first.`, 'error');
+                return;
+            }
+            const already = new Set((permit.isolationPoints || []).map((p: any) => normTag(p.tagNumber)));
+            const fresh = found.flatMap(f => f.proposals).filter(p => !already.has(normTag(p.tagNumber)));
+            const gaps = [...new Set(found.flatMap(f => f.unisolatedBranches.map(b => b.label)))];
+            if (fresh.length === 0) {
+                showToast('Every isolating valve on the drawing is already on this permit.', 'success');
+            } else {
+                await db.addProposedIsolationPoints(permit.id, fresh, (permit.isolationPoints || []).length);
+                showToast(`${fresh.length} isolation point(s) proposed from ${found.map(f => f.drawing.title).join(', ')} — accept each after checking it at the equipment.`, 'success');
+            }
+            if (gaps.length) {
+                showToast(`The drawing shows feed(s) with no isolating valve on the sheet: ${gaps.join(', ')} — plan these by hand.`, 'error');
+            }
+            await loadPermits();
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        }
+    };
+
+    const handleProposedDecision = async (pointId: string, accept: boolean) => {
+        try {
+            const db = DatabaseService.getInstance();
+            if (accept) await db.acceptProposedIsolationPoint(pointId);
+            else await db.removeIsolationPoint(pointId);
+            showToast(accept ? 'Accepted — now pending isolation.' : 'Proposal discarded.', 'success');
+            await loadPermits();
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        }
+    };
+
     const handleReturnPermit = async (permitId: string) => {
         if (!user?.id) return;
         const notes = await promptModal({
@@ -522,7 +579,10 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
         status === 'VERIFIED' ? 'bg-green-100 text-green-700'
             : status === 'ISOLATED' ? 'bg-amber-100 text-amber-700'
                 : status === 'DE_ISOLATED' ? 'bg-blue-100 text-blue-700'
-                    : 'bg-slate-100 text-slate-600';
+                    : status === 'PROPOSED' ? 'bg-cyan-100 text-cyan-800'
+                        : 'bg-slate-100 text-slate-600';
+    // A permit still being planned may take proposals; an active or returned one is a record.
+    const canProposeIsolation = (permit: any) => ['DRAFT', 'PENDING', 'APPROVED', 'ISSUED'].includes(permit.status);
 
     const getPermitTypeColor = (type: string) => {
         const colors: Record<string, string> = {
@@ -1106,6 +1166,15 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                 <AlertTriangle size={14} className="text-amber-500" /> Isolation Plan (LOTO)
                                                 <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100">{permit.isolationPoints?.length || 0}</span>
                                             </h4>
+                                            {canProposeIsolation(permit) && (
+                                                <button
+                                                    onClick={() => handleProposeFromPid(permit)}
+                                                    className="text-xs font-bold text-cyan-700 hover:text-cyan-900"
+                                                    title="Walk the stored P&ID upstream of this asset and propose the valves that bound it. Each proposal must be accepted by a person."
+                                                >
+                                                    Propose from P&amp;ID
+                                                </button>
+                                            )}
                                         </div>
                                         {(permit.isolationPoints || []).length > 0 ? (
                                             <>
@@ -1125,13 +1194,19 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                             {permit.isolationPoints.map((pt: any) => (
                                                                 <tr key={pt.id} className="hover:bg-slate-50">
                                                                     <td className="px-3 py-2 text-slate-600">{pt.sequence}</td>
-                                                                    <td className="px-3 py-2 font-bold text-slate-800">{pt.tagNumber}</td>
+                                                                    <td className="px-3 py-2 font-bold text-slate-800">{pt.tagNumber}{pt.source === 'pid' && <span className="ml-1.5 text-[9px] font-semibold text-cyan-700 uppercase align-middle" title="Proposed from the P&ID">P&amp;ID</span>}</td>
                                                                     <td className="px-3 py-2">{getIsolationTypeDesc(pt.isolationType)}</td>
                                                                     <td className="px-3 py-2">{pt.method}</td>
                                                                     <td className="px-3 py-2">
                                                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${isoStatusColor(pt.status)}`}>{pt.status.replace('_', ' ')}</span>
                                                                     </td>
-                                                                    <td className="px-3 py-2 text-right">
+                                                                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                                        {pt.status === 'PROPOSED' && (
+                                                                            <>
+                                                                                <button onClick={() => handleProposedDecision(pt.id, true)} className="text-cyan-700 hover:text-cyan-900 font-bold mr-3">Accept</button>
+                                                                                <button onClick={() => handleProposedDecision(pt.id, false)} className="text-slate-400 hover:text-red-600 font-bold">Discard</button>
+                                                                            </>
+                                                                        )}
                                                                         {pt.status === 'PENDING' && (
                                                                             <button onClick={() => handleIsolationAction(pt.id, 'ISOLATED')} className="text-amber-600 hover:text-amber-700 font-bold">Isolate</button>
                                                                         )}
@@ -1163,6 +1238,12 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                                 </div>
                                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap flex-shrink-0 ${isoStatusColor(pt.status)}`}>{pt.status.replace('_', ' ')}</span>
                                                             </div>
+                                                            {pt.status === 'PROPOSED' && (
+                                                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                                                    <button onClick={() => handleProposedDecision(pt.id, true)} className="py-2 rounded-lg text-xs font-bold bg-cyan-700 text-white hover:bg-cyan-800">Accept</button>
+                                                                    <button onClick={() => handleProposedDecision(pt.id, false)} className="py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600">Discard</button>
+                                                                </div>
+                                                            )}
                                                             {pt.status === 'PENDING' && (
                                                                 <button onClick={() => handleIsolationAction(pt.id, 'ISOLATED')} className="mt-3 w-full py-2 rounded-lg text-xs font-bold bg-amber-500 text-white hover:bg-amber-600">Isolate</button>
                                                             )}

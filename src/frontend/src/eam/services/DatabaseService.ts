@@ -1,4 +1,12 @@
 
+import { drawingsContainingAsset, type IsolationProposal, type PidDrawing } from '../../lib/pidIsolation';
+
+/** Which drawings show an asset — P&IDs from Analyze and sheets read by the Migration Center (0364). */
+export interface AssetDrawings {
+    pids: { id: string; title: string }[];
+    sheets: { drawing_name: string; page: number | null }[];
+}
+
 import {
     AssetRecord,
     AuditLogRecord,
@@ -6720,9 +6728,95 @@ export class DatabaseService {
         }
     }
 
+    // ── Isolation points proposed from the P&ID (0364) ──────────────────
+    // The graph proposes; a person accepts. Nothing here can write ISOLATED
+    // or VERIFIED — those stay on updateIsolationPointStatus with an actor.
+    public async getPidDrawings(): Promise<PidDrawing[]> {
+        const { data, error } = await supabase
+            .from('ers_pid_configurations')
+            .select('id, title, asset_id, equipment, connections')
+            .limit(500);
+        if (error) throw error;
+        return (data ?? []) as PidDrawing[];
+    }
+
+    public async addProposedIsolationPoints(permitId: string, proposals: IsolationProposal[], startSequence = 0): Promise<void> {
+        if (!proposals.length) return;
+        const rows = proposals.map((p, i) => ({
+            permit_id: permitId,
+            tag_number: p.tagNumber,
+            isolation_type: p.isolationType,
+            method: p.method,
+            normal_position: p.normalPosition,
+            isolated_position: p.isolatedPosition,
+            status: 'PROPOSED',
+            sequence: startSequence + i + 1,
+            source: 'pid',
+            pid_config_id: p.pidConfigId,
+            pid_node_id: p.pidNodeId,
+        }));
+        const { error } = await supabase.from('ptw_isolation_points').insert(rows);
+        if (error) throw error;
+    }
+
+    /** PROPOSED → PENDING. Guarded on status so a stale button cannot reset an isolated point. */
+    public async acceptProposedIsolationPoint(pointId: string): Promise<void> {
+        const { error } = await supabase
+            .from('ptw_isolation_points')
+            .update({ status: 'PENDING', updated_at: new Date().toISOString() })
+            .eq('id', pointId).eq('status', 'PROPOSED');
+        if (error) throw error;
+    }
+
+    /** Only a PROPOSED point may be discarded — everything past that is a safety record. */
+    public async removeIsolationPoint(pointId: string): Promise<void> {
+        const { error } = await supabase
+            .from('ptw_isolation_points')
+            .delete()
+            .eq('id', pointId).eq('status', 'PROPOSED');
+        if (error) throw error;
+    }
+
+    // ── Drawing index (0364) ─────────────────────────────────────────────
+    public async getDrawingsForAsset(assetId: string | null, assetTag: string | null): Promise<AssetDrawings> {
+        const [pidQ, sheetQ] = await Promise.all([
+            supabase.from('ers_pid_configurations').select('id, title, asset_id, equipment').limit(500),
+            assetTag
+                ? supabase.from('ers_drawing_tags').select('drawing_name, page, tag').ilike('tag', assetTag).limit(50)
+                : Promise.resolve({ data: [] as { drawing_name: string; page: number | null; tag: string }[], error: null }),
+        ]);
+        const drawings = ((pidQ.data ?? []) as Array<Omit<PidDrawing, 'connections'>>).map((d) => ({ ...d, connections: [] as unknown[] }));
+        const pids = drawingsContainingAsset(drawings, assetId, assetTag).map((h) => ({ id: h.drawing.id, title: h.drawing.title }));
+        const seen = new Set<string>();
+        const sheets: AssetDrawings['sheets'] = [];
+        for (const s of (sheetQ.data ?? []) as { drawing_name: string; page: number | null }[]) {
+            const k = `${s.drawing_name}|${s.page ?? 0}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            sheets.push({ drawing_name: s.drawing_name, page: s.page ?? null });
+        }
+        return { pids, sheets };
+    }
+
+    /** Replace the index for one drawing (re-importing the same file must not double it). */
+    public async saveDrawingTags(drawingName: string, tags: { tag: string; page: number | null; kind: string }[]): Promise<void> {
+        await supabase.from('ers_drawing_tags').delete().eq('drawing_name', drawingName);
+        if (!tags.length) return;
+        const seen = new Set<string>();
+        const rows: { drawing_name: string; page: number | null; tag: string; kind: string }[] = [];
+        for (const t of tags) {
+            const k = `${t.page ?? 0}|${t.tag.toUpperCase()}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            rows.push({ drawing_name: drawingName, page: t.page, tag: t.tag, kind: t.kind });
+        }
+        const { error } = await supabase.from('ers_drawing_tags').insert(rows);
+        if (error) throw error;
+    }
+
     public async updateIsolationPointStatus(
         pointId: string,
-        newStatus: 'ISOLATED' | 'VERIFIED' | 'DE_ISOLATED',
+        newStatus: 'ISOLATED' | 'VERIFIED' | 'DE_ISOLATED',   // never PROPOSED/PENDING — see acceptProposedIsolationPoint
         actor: string
     ): Promise<void> {
         const updatePayload: any = { status: newStatus, updated_at: new Date().toISOString() };

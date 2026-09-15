@@ -990,8 +990,12 @@ export interface PTWIsolationPoint {
   verifiedAt?: string;
   deIsolatedBy?: string;
   deIsolatedAt?: string;
-  status: 'PENDING' | 'ISOLATED' | 'VERIFIED' | 'DE_ISOLATED';
+  /** PROPOSED = walked off the P&ID (0364); a person accepts it into PENDING or discards it. */
+  status: 'PROPOSED' | 'PENDING' | 'ISOLATED' | 'VERIFIED' | 'DE_ISOLATED';
   sequence: number;
+  source?: 'manual' | 'pid';
+  pidConfigId?: string | null;
+  pidNodeId?: string | null;
 }
 
 export interface PTWApproval {

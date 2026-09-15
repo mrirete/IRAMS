@@ -15,7 +15,7 @@
  * Writes go through bulkImportService.importAssets, the same hierarchy-aware,
  * per-row-reported path the spreadsheet importer uses — no second write path.
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     X, Upload, Loader2, FileWarning, CheckCircle2, AlertTriangle, ArrowRight, Info,
 } from 'lucide-react';
@@ -27,6 +27,8 @@ import {
 import { importAssets } from '../../eam/services/bulkImportService';
 import type { ImportResult } from '../../eam/services/importTypes';
 import { useToast } from '../../eam/contexts/ToastContext';
+import { DatabaseService } from '../../eam/services/DatabaseService';
+import { reconcileWithRegister, type RegisterAsset } from '../../lib/registerReconcile';
 
 interface Props {
     onClose: () => void;
@@ -62,6 +64,8 @@ export const PidRegisterModal: React.FC<Props> = ({ onClose, onImported }) => {
     const [includeLowConfidence, setIncludeLowConfidence] = useState(false);
     const [excluded, setExcluded] = useState<Set<string>>(new Set());
     const [result, setResult] = useState<ImportResult | null>(null);
+    /** The register as it stands, loaded once the drawing is read — null until then. */
+    const [register, setRegister] = useState<RegisterAsset[] | null>(null);
 
     /**
      * Recognition is pure and fast, so policy changes re-derive from the stored
@@ -78,6 +82,28 @@ export const PidRegisterModal: React.FC<Props> = ({ onClose, onImported }) => {
     );
 
     const selectedCount = visibleTags.filter(t => !excluded.has(t.tag)).length;
+
+    // Reconciliation (0364): the moment a customer is looking at a drawing
+    // next to their register is the one moment they will act on the diff.
+    useEffect(() => {
+        if (step !== 'review' || register !== null) return;
+        let alive = true;
+        DatabaseService.getInstance().getAssets()
+            .then((list) => {
+                if (!alive) return;
+                setRegister((list as Array<Record<string, unknown>>).map((a) => ({
+                    id: String(a.id), tag: String(a.tag ?? ''), name: (a.name as string) ?? null,
+                    parentId: (a.parentId as string) ?? null, hierarchyLevel: (a.hierarchyLevel as string) ?? null,
+                })));
+            })
+            .catch(() => { if (alive) setRegister([]); });
+        return () => { alive = false; };
+    }, [step, register]);
+
+    const reconcile = useMemo(
+        () => reconcileWithRegister(visibleTags, register ?? [], { systemTag: systemTag.trim() || null }),
+        [visibleTags, register, systemTag],
+    );
 
     const handleFile = useCallback(async (file: File) => {
         setBusy(true);
@@ -134,6 +160,17 @@ export const PidRegisterModal: React.FC<Props> = ({ onClose, onImported }) => {
             });
             const res = await importAssets(rows, { withBatch: true });
             setResult(res);
+            // Drawing index (0364): remember which sheet each kept tag came
+            // from, so the asset and the work order can say "see P-401 p.3".
+            // Non-fatal — the register import is the deliverable.
+            try {
+                await DatabaseService.getInstance().saveDrawingTags(
+                    fileName,
+                    kept.tags.map(t => ({ tag: t.tag, page: t.pages?.[0] ?? null, kind: t.kind })),
+                );
+            } catch (e) {
+                console.warn('drawing index not saved:', e);
+            }
             setStep('done');
             if (res.inserted > 0) {
                 showToast(`${res.inserted} assets created from ${fileName}`, 'success');
@@ -248,6 +285,33 @@ export const PidRegisterModal: React.FC<Props> = ({ onClose, onImported }) => {
                                     Show doubtful matches
                                 </label>
                             </div>
+
+                            {/* Register reconciliation (0364) — three buckets a reviewer acts on */}
+                            {register && (
+                                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs text-slate-600 space-y-2">
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                        <span><strong className="text-slate-800">{reconcile.matched.length}</strong> already in the register — linked, not duplicated</span>
+                                        <span><strong className="text-slate-800">{reconcile.newTags.length}</strong> new to the register</span>
+                                        {reconcile.systemAsset ? (
+                                            <span><strong className="text-slate-800">{reconcile.registerOnly.length}</strong> under {reconcile.systemAsset.tag} in the register but not on this drawing</span>
+                                        ) : (
+                                            <span className="text-slate-400">System {systemTag.trim() || '—'} is not in the register yet — "in register, not on drawing" appears once it is.</span>
+                                        )}
+                                    </div>
+                                    {reconcile.registerOnly.length > 0 && (
+                                        <details>
+                                            <summary className="cursor-pointer font-semibold text-slate-700">Check these — removed, renamed, or on another sheet?</summary>
+                                            <ul className="mt-1 grid grid-cols-2 sm:grid-cols-3 gap-x-3 font-mono text-[11px]">
+                                                {reconcile.registerOnly.slice(0, 60).map(a => (
+                                                    <li key={a.id}>{a.tag}{a.name ? <span className="font-sans text-slate-400"> — {a.name}</span> : null}</li>
+                                                ))}
+                                            </ul>
+                                            {reconcile.registerOnly.length > 60 && <p className="text-slate-400 mt-1">…and {reconcile.registerOnly.length - 60} more.</p>}
+                                            <p className="text-slate-400 mt-1">Nothing is deleted from here. This is a list to check at the plant.</p>
+                                        </details>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Proposals */}
                             <div className="rounded-xl border border-slate-200 overflow-hidden">

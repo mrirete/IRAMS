@@ -214,6 +214,12 @@ const TAG_SHAPE = /^([A-Z]{1,4})[\s\-_/]?(\d{1,5})((?:[\s\-_/][A-Z0-9]{1,6})*[A-
 /** A pipe spec suffix (A1A, C2B) — the tell that a token is a line, not a machine. */
 const PIPE_SPEC_SUFFIX = /^[A-Z]\d[A-Z]$/;
 
+/** "P-501.DWG" — the drawing's file name, which carries the sheet's own number. */
+const DRAWING_FILE_NAME = /\b([A-Z]{1,4}[\s\-_/]?\d{1,5}(?:[\s\-_/][A-Z0-9]{1,6})*)\.(?:DWG|DGN|DXF)\b/g;
+
+/** A whole text run that points at another sheet or names a file. */
+const SHEET_REFERENCE_RUN = /\bREF(?:ERENCE)?\.?\s+(?:SHT|SHEET|DWG|DRG)\b|\bSEE\s+(?:SHT|SHEET|DWG|DRG)\b|\.(?:DWG|DGN|DXF)\b/i;
+
 /**
  * A pipe line number rather than an equipment tag. Line numbers are the single
  * biggest source of false assets — a 40-line drawing yields 40 tag-shaped
@@ -308,11 +314,35 @@ export function extractPidTags(items: PdfTextItem[], opts: ExtractOptions = {}):
     const pages = new Set<number>();
     let candidates = 0;
 
+    // The sheet's own drawing number is drawn in the title block, bare, and
+    // looks exactly like a pump tag (P-501). It also appears as "P-501.DWG" in
+    // the FILENAME line, which is the tell: collect those per page first, so
+    // the bare copy can be rejected for what it is. (Learned on a real
+    // municipal set — Pahala WWTP — where every sheet would otherwise have
+    // gained one phantom pump.)
+    const sheetNumbersByPage = new Map<number, Set<string>>();
+    for (const item of items) {
+        for (const m of String(item.str ?? '').toUpperCase().matchAll(DRAWING_FILE_NAME)) {
+            const t = TAG_SHAPE.exec(m[1]);
+            if (!t) continue;
+            const id = identityOf({ raw: m[1], prefix: t[1], number: t[2], suffix: t[3] ?? '', page: item.page });
+            const set = sheetNumbersByPage.get(item.page) ?? new Set<string>();
+            set.add(id);
+            sheetNumbersByPage.set(item.page, set);
+        }
+    }
+
     for (const item of items) {
         pages.add(item.page);
+        const run = String(item.str ?? '');
+        // "REF SHT P-204" / "SEE DWG P-401" / "P-401.DWG": the whole run is a
+        // pointer to another sheet or a file name. Any tag inside it is a
+        // drawing number, not equipment — record it as such so the reviewer
+        // sees why it is absent.
+        const runIsSheetReference = SHEET_REFERENCE_RUN.test(run);
         // A single text run can hold several tags ("P-101A P-101B"); split on
         // whitespace but keep hyphens, which are part of the tag.
-        for (const token of String(item.str ?? '').split(/[\s,;|]+/)) {
+        for (const token of run.split(/[\s,;|]+/)) {
             const text = token.trim().replace(/[.:()[\]]+$/g, '').toUpperCase();
             if (text.length < 2 || text.length > 12) continue;
 
@@ -328,9 +358,19 @@ export function extractPidTags(items: PdfTextItem[], opts: ExtractOptions = {}):
             const m = TAG_SHAPE.exec(text);
             if (!m) continue;
 
-            candidates += 1;
+            if (runIsSheetReference) {
+                reject(text, 'A sheet cross-reference or drawing file name, not an item of equipment');
+                continue;
+            }
+
             const cand: Candidate = { raw: text, prefix: m[1], number: m[2], suffix: m[3] ?? '', page: item.page };
             const id = identityOf(cand);
+            if (sheetNumbersByPage.get(item.page)?.has(id)) {
+                reject(text, "The sheet's own drawing number (title block), not an item of equipment");
+                continue;
+            }
+
+            candidates += 1;
             const entry = byIdentity.get(id) ?? { cands: [], pages: new Set<number>() };
             entry.cands.push(cand);
             entry.pages.add(item.page);

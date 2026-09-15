@@ -62,6 +62,7 @@ import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { FilesTab } from '../components/FilesTab';
 import { AuditTrail } from '../components/AuditTrail';
 import { WoStatusTimeline } from '../components/WoStatusTimeline';
+import { DrawingsCard } from '../components/DrawingsCard';
 import { JournalComposer, JOURNAL_TYPE_COLORS, JOURNAL_TYPE_LABEL } from '../components/JournalComposer';
 import { AroundThisFailure } from '../components/AroundThisFailure';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // Added import
@@ -2787,6 +2788,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     <span className="font-bold text-slate-500">Asset:</span>
                                     <span className="text-slate-800">{localJob.assetCode || localJob.assetName || 'N/A'}</span>
                                 </div>
+                                {/* Which sheets show the asset (0364) — the question a technician asks at the job */}
+                                <DrawingsCard assetId={localJob.assetId} assetTag={localJob.assetCode} variant="inline" />
                                 <div className="flex justify-between">
                                     <span className="font-bold text-slate-500">Type / Priority:</span>
                                     <span className="text-slate-800">{localJob.type} / {localJob.priority}</span>

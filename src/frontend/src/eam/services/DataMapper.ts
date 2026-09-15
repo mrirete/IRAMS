@@ -399,7 +399,10 @@ export class DataMapper {
             deIsolatedBy: record.de_isolated_by,
             deIsolatedAt: record.de_isolated_at,
             status: record.status,
-            sequence: record.sequence || 0
+            sequence: record.sequence || 0,
+            source: record.source || 'manual',
+            pidConfigId: record.pid_config_id ?? null,
+            pidNodeId: record.pid_node_id ?? null,
         };
     }
 

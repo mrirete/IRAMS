@@ -21,6 +21,7 @@ import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Cont
 import { DatabaseService } from '../services/DatabaseService';
 import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, registerRootLevel, isValidChild, showsEquipmentFields, isoLevelName } from '../services/hierarchyModel';
 import { OperatingContextCard } from '../components/OperatingContextCard';
+import { DrawingsCard } from '../components/DrawingsCard';
 import { isOtherCode } from '../../lib/iso14224Taxonomy';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
@@ -2511,6 +2512,9 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
 
             {/* ISO 14224 operating context — equipment levels only (0317) */}
             {showEquipFields && <OperatingContextCard asset={asset} onUpdate={onUpdate} />}
+
+            {/* Which drawings show this asset (0364) — renders nothing when none do */}
+            <DrawingsCard assetId={asset.id} assetTag={asset.tag} />
 
             <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
                 <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Specification & Location</h3>
