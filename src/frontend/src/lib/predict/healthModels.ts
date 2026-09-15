@@ -46,16 +46,23 @@ export function sensorKind(tag: string, unit?: string | null): SensorKind {
         if (/^(mm|mils|thou)$/.test(u)) return 'thickness';
     }
 
-    // ISA loop prefix: the letters before the first digit of a loop tag.
+    // ISA loop prefix: the letters before the first digit of a loop tag. The
+    // first letter is the measured variable; the rest are functions. A 'V'
+    // (valve), 'Y' (relay/compute) or 'Z' (position) anywhere after the first
+    // letter means the tag is a final element or a computed point, not a
+    // measurement — TV, PSV, FCV, TY stay 'other'.
     const m = /^([a-z]{1,4})[\s_\-]?\d/i.exec((tag || '').trim());
     if (m) {
         const p = m[1].toUpperCase();
-        if (/^T[ETICR]?[A-Z]?$/.test(p)) return 'temperature';
-        if (/^PD?[TIC]?[A-Z]?$/.test(p) && !/^PV/.test(p)) return 'pressure';
-        if (/^F[TIQC]?[A-Z]?$/.test(p) && !/^FV/.test(p)) return 'flow';
-        if (/^L[TICS]?[A-Z]?$/.test(p) && !/^LV/.test(p)) return 'level';
+        const isMeasurement = !/[VYZ]/.test(p.slice(1));
+        if (isMeasurement) {
+            if (/^T[ETIRCASW]{0,2}[HL]?$/.test(p)) return 'temperature';
+            if (/^PD?[TIRCAS]{0,2}[HL]?$/.test(p)) return 'pressure';
+            if (/^F[TIRQCAS]{0,2}[HL]?$/.test(p)) return 'flow';
+            if (/^L[TIRCAS]{0,2}[HL]?$/.test(p)) return 'level';
+            if (/^(IT|II|IE|IA|IR)$/.test(p)) return 'current';
+        }
         if (/^(VT|VE|VI|XT|XE|ZD|ZT|ZS)$/.test(p)) return 'vibration';
-        if (/^(IT|II|IE)$/.test(p)) return 'current';
     }
     return 'other';
 }

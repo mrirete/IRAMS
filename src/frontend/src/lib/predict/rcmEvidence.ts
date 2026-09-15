@@ -125,6 +125,8 @@ export function requiredKind(taskText: string): SensorKind | null {
 export interface CbmPoint {
     id: string;
     name: string;
+    /** Lets a DCS-coded point (TE_8319A, '°C') be classified by its unit, not just its name. */
+    unit?: string | null;
     isActive?: boolean;
 }
 
