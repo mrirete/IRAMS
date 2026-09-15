@@ -1893,7 +1893,7 @@ const queryReadings: AgentTool = {
           ...s.summary,
           buckets: s.buckets,
         })),
-        note: "direction is 'rising'/'falling' only when the fitted trend moves the signal by ≥2% of its mean across the window; excursions count buckets, not samples; coverage_pct < 50 means most of the window has no data — say so rather than extrapolate. Manual series are at route cadence. source 'projection' = the last ≤50 stored samples with NO timestamps: report order and values, never a rate or a date.",
+        note: "direction is 'rising'/'falling' only when the fitted trend moves the signal by ≥2% of its mean across the window. excursions.warn_*/crit_* count BUCKETS whose max/min touched a limit ('did it ever'); excursions.pct_time_outside_warn is the sample-weighted share of buckets whose MEAN sat outside the band — quote THAT for 'how often'. coverage_pct < 50 means most of the window has no data — say so rather than extrapolate. Manual series are at route cadence. source 'projection' = the last ≤50 stored samples with NO timestamps: report order and values, never a rate or a date.",
       },
       sources: sources.length ? sources : [{ kind: "assets", ref: assetId, label: `no reading points on ${asset.tag}` }],
       warnings: warnings.length ? warnings : undefined,

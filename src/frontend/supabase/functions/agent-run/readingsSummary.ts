@@ -49,8 +49,11 @@ export interface SeriesSummary {
   drift_pct_of_mean: number | null; // slope × span / |mean| × 100 — the size of the trend
   direction: Direction;
   excursions: {
+    /** buckets whose MAX/MIN crossed the line — "did it ever touch the limit" */
     warn_high: number; warn_low: number; crit_high: number; crit_low: number;
     pct_buckets_outside_warn: number;
+    /** buckets whose AVERAGE sat outside the warning band — the closer answer to "how often" */
+    pct_time_outside_warn: number;
   };
   headline: string;
 }
@@ -157,7 +160,7 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
     n_points: 0, n_buckets: 0, span_days: round(spanDays, 2), coverage_pct: 0,
     first: null, last: null, min: null, avg: null, max: null,
     slope_per_day: null, pct_change: null, drift_pct_of_mean: null, direction: "unknown",
-    excursions: { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0 },
+    excursions: { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0, pct_time_outside_warn: 0 },
     headline: `no readings in the last ${spanLabel(spanDays)}`,
   };
   if (buckets.length === 0) return empty;
@@ -193,10 +196,10 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
 
   // Excursions: a bucket counts once per band side it crossed. Crit implies
   // warn on the same side when both are set, so warn counts are >= crit counts.
-  const ex = { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0 };
+  const ex = { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0, pct_time_outside_warn: 0 };
   const wh = isNum(bands.warn_high) ? bands.warn_high : isNum(bands.crit_high) ? bands.crit_high : null;
   const wl = isNum(bands.warn_low) ? bands.warn_low : isNum(bands.crit_low) ? bands.crit_low : null;
-  let outsideWarn = 0;
+  let outsideWarn = 0, avgOutside = 0, weight = 0;
   for (const b of buckets) {
     let out = false;
     if (wh !== null && b.max > wh) { ex.warn_high++; out = true; }
@@ -204,8 +207,12 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
     if (isNum(bands.crit_high) && b.max > bands.crit_high) ex.crit_high++;
     if (isNum(bands.crit_low) && b.min < bands.crit_low) ex.crit_low++;
     if (out) outsideWarn++;
+    // Time share: weight each bucket by its samples, judge it by its mean.
+    weight += b.n;
+    if ((wh !== null && b.avg > wh) || (wl !== null && b.avg < wl)) avgOutside += b.n;
   }
   ex.pct_buckets_outside_warn = round((outsideWarn / buckets.length) * 100, 1);
+  ex.pct_time_outside_warn = round((avgOutside / Math.max(1, weight)) * 100, 1);
 
   // Headline — the sentence an engineer would say first.
   const u = unit ? ` ${unit}` : "";
@@ -219,6 +226,7 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
   }
   if (ex.crit_high || ex.crit_low) parts.push(`${ex.crit_high + ex.crit_low} of ${buckets.length} buckets beyond CRITICAL`);
   else if (ex.warn_high || ex.warn_low) parts.push(`${ex.warn_high + ex.warn_low} of ${buckets.length} buckets outside warning`);
+  if (ex.warn_high || ex.warn_low) parts.push(`~${ex.pct_time_outside_warn}% of the time outside the band`);
   if (coverage < COVERAGE_MENTION_BELOW_PCT) parts.push(`only ${coverage}% of the window has data`);
 
   return {

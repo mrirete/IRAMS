@@ -108,7 +108,18 @@ describe('summarizeWindow — bands and excursions', () => {
         expect(s.excursions.crit_high).toBe(1);
         expect(s.excursions.warn_low).toBe(0);
         expect(s.excursions.pct_buckets_outside_warn).toBeCloseTo(16.7, 1);
+        // Time share judges each bucket by its MEAN: the same 4 buckets sit outside → 16.7 %.
+        expect(s.excursions.pct_time_outside_warn).toBeCloseTo(16.7, 1);
         expect(s.headline).toContain('1 of 24 buckets beyond CRITICAL');
+        expect(s.headline).toContain('~16.7% of the time outside the band');
+    });
+
+    it('a bucket that merely TOUCHED the line counts as an excursion but not as time outside', () => {
+        // avg 537 (inside), max 546 (touched): "did it ever" yes, "how often" no.
+        const b: WindowBucket[] = [{ ts: new Date(T0).toISOString(), n: 60, min: 530, avg: 537, max: 546, last: 537 }];
+        const s = summarizeWindow(b, { ...windowOf(1), bands });
+        expect(s.excursions.warn_high).toBe(1);
+        expect(s.excursions.pct_time_outside_warn).toBe(0);
     });
 
     it('with only warning bands, crit counts stay zero', () => {

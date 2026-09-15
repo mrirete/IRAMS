@@ -4,35 +4,39 @@
  * signal-grounded Specialist (migration 0362, query_readings tool).
  *
  * DATASET
- *   "Time-Series of Industrial Boiler Operations" — a coal-fired boiler at a
- *   chemical plant in Zhejiang, China. 5-second samples over 5 days
- *   (2022-03-27 → 2022-04-01), 65 columns of pressure / temperature / flow /
- *   O₂. Abnormal operation = outlet steam temperature outside 530–545 °C
- *   (8.6 % of rows). Licence CC BY 4.0 — attribution:
+ *   "A long-tailed distribution time-series dataset in boiler equipment" — a
+ *   coal-fired circulating-fluidised-bed boiler at Zhejiang Xin'an Chemical,
+ *   China. 30 DCS tags (furnace pressures, drum pressure, flue/air/steam
+ *   temperatures, air flows, O₂, ID-fan current and vibration, bed
+ *   differential pressures, desuperheater spray flow, main steam flow) at
+ *   5-second intervals, 2022-03-27 14:28 → 2022-04-01 14:28 (86 400 rows).
+ *   Abnormal operation = outlet steam temperature (TE_8332A) outside
+ *   530–545 °C (8.6 % of rows).
  *     Hu, W., Jiang, A., Chen, K., Zheng, J., Shang, W. & Cao, Z. (2025).
- *     A long-tailed distribution time-series dataset in boiler equipment.
  *     Sci Data 12:742. https://doi.org/10.1038/s41597-025-05096-4
- *     Kaggle mirror: nikitamanaenkov/time-series-of-industrial-boiler-operations
- *   Kaggle needs a (free) account, so the CSV is NOT vendored — download
- *   data.csv (+ columns.csv, the legend) and point this script at them.
+ *   Data: figshare doi:10.6084/m9.figshare.28868849 — public, CC0, no login:
+ *     https://ndownloader.figshare.com/files/53975387  (xinan_completed_data.csv.zip)
+ *   Legend (Table 1 + inferred units + the paper's band): scripts/boiler-columns.json.
  *
  * WHAT IT WRITES
  *   • ers_sensor_reading_points — one row per (tag, step) after averaging the
  *     5 s samples into --step-minutes buckets (default 1 → ~7 200 rows per
- *     tag, ~470k for all 65 tags; use --tags to load fewer).
+ *     tag, ~216k for all 30 tags; use --tags to load fewer).
  *   • ers_sensor_readings — the 50-point projection Predict reads, with
- *     alarm_low/high at the 1st/99th percentile of the loaded series unless
- *     the tag is the outlet steam temperature, which gets the paper's band.
+ *     alarm_low/high from the legend's band where it has one (TE_8332A), else
+ *     the 1st/99th percentile of the loaded series (an envelope, not a limit).
  *   • then calls ers_rollup_my_reading_points() so 30/90-day windows work
  *     without waiting for the hourly cron.
  *   Timestamps are shifted so the series ENDS at --end (default: now), so a
  *   "last 7 days" question has an answer today.
  *
- * RUN (PowerShell, from repo root):
+ * RUN (PowerShell, from repo root; provision the asset first with
+ * scripts/provision-boiler-demo.mjs):
  *   $env:SEED_EMAIL="you@company.com"; $env:SEED_PASSWORD="…"
- *   node scripts/seed-boiler-history.mjs --csv C:\data\boiler\data.csv --columns C:\data\boiler\columns.csv --asset B-101
+ *   node scripts/seed-boiler-history.mjs --csv C:\data\boiler\xinan_completed_data.csv --asset B-301
  * OPTIONS
- *   --tags a,b,c        only these columns (case-insensitive)
+ *   --columns path      legend (default scripts/boiler-columns.json)
+ *   --tags a,b,c        only these columns (case-insensitive, suffix stripped)
  *   --step-minutes 1    averaging window (5 → 1 440 rows/tag)
  *   --end 2026-09-15T00:00:00Z
  *   --clean             delete this asset's seeded points + projection rows and exit
@@ -61,13 +65,27 @@ const argv = process.argv.slice(2);
 const arg = (k, d = '') => { const i = argv.indexOf(k); return i >= 0 ? (argv[i + 1] ?? d) : d; };
 const has = (k) => argv.includes(k);
 const CSV = arg('--csv');
-const COLUMNS = arg('--columns');
+const COLUMNS = arg('--columns', 'scripts/boiler-columns.json');
 const ASSET_TAG = arg('--asset');
 const STEP_MIN = Math.max(1, Number(arg('--step-minutes', '1')) || 1);
 const END = arg('--end') ? new Date(arg('--end')) : new Date();
 const ONLY = arg('--tags') ? new Set(arg('--tags').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)) : null;
 const CLEAN = has('--clean');
 const SOURCE = 'csv';   // the writer label 0236 reserves for file loads
+/**
+ * Optional, DEMO ONLY: --inject-fault TAG:+8%:3h multiplies the last 3 hours of
+ * TAG by 1.08 before writing, so the regime detector has something to catch
+ * on a record of a healthy plant. Every injected point is written with
+ * source 'csv-injected' — visible in the table, removed by --clean, and never
+ * mistaken for the dataset. The projection row for that tag is also updated.
+ */
+const INJECT = (() => {
+    const v = arg('--inject-fault');
+    if (!v) return null;
+    const m = /^([^:]+):([+-]?\d+(?:\.\d+)?)%:(\d+(?:\.\d+)?)h$/i.exec(v.trim());
+    if (!m) fail('--inject-fault expects TAG:+8%:3h');
+    return { tag: m[1], factor: 1 + Number(m[2]) / 100, hours: Number(m[3]) };
+})();
 
 if (!URL || !ANON) fail('VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY not found in .env.local');
 if (!EMAIL || !PASSWORD) fail('Set SEED_EMAIL and SEED_PASSWORD in the environment.');
@@ -88,7 +106,7 @@ const asset = assets[0];
 console.log(`Asset ${asset.tag} — ${asset.name} (${asset.id})`);
 
 if (CLEAN) {
-    const { error: e1, count } = await sb.from('ers_sensor_reading_points').delete({ count: 'exact' }).eq('asset_id', asset.id).eq('source', SOURCE);
+    const { error: e1, count } = await sb.from('ers_sensor_reading_points').delete({ count: 'exact' }).eq('asset_id', asset.id).in('source', [SOURCE, 'csv-injected']);
     if (e1) fail(`delete points: ${e1.message}`);
     const { error: e2 } = await sb.from('ers_sensor_readings').delete().eq('asset_id', asset.id);
     if (e2) fail(`delete projection: ${e2.message}`);
@@ -98,15 +116,31 @@ if (CLEAN) {
     process.exit(0);
 }
 
-// Legend: columns.csv is "code,description,unit" (or similar) — best effort.
+// Legend: scripts/boiler-columns.json (Table 1 of the paper + inferred units +
+// the paper's own band on the outlet steam temperature), or a
+// "code,description,unit" CSV. Tags are matched after stripping the DCS
+// suffix (".AV_0#") so the register carries PT_8313A, not PT_8313A.AV_0#.
 const legend = new Map();
+let stripSuffix = '';
 if (COLUMNS) {
-    for (const line of readFileSync(COLUMNS, 'utf8').split(/\r?\n/).slice(1)) {
-        const cells = splitCsv(line);
-        if (cells.length >= 2 && cells[0]) legend.set(cells[0].trim().toLowerCase(), { description: cells[1]?.trim() ?? '', unit: cells[2]?.trim() ?? '' });
+    try {
+        const raw = readFileSync(COLUMNS, 'utf8');
+        if (COLUMNS.endsWith('.json')) {
+            const j = JSON.parse(raw);
+            stripSuffix = j._strip_suffix || '';
+            for (const [code, d] of Object.entries(j.columns || {})) legend.set(code.toLowerCase(), d);
+        } else {
+            for (const line of raw.split(/\r?\n/).slice(1)) {
+                const cells = splitCsv(line);
+                if (cells.length >= 2 && cells[0]) legend.set(cells[0].trim().toLowerCase(), { description: cells[1]?.trim() ?? '', unit: cells[2]?.trim() ?? '' });
+            }
+        }
+        console.log(`Legend: ${legend.size} columns described (${COLUMNS}).`);
+    } catch (e) {
+        console.warn(`Legend not read (${e.message}) — tags will carry no units.`);
     }
-    console.log(`Legend: ${legend.size} columns described.`);
 }
+const cleanTag = (h) => (stripSuffix && h.endsWith(stripSuffix) ? h.slice(0, -stripSuffix.length) : h).trim();
 
 // ── Pass 1: stream the CSV, average into step buckets per tag ──────────────
 console.log(`Reading ${CSV} …`);
@@ -120,7 +154,7 @@ for await (const line of rl) {
     if (!line.trim()) continue;
     const cells = splitCsv(line);
     if (!header) {
-        header = cells.map((c) => c.trim());
+        header = cells.map((c) => cleanTag(c.trim()));
         tsIdx = header.findIndex((h) => /^(time|timestamp|date|datetime|ts)$/i.test(h) || /time/i.test(h));
         if (tsIdx < 0) tsIdx = 0;
         tagIdx = header.map((h, i) => i).filter((i) => i !== tsIdx && (!ONLY || ONLY.has(header[i].toLowerCase())));
@@ -150,12 +184,30 @@ console.log(`${rows} samples, ${new Date(firstTs).toISOString()} → ${new Date(
 // ── Pass 2: write points in batches ────────────────────────────────────────
 let written = 0;
 const BATCH = 1000;
+const injectFrom = INJECT ? END.getTime() - INJECT.hours * 3_600_000 : null;
+if (INJECT) {
+    const m = [...series.keys()].find((t) => t.toLowerCase() === INJECT.tag.toLowerCase());
+    if (!m) fail(`--inject-fault: tag ${INJECT.tag} is not in the file`);
+    INJECT.tag = m;
+    console.log(`⚠ DEMO FAULT: ${m} × ${INJECT.factor} for the last ${INJECT.hours} h (source 'csv-injected').`);
+}
 for (const [tag, m] of series) {
     const unit = legend.get(tag.toLowerCase())?.unit || null;
-    const pts = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([b, agg]) => ({
-        asset_id: asset.id, tag, ts: new Date(b + shiftMs).toISOString(),
-        value: round6(agg.sum / agg.n), unit, source: SOURCE,
-    }));
+    const injectHere = INJECT && tag === INJECT.tag;
+    const pts = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([b, agg]) => {
+        const ts = b + shiftMs;
+        const injected = injectHere && ts >= injectFrom;
+        return {
+            asset_id: asset.id, tag, ts: new Date(ts).toISOString(),
+            value: round6((agg.sum / agg.n) * (injected ? INJECT.factor : 1)), unit,
+            source: injected ? 'csv-injected' : SOURCE,
+        };
+    });
+    // Re-running with an injection must overwrite, not skip, the affected rows.
+    if (injectHere) {
+        const { error } = await sb.from('ers_sensor_reading_points').delete().eq('asset_id', asset.id).eq('tag', tag).gte('ts', new Date(injectFrom).toISOString());
+        if (error) fail(`clear injected window ${tag}: ${error.message}`);
+    }
     for (let i = 0; i < pts.length; i += BATCH) {
         const { error } = await sb.from('ers_sensor_reading_points')
             .upsert(pts.slice(i, i + BATCH), { onConflict: 'asset_id,tag,ts', ignoreDuplicates: true });
@@ -170,18 +222,21 @@ console.log(`Wrote ${written} points.`);
 const { data: existing } = await sb.from('ers_sensor_readings').select('id, tag').eq('asset_id', asset.id);
 const idByTag = new Map((existing ?? []).map((r) => [r.tag.toLowerCase(), r.id]));
 for (const [tag, m] of series) {
-    const vals = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([, agg]) => round6(agg.sum / agg.n));
+    const injectHere = INJECT && tag === INJECT.tag;
+    const vals = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([b, agg]) => round6((agg.sum / agg.n) * (injectHere && b + shiftMs >= injectFrom ? INJECT.factor : 1)));
     if (!vals.length) continue;
     const sorted = [...vals].sort((a, b) => a - b);
     const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-    const isOutletSteam = /outlet.*steam.*temp|boiler_outlet_steam/i.test(tag);
+    const leg = legend.get(tag.toLowerCase()) || {};
     const row = {
         asset_id: asset.id, tag,
         unit: legend.get(tag.toLowerCase())?.unit || '',
         current_value: vals[vals.length - 1],
         trend: vals.length > 1 ? (vals.at(-1) > vals.at(-2) ? 'rising' : vals.at(-1) < vals.at(-2) ? 'falling' : 'stable') : null,
-        alarm_low: isOutletSteam ? 530 : round6(q(0.01)),
-        alarm_high: isOutletSteam ? 545 : round6(q(0.99)),
+        // The alarm line Predict reads: the paper's band where it has one,
+        // else the loaded data's 1st/99th percentile (an envelope, not a limit).
+        alarm_low: leg.crit_low ?? round6(q(0.01)),
+        alarm_high: leg.crit_high ?? round6(q(0.99)),
         readings: vals.slice(-50),
     };
     const id = idByTag.get(tag.toLowerCase());
