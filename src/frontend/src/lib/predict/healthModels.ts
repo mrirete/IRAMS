@@ -13,8 +13,20 @@ import type { PredictEquipmentClass } from './equipmentClass';
 
 export type SensorKind = 'vibration' | 'temperature' | 'pressure' | 'flow' | 'thickness' | 'current' | 'level' | 'other';
 
-/** Classify a sensor/measurement-point tag into a kind (keyword-based, like the engine). */
-export function sensorKind(tag: string): SensorKind {
+/**
+ * Classify a sensor/measurement-point into a kind.
+ *
+ * Three tells, in order of trust:
+ *   1. a word in the tag ("Vib Radial", "Bearing Temp") — how points are named
+ *      when a person types them into Condition Data;
+ *   2. the unit ("A", "°C", "mm/s", "Pa", "t/h") — what a DCS export carries
+ *      when the tag is a code (YFJ3_AI, TE_8332A) and says nothing in words;
+ *   3. the ISA loop prefix (TE/TT → temperature, PT/PDT → pressure, FT → flow,
+ *      LT → level, VT/XT/ZD → vibration, IT → current).
+ * Before 2026-09-15 only (1) existed, so every real DCS tag was 'other' and
+ * no diagnosis rule could see it.
+ */
+export function sensorKind(tag: string, unit?: string | null): SensorKind {
     const k = (tag || '').toLowerCase();
     if (k.includes('vib')) return 'vibration';
     if (k.includes('thick') || k.includes('wall') || k.includes('cml')) return 'thickness';
@@ -23,6 +35,28 @@ export function sensorKind(tag: string): SensorKind {
     if (k.includes('flow')) return 'flow';
     if (k.includes('current') || k.includes('amp')) return 'current';
     if (k.includes('level')) return 'level';
+
+    const u = (unit || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (u) {
+        if (/^(a|amp|amps|ka|ma)$/.test(u)) return 'current';
+        if (/^(°c|°f|c|f|k|degc|degf|℃)$/.test(u)) return 'temperature';
+        if (/^(mm\/s|in\/s|ips|g|grms|mm\/sec)$/.test(u)) return 'vibration';
+        if (/^(pa|kpa|mpa|bar|barg|bara|mbar|psi|psig|psia|inh2o|mmh2o|mmwc|kgf\/cm2|kg\/cm²)$/.test(u)) return 'pressure';
+        if (/^(n?m³\/h|n?m3\/h|t\/h|kg\/h|kg\/s|l\/min|l\/s|l\/h|gpm|m³\/min|m3\/min|scfm|nm3\/hr|m3\/hr)$/.test(u)) return 'flow';
+        if (/^(mm|mils|thou)$/.test(u)) return 'thickness';
+    }
+
+    // ISA loop prefix: the letters before the first digit of a loop tag.
+    const m = /^([a-z]{1,4})[\s_\-]?\d/i.exec((tag || '').trim());
+    if (m) {
+        const p = m[1].toUpperCase();
+        if (/^T[ETICR]?[A-Z]?$/.test(p)) return 'temperature';
+        if (/^PD?[TIC]?[A-Z]?$/.test(p) && !/^PV/.test(p)) return 'pressure';
+        if (/^F[TIQC]?[A-Z]?$/.test(p) && !/^FV/.test(p)) return 'flow';
+        if (/^L[TICS]?[A-Z]?$/.test(p) && !/^LV/.test(p)) return 'level';
+        if (/^(VT|VE|VI|XT|XE|ZD|ZT|ZS)$/.test(p)) return 'vibration';
+        if (/^(IT|II|IE)$/.test(p)) return 'current';
+    }
     return 'other';
 }
 

@@ -644,7 +644,7 @@ class PredictionService {
         let totalWeight = 0;
         let weightedSum = 0;
         sensors.forEach((s, i) => {
-            const w = model.weights[sensorKind(s.tag)] ?? model.defaultWeight;
+            const w = model.weights[sensorKind(s.tag, s.unit)] ?? model.defaultWeight;
             weightedSum += sensorScores[i] * w;
             totalWeight += w;
         });
@@ -995,7 +995,7 @@ class PredictionService {
         const sensors: SensorEvidence[] = fired.map(({ s, breachHigh, breachLow, regime }) => regime
             ? {
                 tag: s.tag,
-                kind: sensorKind(s.tag),
+                kind: sensorKind(s.tag, s.unit),
                 direction: regime.finding.direction,
                 value: regime.finding.value,
                 limit: null,
@@ -1007,7 +1007,7 @@ class PredictionService {
             }
             : {
                 tag: s.tag,
-                kind: sensorKind(s.tag),
+                kind: sensorKind(s.tag, s.unit),
                 direction: breachHigh ? 'high' : breachLow ? 'low' : 'rising',
                 value: s.current_value,
                 limit: breachHigh ? s.alarm_high : breachLow ? s.alarm_low : null,
@@ -1103,7 +1103,7 @@ class PredictionService {
                 supabase.from('reading_definitions').select('*').eq('asset_id', assetId).eq('is_active', true),
                 supabase.from('reading_logs').select('*').eq('asset_id', assetId).order('reading_date', { ascending: true }),
             ]);
-            const thicknessDef = (defsRes.data || []).find((d: any) => sensorKind(d.name) === 'thickness');
+            const thicknessDef = (defsRes.data || []).find((d: any) => sensorKind(d.name, d.unit) === 'thickness');
             if (thicknessDef) {
                 const pts = (logsRes.data || [])
                     .filter((l: any) => l.definition_id === thicknessDef.id && l.is_active !== false)

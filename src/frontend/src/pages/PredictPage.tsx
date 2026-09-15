@@ -309,7 +309,7 @@ export const PredictPage: React.FC = () => {
                     db.getReadingDefinitions(selectedAssetId),
                     db.getReadingLogs(selectedAssetId),
                 ]);
-                const thicknessDef = (defs || []).find((d: any) => sensorKind(d.name) === 'thickness' && d.isActive !== false);
+                const thicknessDef = (defs || []).find((d: any) => sensorKind(d.name, d.unit) === 'thickness' && d.isActive !== false);
                 if (!thicknessDef) return;
                 const points = (logs || [])
                     .filter((l: any) => l.definitionId === thicknessDef.id && l.isActive !== false)

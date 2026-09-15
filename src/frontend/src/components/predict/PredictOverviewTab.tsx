@@ -166,7 +166,7 @@ function decomposeHealthIndex(
 
     return model.subIndices.flatMap(group => {
         const kinds = new Set(group.kinds);
-        const list = sensorValues.filter(s => kinds.has(sensorKind(s.tag)));
+        const list = sensorValues.filter(s => kinds.has(sensorKind(s.tag, s.unit)));
         if (list.length === 0) return [];
         const h = categoryHealth(list);
         return [{

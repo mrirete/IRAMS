@@ -168,7 +168,7 @@ export function checkCbmCoverage(
     const byId = new Map(readingDefs.map(d => [d.id, d]));
     const byKind = new Map<SensorKind, CbmPoint>();
     for (const d of activeDefs) {
-        const k = sensorKind(d.name);
+        const k = sensorKind(d.name, d.unit);
         if (!byKind.has(k)) byKind.set(k, d);
     }
     const rows: CbmCoverageRow[] = [];
