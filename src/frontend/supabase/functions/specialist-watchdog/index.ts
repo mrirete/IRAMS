@@ -56,6 +56,14 @@ const RCA_MIN_COST = 25_000;
 const RCA_MAX_PER_RUN = 3;
 const DRIFT_LOOKBACK_DAYS = 14;
 const DRIFT_MAX_PER_RUN = 5;
+// 5b — live-signal trend toward a limit (0362 rollups). A tag is flagged when
+// its 7-day least-squares line, extended one more week, crosses an alarm band
+// it has not yet reached. Needs a day of hourly rows and a 2 % move so a
+// noisy flat signal near its limit cannot fire every night.
+const TREND_DAYS = 7;
+const TREND_MIN_HOURS = 24;
+const TREND_MIN_DRIFT_PCT = 2;
+const TREND_MAX_PER_RUN = 5;
 
 serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -326,6 +334,101 @@ serve(async (req) => {
       }
     }
 
+    // ── 5b. Live-signal trend toward a limit ──────────────────────────────
+    // Check 5 reads the LATEST manual reading against its band. This reads the
+    // last 7 days of live-feed history (sem_readings_trend, one pass, RLS-
+    // scoped) and asks the question an engineer asks of a trend: "at this
+    // rate, when does it cross the line?" A tag already beyond its alarm band
+    // is flagged as a critical departure here too, since check 5 never sees
+    // live tags. Same draft_de_task proposal, same per-asset snooze.
+    let trendFlags = 0;
+    try {
+      const [trendQ, liveQ, defQ2] = await Promise.all([
+        db.rpc("sem_readings_trend", { p_days: TREND_DAYS }),
+        db.from("ers_sensor_readings").select("asset_id, tag, unit, current_value, alarm_low, alarm_high").eq("company_id", companyId).limit(5000),
+        db.from("reading_definitions").select("asset_id, sensor_tag, reading_type_code, name, min_warning, max_warning, min_critical, max_critical")
+          .eq("company_id", companyId).eq("is_active", true).not("sensor_tag", "is", null).limit(5000),
+      ]);
+      if (trendQ.error) throw new Error(trendQ.error.message);
+      type Trend = { asset_id: string; tag: string; unit: string | null; n_hours: number; first_avg: number; last_avg: number; mean_value: number; slope_per_day: number | null; pct_change: number | null };
+      type Live = { asset_id: string; tag: string; unit: string | null; current_value: number | null; alarm_low: number | null; alarm_high: number | null };
+      type Def2 = { asset_id: string; sensor_tag: string | null; reading_type_code: string | null; name: string; min_warning: number | null; max_warning: number | null; min_critical: number | null; max_critical: number | null };
+      const liveByKey = new Map(((liveQ.data ?? []) as Live[]).map((l) => [`${l.asset_id}|${l.tag.toLowerCase()}`, l]));
+      const defByKey = new Map<string, Def2>();
+      for (const d of (defQ2.data ?? []) as Def2[]) {
+        if (d.sensor_tag) defByKey.set(`${d.asset_id}|${d.sensor_tag.toLowerCase()}`, d);
+        if (d.reading_type_code) defByKey.set(`${d.asset_id}|${d.reading_type_code.toLowerCase()}`, d);
+      }
+      // One flag per asset per night, worst first (already-beyond before trending-toward).
+      type Flag = { asset_id: string; tag: string; unit: string; kind: "BEYOND" | "TOWARD"; text: string };
+      const best = new Map<string, Flag>();
+      for (const t of (trendQ.data ?? []) as Trend[]) {
+        if (!t.asset_id || !assetById.has(t.asset_id)) continue;
+        const key = `${t.asset_id}|${t.tag.toLowerCase()}`;
+        const live = liveByKey.get(key);
+        const def = defByKey.get(key);
+        // Warning band first (a maintenance limit), else the projection's alarm line.
+        const hi = def?.max_warning ?? def?.max_critical ?? live?.alarm_high ?? null;
+        const lo = def?.min_warning ?? def?.min_critical ?? live?.alarm_low ?? null;
+        if (hi == null && lo == null) continue;
+        const unit = t.unit ?? live?.unit ?? "";
+        const last = Number(t.last_avg), slope = Number(t.slope_per_day ?? 0), mean = Number(t.mean_value);
+        if (!Number.isFinite(last)) continue;
+        let flag: Flag | null = null;
+        if ((hi != null && last > hi) || (lo != null && last < lo)) {
+          flag = { asset_id: t.asset_id, tag: t.tag, unit, kind: "BEYOND",
+            text: `${t.tag} = ${last.toFixed(2)} ${unit} (7-day mean ${mean.toFixed(2)}), beyond its ${hi != null && last > hi ? `high limit ${hi}` : `low limit ${lo}`}` };
+        } else if (Number(t.n_hours) >= TREND_MIN_HOURS && Number.isFinite(slope) && mean !== 0
+          && Math.abs((slope * TREND_DAYS) / Math.abs(mean)) * 100 >= TREND_MIN_DRIFT_PCT) {
+          const projected = last + slope * TREND_DAYS;
+          const towardHi = hi != null && slope > 0 && projected >= hi;
+          const towardLo = lo != null && slope < 0 && projected <= lo;
+          if (towardHi || towardLo) {
+            const limit = towardHi ? hi! : lo!;
+            const daysToCross = Math.max(0.5, (limit - last) / slope);
+            flag = { asset_id: t.asset_id, tag: t.tag, unit, kind: "TOWARD",
+              text: `${t.tag} ${slope > 0 ? "rising" : "falling"} ${Math.abs(Number(t.pct_change ?? 0)).toFixed(1)}% over ${TREND_DAYS} days (${Number(t.first_avg).toFixed(2)} → ${last.toFixed(2)} ${unit}); at this rate it crosses ${limit} ${unit} in ~${daysToCross.toFixed(0)} day(s)` };
+          }
+        }
+        if (!flag) continue;
+        const cur = best.get(flag.asset_id);
+        if (!cur || (cur.kind === "TOWARD" && flag.kind === "BEYOND")) best.set(flag.asset_id, flag);
+      }
+      let taken = 0;
+      for (const [assetId, f] of best) {
+        if (taken >= TREND_MAX_PER_RUN) break;
+        if (snoozed.has(`${assetId}|draft_de_task`)) continue;
+        const a = assetById.get(assetId);
+        taken += 1; trendFlags += 1;
+        findings.push(`signal-${f.kind === "BEYOND" ? "beyond" : "trend"}:${a?.tag ?? assetId}/${f.tag}`);
+        snoozed.add(`${assetId}|draft_de_task`); // one ask per asset per night, shared with check 5
+        proposals.push({
+          agent_type: "watchdog",
+          asset_id: assetId,
+          action_type: "draft_de_task",
+          status: "pending_review",
+          draft_payload: {
+            asset_id: assetId,
+            asset_tag: a?.tag ?? "(unknown)",
+            title: f.kind === "BEYOND"
+              ? `Critical departure — ${f.tag} on ${a?.tag ?? "asset"} is beyond its limit`
+              : `Trend toward limit — ${f.tag} on ${a?.tag ?? "asset"} is on course to breach within a week`,
+            root_cause_summary: `${f.text}. Basis: sem_readings_trend(${TREND_DAYS}) over stored live-feed history; limits from the reading definition (warning) or the sensor alarm band.`,
+            proposed_solution: f.kind === "BEYOND"
+              ? "Inspect now and restore operating conditions — the live feed shows the signal outside its band, not a single bad sample."
+              : "Inspect and correct the cause of the drift before the limit is reached; check the last 7 days with the Specialist (query_readings) and compare against load before concluding the machine is degrading.",
+            annual_cost: 0,
+            estimated_savings: 0,
+            priority: f.kind === "BEYOND" ? "HIGH" : "MEDIUM",
+            created_by: "watchdog",
+          },
+        });
+      }
+    } catch (e) {
+      // 0362 not applied yet, or no live feed on this tenant — non-fatal.
+      console.warn("signal-trend check skipped (non-fatal):", (e as Error)?.message ?? e);
+    }
+
     // ── 6. Budget breach → notify finance authority ───────────────────────
     // FinOps owns the variance math; this is only the announcement. Once per
     // budget per 30 days (entity_id-keyed dedupe), to MANAGER / EXECUTIVE /
@@ -406,6 +509,7 @@ serve(async (req) => {
     const summary =
       `Nightly watchdog: ${wos.length} WOs scanned · ${spikes} cost step-change(s) · ${drifts} PM-drift signal(s)` +
       `${driftFlags ? ` · ${driftFlags} Golden-Spot drift(s)` : ""}` +
+      `${trendFlags ? ` · ${trendFlags} live-signal trend(s) toward a limit` : ""}` +
       `${rcaDrafts ? ` · ${rcaDrafts} RCA draft(s) opened` : ""}` +
       `${budgetAlerts ? ` · ${budgetAlerts} budget alert(s) sent` : ""}` +
       `${dqNote ? " · data-quality regression flagged" : ""} · ${inserted} proposal(s) queued.` +

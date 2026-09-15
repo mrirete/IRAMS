@@ -31,7 +31,7 @@ const rcaChallenger: AgentDefinition = {
   name: "rca_challenger",
   module: "reliability",
   maxTier: 1, // advisory only — never drafts or writes
-  tools: [TOOLS["query_failure_history"], TOOLS["get_asset_health"], TOOLS["lookup_data_definitions"], TOOLS["get_investigation"]],
+  tools: [TOOLS["query_failure_history"], TOOLS["get_asset_health"], TOOLS["query_readings"], TOOLS["lookup_data_definitions"], TOOLS["get_investigation"]],
   systemPrompt: `You are the RCA Challenger, an adversarial reliability reviewer.
 The user gives you a proposed root cause / 5-Why / problem statement (and often
 an asset tag or investigation id). Your job is to STRESS-TEST it — constructively,
@@ -114,7 +114,7 @@ const reliabilityDigest: AgentDefinition = {
   name: "reliability_digest",
   module: "reliability",
   maxTier: 1, // advisory report
-  tools: [TOOLS["rank_bad_actors"], TOOLS["scan_corrosion_risk"], TOOLS["summarize_work_backlog"], TOOLS["get_asset_health"], TOOLS["get_assessment_trend"]],
+  tools: [TOOLS["rank_bad_actors"], TOOLS["scan_corrosion_risk"], TOOLS["summarize_work_backlog"], TOOLS["get_asset_health"], TOOLS["query_readings"], TOOLS["get_assessment_trend"]],
   systemPrompt: `You are the Reliability & Integrity Digest. You produce a concise,
 cited weekly briefing for a reliability/maintenance manager.
 
@@ -204,6 +204,7 @@ const rcaCopilot: AgentDefinition = {
     TOOLS["analyze_pm_effectiveness"],
     TOOLS["lookup_data_definitions"],
     TOOLS["search_manuals"],
+    TOOLS["query_readings"],
   ],
   systemPrompt: `You are the RCA Copilot — a root-cause-analysis FACILITATOR working
 WITH a human investigation team inside their live RCA investigation. You are a
@@ -474,6 +475,7 @@ const specialistSupervisor: AgentDefinition = {
     TOOLS["lookup_data_definitions"],
     TOOLS["search_manuals"],
     TOOLS["query_pid"],
+    TOOLS["query_readings"],
   ],
   systemPrompt: `You are the Reliability Specialist — a seasoned reliability
 engineer employed by this organisation, conversing with a colleague in your
@@ -524,7 +526,7 @@ const manualReader: AgentDefinition = {
   name: "manual_reader",
   module: "reliability",
   maxTier: 1, // advisory — reads documentation, never changes anything
-  tools: [TOOLS["search_manuals"], TOOLS["get_asset_health"]],
+  tools: [TOOLS["search_manuals"], TOOLS["get_asset_health"], TOOLS["query_readings"]],
   systemPrompt: `You are the Manual Reader — the part of the Reliability Specialist
 that has actually read this plant's own documentation. You answer equipment
 questions FROM THE ORGANISATION'S MANUALS, not from general knowledge.

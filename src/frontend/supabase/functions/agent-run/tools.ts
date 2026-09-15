@@ -12,6 +12,15 @@ import {
   type PidEdgeInput,
   type PidNodeInput,
 } from "./pidGraph.ts";
+import {
+  bucketsFromManualLogs,
+  downsample,
+  normalizeBuckets,
+  summarizeWindow,
+  type Bands,
+  type SeriesSummary,
+  type WindowBucket,
+} from "./readingsSummary.ts";
 
 // ── rank_bad_actors ──────────────────────────────────────────────────────
 // Folds "query WO cost/frequency" + "Pareto" into one deterministic tool
@@ -1631,6 +1640,25 @@ const getAssetContext: AgentTool = {
     // Condition-monitoring points.
     const { data: points } = await ctx.db.from("reading_definitions").select("name, unit, category, min_warning, max_warning, min_critical, max_critical, limit_source, monitoring_frequency_days").eq("asset_id", assetId).eq("is_active", true).limit(50);
 
+    // What those points have DONE in the last 7 days (0362). One line each, so
+    // the Specialist sees "vibration rising 12%" without having to ask; the
+    // full window is a query_readings call away. Never blocks the context.
+    let recentSignals: Array<Record<string, unknown>> = [];
+    let recentWarnings: string[] = [];
+    try {
+      const r = await summarizeAssetSeries(ctx, assetId, { days: 7, maxSeries: 12, maxPoints: 0 });
+      recentWarnings = r.warnings.filter((w) => !w.startsWith("No reading points"));
+      recentSignals = r.series.map((s) => ({
+        tag: s.tag, unit: s.unit, source: s.source,
+        last: s.summary.last, direction: s.summary.direction, pct_change_7d: s.summary.pct_change,
+        excursions_warn: s.summary.excursions.warn_high + s.summary.excursions.warn_low,
+        excursions_crit: s.summary.excursions.crit_high + s.summary.excursions.crit_low,
+        coverage_pct: s.summary.coverage_pct, headline: s.summary.headline,
+      }));
+    } catch (e) {
+      recentWarnings = [`7-day signal summary unavailable: ${(e as Error)?.message ?? e}`];
+    }
+
     ctx.sources.push({ kind: "assets", ref: asset.id, label: `register record ${asset.tag}` });
     if (oc.updated_at) ctx.sources.push({ kind: "assets", ref: `${asset.id}#operating_context`, label: `operating context (updated ${String(oc.updated_at).slice(0, 10)})` });
     for (const r of rcm) ctx.sources.push({ kind: "rcm_study", ref: String(r.study_id), label: `RCM study ${r.title}` });
@@ -1639,6 +1667,9 @@ const getAssetContext: AgentTool = {
     if (!asset.asset_class) warnings.push("No ISO 14224 class on the register — classify the asset before relying on class-specific failure modes.");
     if (!operating_context.complete) warnings.push("Operating context is incomplete (needs mode, medium/environment and at least one design+operating value) — advice on duty, load or derating is unsupported until it is filled.");
     if (aboveDesign.length) warnings.push(`Operating ABOVE DESIGN on: ${aboveDesign.join(", ")} — treat as accelerated-wear evidence.`);
+    warnings.push(...recentWarnings);
+    const moving = recentSignals.filter((s) => (s.direction === "rising" || s.direction === "falling") || Number(s.excursions_crit) > 0);
+    if (moving.length) warnings.push(`Signals moving in the last 7 days: ${moving.slice(0, 4).map((s) => `${s.tag} ${s.headline}`).join(" | ")} — call query_readings before advising.`);
 
     return {
       data: {
@@ -1649,7 +1680,8 @@ const getAssetContext: AgentTool = {
         breakdown: { components, parts, critical_spares: parts.filter((p) => p.critical).length },
         rcm_studies: rcm,
         reading_points: points ?? [],
-        note: "Classification, context, breakdown and points are register data entered by the organisation (ISO 14224 §7 / Annex A). 'operating_pct_of_design' > 100 means the asset runs beyond its rated value.",
+        recent_signals_7d: recentSignals,
+        note: "Classification, context, breakdown and points are register data entered by the organisation (ISO 14224 §7 / Annex A). 'operating_pct_of_design' > 100 means the asset runs beyond its rated value. recent_signals_7d is computed from stored history (live feed or manual rounds, per 'source'); use query_readings for a longer window or the series itself.",
       },
       sources: [{ kind: "assets", ref: asset.id, label: `asset context ${asset.tag}: ${components.length} components, ${parts.length} BOM lines, ${rcm.length} RCM studies, ${(points ?? []).length} reading points` }],
       warnings: warnings.length ? warnings : undefined,
@@ -1657,8 +1689,211 @@ const getAssetContext: AgentTool = {
   },
 };
 
+// ── query_readings ───────────────────────────────────────────────────────
+// The read side of the time-series store. 0236 made every writer append to
+// ers_sensor_reading_points; 0362 added hourly rollups and sem_readings_window.
+// Until this tool, no agent could see a signal — get_asset_health exposed
+// last_reading_at and nothing else — so "P-101 has failed four times" was the
+// whole story and "P-101 has run 15% hotter for three weeks" was invisible.
+//
+// Two sources, one summariser (readingsSummary.ts):
+//   • live series  — sem_readings_window(asset, tag, from, to), RLS-scoped;
+//   • manual rounds — reading_logs, for every reading definition not covered
+//     by a live tag. Most sites are rounds-only on day one; the tool must
+//     answer there too, and say so.
+// Bands come from reading_definitions (warning + critical), matched to a live
+// tag through sensor_tag / reading_type_code (0298), else from the projection's
+// alarm_low/high which Predict treats as the alarm line.
+
+const READ_WINDOWS: Record<string, number> = { "24h": 1, "7d": 7, "30d": 30, "90d": 90 };
+const READ_MAX_SERIES = 12;
+
+interface SeriesOut {
+  tag: string;
+  unit: string | null;
+  source: "sensor" | "manual";
+  bands: Bands;
+  summary: SeriesSummary;
+  buckets?: WindowBucket[];
+}
+
+interface ReadingDefRow {
+  id: string; name: string; unit: string | null; sensor_tag: string | null; reading_type_code: string | null;
+  min_warning: number | null; max_warning: number | null; min_critical: number | null; max_critical: number | null;
+}
+
+/**
+ * Shared by query_readings and the 7-day lines in get_asset_context. Never
+ * throws on a missing RPC (pre-0362 tenant): it degrades to manual rounds and
+ * a warning, so asset context still answers.
+ */
+async function summarizeAssetSeries(
+  ctx: ToolContext,
+  assetId: string,
+  opts: { days: number; tagFilter?: string | null; maxSeries?: number; maxPoints?: number },
+): Promise<{ series: SeriesOut[]; from: string; to: string; warnings: string[] }> {
+  const to = new Date();
+  const from = new Date(to.getTime() - opts.days * 86_400_000);
+  const fromIso = from.toISOString(), toIso = to.toISOString();
+  const maxSeries = opts.maxSeries ?? READ_MAX_SERIES;
+  const maxPoints = opts.maxPoints ?? 0;
+  const filter = (opts.tagFilter ?? "").trim().toLowerCase();
+  const matches = (s: string | null | undefined) => !filter || String(s ?? "").toLowerCase().includes(filter);
+  const warnings: string[] = [];
+  const series: SeriesOut[] = [];
+
+  const [defQ, liveQ] = await Promise.all([
+    ctx.db.from("reading_definitions")
+      .select("id, name, unit, sensor_tag, reading_type_code, min_warning, max_warning, min_critical, max_critical")
+      .eq("asset_id", assetId).eq("is_active", true).limit(100),
+    ctx.db.from("ers_sensor_readings").select("tag, unit, alarm_low, alarm_high").eq("asset_id", assetId).limit(100),
+  ]);
+  const defs = (defQ.data ?? []) as ReadingDefRow[];
+  const live = (liveQ.data ?? []) as { tag: string; unit: string | null; alarm_low: number | null; alarm_high: number | null }[];
+
+  const defForTag = (tag: string): ReadingDefRow | undefined => {
+    const t = tag.toLowerCase();
+    return defs.find((d) => (d.sensor_tag ?? "").toLowerCase() === t)
+      ?? defs.find((d) => (d.reading_type_code ?? "").toLowerCase() === t)
+      ?? defs.find((d) => d.name.toLowerCase() === t);
+  };
+  const bandsFromDef = (d: ReadingDefRow): Bands => ({
+    warn_low: d.min_warning, warn_high: d.max_warning, crit_low: d.min_critical, crit_high: d.max_critical,
+  });
+
+  // ── Live series ──────────────────────────────────────────────────────
+  const coveredDefs = new Set<string>();
+  let rpcMissing = false;
+  for (const t of live.filter((l) => matches(l.tag)).slice(0, maxSeries)) {
+    const def = defForTag(t.tag);
+    if (def) coveredDefs.add(def.id);
+    const bands: Bands = def ? bandsFromDef(def) : { crit_low: t.alarm_low, crit_high: t.alarm_high };
+    const unit = t.unit || def?.unit || null;
+    let buckets: WindowBucket[] = [];
+    if (!rpcMissing) {
+      const { data, error } = await ctx.db.rpc("sem_readings_window", {
+        p_asset_id: assetId, p_tag: t.tag, p_from: fromIso, p_to: toIso, p_max_buckets: 96,
+      });
+      if (error) {
+        rpcMissing = true;
+        warnings.push(`Signal history unavailable (${error.message}) — only the latest projected values are known for live tags.`);
+      } else {
+        buckets = normalizeBuckets((data ?? []) as Record<string, unknown>[]);
+      }
+    }
+    series.push({
+      tag: t.tag, unit, source: "sensor", bands,
+      summary: summarizeWindow(buckets, { from: fromIso, to: toIso, bands, unit }),
+      buckets: maxPoints > 0 ? downsample(buckets, maxPoints) : undefined,
+    });
+  }
+
+  // ── Manual rounds for everything not covered by a live tag ───────────
+  const manualDefs = defs.filter((d) => !coveredDefs.has(d.id) && matches(d.name)).slice(0, Math.max(0, maxSeries - series.length));
+  if (manualDefs.length) {
+    const { data: logs, error } = await ctx.db.from("reading_logs")
+      .select("definition_id, reading_date, reading_time, reading_value")
+      .eq("asset_id", assetId).eq("is_active", true)
+      .gte("reading_date", fromIso.slice(0, 10))
+      .order("reading_date", { ascending: true }).limit(5000);
+    if (error) warnings.push(`reading_logs query failed: ${error.message}`);
+    const byDef = new Map<string, typeof logs>();
+    for (const l of (logs ?? []) as { definition_id: string | null }[]) {
+      if (!l.definition_id) continue;
+      const arr = byDef.get(l.definition_id) ?? [];
+      arr.push(l as never);
+      byDef.set(l.definition_id, arr);
+    }
+    for (const d of manualDefs) {
+      const bands = bandsFromDef(d);
+      const buckets = bucketsFromManualLogs((byDef.get(d.id) ?? []) as never);
+      series.push({
+        tag: d.name, unit: d.unit, source: "manual", bands,
+        summary: summarizeWindow(buckets, { from: fromIso, to: toIso, bands, unit: d.unit }),
+        buckets: maxPoints > 0 ? downsample(buckets, maxPoints) : undefined,
+      });
+    }
+  }
+
+  if (series.length === 0) {
+    warnings.push("No reading points on this asset — no live feed and no Condition Data definitions. Nothing can be said about its signals.");
+  } else if (!series.some((s) => s.source === "sensor")) {
+    warnings.push("Manual Condition Data only (no live feed): trends are at route cadence, not continuous.");
+  }
+  return { series, from: fromIso, to: toIso, warnings };
+}
+
+const queryReadings: AgentTool = {
+  name: "query_readings",
+  description:
+    "Read an asset's signal history over a window (24h, 7d, 30d, 90d) — per reading point: trend direction, slope per day and % change, min/avg/max, first and last values, excursions beyond the warning and critical bands, data coverage, and a downsampled series. Reads the live sensor history when a feed exists and falls back to manual Condition Data rounds otherwise (and says which). Use this BEFORE any claim about how a signal is behaving — a single current value or a work-order count is not a trend. Provide asset_tag or asset_id; optionally a tag to narrow to one point.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string", description: "Asset tag (e.g. 'P-101'). Or provide asset_id." },
+      asset_id: { type: "string", description: "Asset UUID, if known." },
+      tag: { type: "string", description: "Reading point / sensor tag to narrow to (substring match, e.g. 'vib', 'BOILER_OUTLET_STEAM_TEMP'). Omit for all points on the asset." },
+      window: { type: "string", enum: Object.keys(READ_WINDOWS), description: "Look-back window (default '7d')." },
+      max_points: { type: "integer", description: "Downsampled buckets to return per series for plotting or inspection (default 24; 0 = summaries only)." },
+    },
+    required: [],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    let assetId: string | null = typeof args?.asset_id === "string" && args.asset_id.trim() ? args.asset_id.trim() : null;
+    const assetTag = typeof args?.asset_tag === "string" ? args.asset_tag.trim() : "";
+    const windowKey: string = typeof args?.window === "string" && READ_WINDOWS[args.window] ? args.window : "7d";
+    const maxPoints: number = Number.isFinite(args?.max_points) ? Math.max(0, Math.min(96, args.max_points)) : 24;
+    const tagFilter: string | null = typeof args?.tag === "string" && args.tag.trim() ? args.tag.trim() : null;
+
+    let asset: { id: string; tag: string; name: string } | null = null;
+    if (assetId) {
+      const { data } = await ctx.db.from("assets").select("id, tag, name").eq("id", assetId).limit(1);
+      asset = data?.[0] ?? null;
+    } else if (assetTag) {
+      const { data } = await ctx.db.from("assets").select("id, tag, name").ilike("tag", assetTag).limit(1);
+      asset = data?.[0] ?? null;
+    }
+    if (!asset) {
+      return { data: { found: false, asset_tag: assetTag || null }, sources: [], warnings: ["No matching asset — provide a valid asset_tag or asset_id."] };
+    }
+    assetId = asset.id;
+
+    const { series, from, to, warnings } = await summarizeAssetSeries(ctx, assetId, {
+      days: READ_WINDOWS[windowKey], tagFilter, maxSeries: READ_MAX_SERIES, maxPoints,
+    });
+    if (tagFilter && series.length === 0) {
+      warnings.push(`No reading point on ${asset.tag} matches '${tagFilter}' — call without a tag to list what exists.`);
+    }
+
+    const sources = series.map((s) => ({
+      kind: s.source === "sensor" ? "ers_sensor_reading_points" : "reading_logs",
+      ref: `${assetId}|${s.tag}|${windowKey}`,
+      label: `${asset!.tag} ${s.tag}: ${s.summary.n_points} samples, ${windowKey}`,
+    }));
+    for (const s of sources) ctx.sources.push(s);
+
+    return {
+      data: {
+        found: true,
+        asset,
+        window: { label: windowKey, from, to },
+        series: series.map((s) => ({
+          tag: s.tag, unit: s.unit, source: s.source, bands: s.bands,
+          ...s.summary,
+          buckets: s.buckets,
+        })),
+        note: "direction is 'rising'/'falling' only when the fitted trend moves the signal by ≥2% of its mean across the window; excursions count buckets, not samples; coverage_pct < 50 means most of the window has no data — say so rather than extrapolate. Manual series are at route cadence.",
+      },
+      sources: sources.length ? sources : [{ kind: "assets", ref: assetId, label: `no reading points on ${asset.tag}` }],
+      warnings: warnings.length ? warnings : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [getAssetContext.name]: getAssetContext,
+  [queryReadings.name]: queryReadings,
   [getRcmCoverage.name]: getRcmCoverage,
   [queryPid.name]: queryPid,
   [searchManuals.name]: searchManuals,
