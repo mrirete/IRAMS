@@ -136,6 +136,44 @@ receives it as `basis: 'regime-residual'` so the fan's FMEA names the hypothesis
 The injection is currently **on**. To show the quiet case, re-run the seed for that tag
 without `--inject-fault` (same `--end` as the original load).
 
+### 4a. In the app, on production (2026-09-15 late evening)
+
+Driven headlessly against irams.vercel.app as admin001 (Playwright): **Predict › B-301 ›
+New Prediction › Prediction Alert Rule › Run Prediction**.
+
+Final result — **1 prediction alert**, `anomaly / HIGH`, governance tier 2, confidence
+0.92, **failure mode PLU (Plugged / Choked / Fouled)** with OVL as the alternative:
+
+> YFJ3_AI at 24.66 A — 8.9 % above the 22.65 A expected at this load (ZZQBCHLL = 59.51
+> t/h); 6.8σ against a 30-day baseline (n=98, R²=0.8141), persisted 2 consecutive hour(s).
+> Inside its alarm band — a fixed limit would not have caught this.
+> • PLU — evidence: *YFJ3_AI: 24.66 A high vs 22.65 A expected at this load (ZZQBCHLL),
+> 6.8σ — inside its band* — action: inspect/clean strainers, filters or tubes; verify
+> upstream conditions.
+
+It took four runs to get there, and each run found something real in the product, not
+in the demo:
+
+| Run | Result | Cause | Fix |
+|---|---|---|---|
+| 1 | 15 `threshold_breach` alerts, no regime alert | Seed had put every unbanded tag's alarm line at the 1st/99th percentile of *normal* operation; the scan's "approaching" deadband then fired on anything near its own p99. `YFJ3_AI` fired on the band first, which pre-empts the regime scan for that tag. | Seed: unbanded tags carry **no** alarm line (a percentile is an envelope, not a limit). |
+| 2 | 1 alert — `TE_8332A` "approaching 550 °C" at 535.8 °C; still no regime alert | (a) The engine's default deadband is 10 % **of the limit value** (55 °C on a 550 °C limit), and the live-feed loader never read the per-point rationalisation that 0205 put on the reading definition — only the manual bridge did. (b) `_scanRegime` capped candidates at the first 12 tags in alphabetical order; `YFJ3_AI` is last of 30. | Live loader merges the linked definition (bands, deadband, persistence, operator action) through `sensor_tag`; regime cap 40, reads in parallel. `TE_8332A` definition: deadband 1 %, persistence 3. |
+| 3 | 1 alert — the regime finding, but **no hypothesis** | `diagnosisRules` branches on equipment class; a boiler is not `rotating`, so a fan current never reached a rule. And `sensorKind()` classified points by words in the tag — every DCS code (`YFJ3_AI`) was kind `other`. | Class-agnostic regime-residual rules (current up → PLU/OVL, temperature up → FOL/OHE, flow down → PLU/LOO…). `sensorKind(tag, unit)` falls back to the unit, then the ISA prefix; valves and computed points stay `other`. |
+| 4 | **1 alert, PLU/OVL** — above | — | — |
+
+**Permits › WO-2026-B301-01 › Safety (JSA) › PTW-2026-B301-01 › Propose from P&ID**, same
+session: two proposals from the real drawing — `XV-301 Feedwater isolation` and
+`TV_8329ZC spray valve`, both `PROCESS / LOCK / PROPOSED` with the `P&ID` provenance tag —
+plus the toast *"The drawing shows feed(s) with no isolating valve on the sheet: Coal bin,
+FAN-301 Primary fan, FAN-302 Secondary fan — plan these by hand."* Accepting the first
+moved it to PENDING ("Accepted — now pending isolation."). The work order's Details tab
+shows the Drawings chip for the P&ID.
+
+A limitation the drawing exposes honestly: the graph has one process edge type, so the
+water side and the flue side of a heat exchanger are the same node — the feedwater
+isolation is "found" for the furnace through the air-preheater path. Typed sides on
+edges would fix it; the report of unvalved feeds is already correct.
+
 ## 5. Reproduce, refresh, remove
 
 ```powershell
@@ -164,3 +202,7 @@ the tag (learned the hard way on 2026-09-15).
   ran in March 2022.
 - `agent-run` needs a redeploy for the "how often" fix and the untimed-projection
   fallback to reach the live Specialist.
+- The scan's "approaching" deadband is a percentage of the limit **value** engine-wide.
+  Points whose limit is far from zero (temperatures in °C, pressures in Pa) need a
+  per-point deadband on their reading definition, or they alarm on normal operation.
+  Worth a follow-up: default the deadband to a share of the band **width**.

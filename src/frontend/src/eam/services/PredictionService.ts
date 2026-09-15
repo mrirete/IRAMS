@@ -997,12 +997,13 @@ class PredictionService {
                 tag: s.tag,
                 kind: sensorKind(s.tag, s.unit),
                 direction: regime.finding.direction,
-                value: regime.finding.value,
+                // Rounded here so the evidence line reads like the alert, not like a float.
+                value: Math.round(regime.finding.value * 100) / 100,
                 limit: null,
                 unit: s.unit,
                 basis: 'regime-residual' as const,
-                expected: regime.finding.expected,
-                z: regime.finding.z,
+                expected: Math.round(regime.finding.expected * 100) / 100,
+                z: Math.round(regime.finding.z * 10) / 10,
                 loadTag: regime.loadTag,
             }
             : {
