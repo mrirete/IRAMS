@@ -42,6 +42,7 @@ import {
     alignSeries, fitRegime, evaluateRegime, describeFinding, MIN_BASELINE_PAIRS,
     type RegimeFinding,
 } from '../../lib/predict/regimeBaseline';
+import { alarmGates } from '../../lib/predict/alarmGates';
 
 /** A point the regime detector fired on, with what it needs to explain itself. */
 interface RegimeFired {
@@ -816,10 +817,10 @@ class PredictionService {
 
             // Threshold breach: current value near or beyond alarm limits.
             // Approach margin (deadband) is per-point when rationalized (0205),
-            // engine default 10% otherwise; clamped to a sane 0–50%.
-            const deadband = Math.min(50, Math.max(0, s.alarm_deadband_pct ?? 10)) / 100;
-            const hiGate = s.alarm_high != null ? s.alarm_high * (1 - deadband) : null;
-            const loGate = s.alarm_low != null ? s.alarm_low * (1 + deadband) : null;
+            // engine default 10% otherwise; measured against the band WIDTH
+            // when both limits exist (lib/predict/alarmGates — the old
+            // share-of-limit-value rule read 535 °C as "approaching 550").
+            const { hiGate, loGate } = alarmGates(s.alarm_low, s.alarm_high, s.alarm_deadband_pct);
             let breachHigh = hiGate != null && s.current_value >= hiGate;
             let breachLow = loGate != null && s.current_value <= loGate;
 
