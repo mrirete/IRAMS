@@ -298,6 +298,38 @@ export function diagnoseEvidence(ctx: DiagnosisContext): DiagnosisResult {
         if (tempHigh.length > 0) add('OHE', 0.4, 'screening-heuristic', tempHigh.map(ev));
     }
 
+    // ── regime residuals: off the asset's own baseline AT THIS LOAD ──
+    // Class-agnostic on purpose. A boiler's ID-fan current, a compressor's
+    // discharge temperature and a pump's power all sit on assets whose
+    // register class is not 'rotating', and the class blocks above never see
+    // them. The residual already says "unusual for this duty"; these name the
+    // usual reasons, as screening heuristics the asset's own priors can boost.
+    const regime = ctx.sensors.filter(s => s.basis === 'regime-residual');
+    if (regime.length > 0) {
+        const rc = (kind: SensorKind, dirs: SensorEvidence['direction'][]) => regime.filter(s => s.kind === kind && dirs.includes(s.direction));
+        const cUp = rc('current', ['high', 'rising']);
+        if (cUp.length > 0) {
+            // More power for the same duty: build-up / fouling / erosion on the driven machine first, drive overload second.
+            add('PLU', 0.5, 'screening-heuristic', cUp.map(ev));
+            add('OVL', 0.45, 'screening-heuristic', cUp.map(ev));
+        }
+        const tUp = rc('temperature', ['high', 'rising']);
+        if (tUp.length > 0) {
+            add('FOL', 0.5, 'screening-heuristic', tUp.map(ev));
+            add('OHE', 0.4, 'screening-heuristic', tUp.map(ev));
+        }
+        const vUp = rc('vibration', ['high', 'rising']);
+        if (vUp.length > 0) add('VIB', 0.5, 'screening-heuristic', vUp.map(ev));
+        const fDown = rc('flow', ['low', 'falling']);
+        const pDown = rc('pressure', ['low', 'falling']);
+        if (fDown.length > 0 || pDown.length > 0) {
+            add('PLU', 0.45, 'screening-heuristic', [...fDown, ...pDown].map(ev));
+            add('LOO', 0.4, 'screening-heuristic', [...fDown, ...pDown].map(ev));
+        }
+        const pUp = rc('pressure', ['high', 'rising']);
+        if (pUp.length > 0) add('PLU', 0.4, 'screening-heuristic', pUp.map(ev));   // higher ΔP / back-pressure at the same throughput
+    }
+
     // ── asset priors: what this asset is documented/known to do ──
     const priors = ctx.priors ?? {};
     const boosted = candidates.map(c => {
