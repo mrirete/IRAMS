@@ -202,7 +202,9 @@ the tag (learned the hard way on 2026-09-15).
   ran in March 2022.
 - `agent-run` needs a redeploy for the "how often" fix and the untimed-projection
   fallback to reach the live Specialist.
-- The scan's "approaching" deadband is a percentage of the limit **value** engine-wide.
-  Points whose limit is far from zero (temperatures in °C, pressures in Pa) need a
-  per-point deadband on their reading definition, or they alarm on normal operation.
-  Worth a follow-up: default the deadband to a share of the band **width**.
+- The scan's "approaching" deadband is now a share of the band **width** when a point
+  has both limits (`lib/predict/alarmGates.ts`, 2026-09-15), and moves into the band
+  whatever the sign — the old share-of-limit-value rule read 535 °C as "approaching 550"
+  and could never fire a low alarm on a negative draught limit. A point with a **single**
+  limit still falls back to a share of the limit's magnitude; give such points a per-point
+  deadband on their reading definition.
