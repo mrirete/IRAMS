@@ -362,13 +362,45 @@ class PredictionService {
     // ── Sensor Readings ────────────────────────────────────────
     async getSensorReadings(assetId: string): Promise<SensorReading[]> {
         try {
-            const { data, error } = await supabase
-                .from('ers_sensor_readings')
-                .select('*')
-                .eq('asset_id', assetId)
-                .order('tag', { ascending: true });
+            const [{ data, error }, defQ] = await Promise.all([
+                supabase
+                    .from('ers_sensor_readings')
+                    .select('*')
+                    .eq('asset_id', assetId)
+                    .order('tag', { ascending: true }),
+                supabase
+                    .from('reading_definitions')
+                    .select('sensor_tag, reading_type_code, min_warning, max_warning, min_critical, max_critical, alarm_deadband_pct, alarm_persistence, operator_action')
+                    .eq('asset_id', assetId).eq('is_active', true).not('sensor_tag', 'is', null),
+            ]);
             if (error) { console.error('PredictionService.getSensorReadings:', error); throw error; }
-            return (data || []) as SensorReading[];
+
+            // 0298 linked a reading definition to a live series by sensor_tag;
+            // 0205 put the alarm rationalisation (deadband, persistence,
+            // operator action) and the engineering bands on the definition.
+            // The live path ignored both until 2026-09-15 — every online point
+            // ran on the engine's 10 %-of-limit default deadband (55 °C on a
+            // 550 °C limit), which the manual bridge never did. Merge: the
+            // projection's own values win where present; the definition fills
+            // the rest, so bands and hygiene are set once, on the definition.
+            type DefRow = { sensor_tag: string | null; reading_type_code: string | null; min_warning: number | null; max_warning: number | null; min_critical: number | null; max_critical: number | null; alarm_deadband_pct: number | null; alarm_persistence: number | null; operator_action: string | null };
+            const defs = new Map<string, DefRow>();
+            for (const d of (defQ.data ?? []) as DefRow[]) {
+                if (d.sensor_tag) defs.set(d.sensor_tag.toLowerCase(), d);
+                if (d.reading_type_code && !defs.has(d.reading_type_code.toLowerCase())) defs.set(d.reading_type_code.toLowerCase(), d);
+            }
+            return ((data || []) as SensorReading[]).map(r => {
+                const d = defs.get(String(r.tag).toLowerCase());
+                if (!d) return r;
+                return {
+                    ...r,
+                    alarm_high: r.alarm_high ?? d.max_critical ?? d.max_warning ?? null,
+                    alarm_low: r.alarm_low ?? d.min_critical ?? d.min_warning ?? null,
+                    alarm_deadband_pct: r.alarm_deadband_pct ?? d.alarm_deadband_pct ?? null,
+                    alarm_persistence: r.alarm_persistence ?? d.alarm_persistence ?? null,
+                    operator_action: r.operator_action ?? d.operator_action ?? null,
+                };
+            });
         } catch (e) {
             console.error('Error fetching sensor readings:', e);
             return [];
@@ -925,16 +957,24 @@ class PredictionService {
         if (loadBase.length < MIN_BASELINE_PAIRS || loadCur.length === 0) return [];
 
         const out: { s: SensorReading; regime: RegimeFired }[] = [];
-        const candidates = sensors.filter(s => s.tag !== load.tag && !exclude.has(s.tag.toLowerCase()) && !s.id.startsWith('manual-')).slice(0, 12);
-        for (const s of candidates) {
-            try {
-                const [yBase, yCur] = await Promise.all([win(s.tag, bFrom, bTo, bMax), win(s.tag, cFrom, now, cMax)]);
-                const fit = fitRegime(alignSeries(yBase, loadBase), { degree: rc.degree === 2 ? 2 : 1 });
-                const finding = evaluateRegime(fit, alignSeries(yCur, loadCur));
-                if (finding) out.push({ s, regime: { finding, loadTag: load.tag, loadUnit: load.unit, baselineDays } });
-            } catch {
-                /* one tag failing must not stop the scan */
-            }
+        // Every live point on the asset (a boiler has 30; the first demo scan
+        // capped at 12 and silently skipped the fan current it was built to
+        // catch). Two reads per tag, five tags at a time — a 40-tag asset
+        // finishes in a few seconds and one failing tag never stops the rest.
+        const candidates = sensors.filter(s => s.tag !== load.tag && !exclude.has(s.tag.toLowerCase()) && !s.id.startsWith('manual-')).slice(0, 40);
+        const CHUNK = 5;
+        for (let i = 0; i < candidates.length; i += CHUNK) {
+            const results = await Promise.all(candidates.slice(i, i + CHUNK).map(async (s) => {
+                try {
+                    const [yBase, yCur] = await Promise.all([win(s.tag, bFrom, bTo, bMax), win(s.tag, cFrom, now, cMax)]);
+                    const fit = fitRegime(alignSeries(yBase, loadBase), { degree: rc.degree === 2 ? 2 : 1 });
+                    const finding = evaluateRegime(fit, alignSeries(yCur, loadCur));
+                    return finding ? { s, regime: { finding, loadTag: load.tag, loadUnit: load.unit, baselineDays } as RegimeFired } : null;
+                } catch {
+                    return null;
+                }
+            }));
+            for (const r of results) if (r) out.push(r);
         }
         return out;
     }

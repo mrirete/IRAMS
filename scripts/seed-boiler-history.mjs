@@ -71,6 +71,17 @@ const STEP_MIN = Math.max(1, Number(arg('--step-minutes', '1')) || 1);
 const END = arg('--end') ? new Date(arg('--end')) : new Date();
 const ONLY = arg('--tags') ? new Set(arg('--tags').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)) : null;
 const CLEAN = has('--clean');
+/** Skip the 216k-row points pass and only rewrite the projection (bands, last-50, trend). */
+const PROJECTION_ONLY = has('--projection-only');
+/**
+ * Alarm lines on tags the legend does not band. Default: NONE — a percentile
+ * of normal operation is an envelope, not a limit, and the alert scan's
+ * "approaching" deadband turns an envelope into an alarm on every tag that
+ * merely sits near its own p99 (15 false alerts on the first demo run).
+ * --envelope-bands restores the p1/p99 behaviour if you want the twin's
+ * deviation score to have something to work with.
+ */
+const ENVELOPE_BANDS = has('--envelope-bands');
 const SOURCE = 'csv';   // the writer label 0236 reserves for file loads
 /**
  * Optional, DEMO ONLY: --inject-fault TAG:+8%:3h multiplies the last 3 hours of
@@ -184,6 +195,7 @@ console.log(`${rows} samples, ${new Date(firstTs).toISOString()} → ${new Date(
 // ── Pass 2: write points in batches ────────────────────────────────────────
 let written = 0;
 const BATCH = 1000;
+if (PROJECTION_ONLY) console.log('--projection-only: leaving ers_sensor_reading_points as it is.');
 const injectFrom = INJECT ? END.getTime() - INJECT.hours * 3_600_000 : null;
 if (INJECT) {
     const m = [...series.keys()].find((t) => t.toLowerCase() === INJECT.tag.toLowerCase());
@@ -192,6 +204,7 @@ if (INJECT) {
     console.log(`⚠ DEMO FAULT: ${m} × ${INJECT.factor} for the last ${INJECT.hours} h (source 'csv-injected').`);
 }
 for (const [tag, m] of series) {
+    if (PROJECTION_ONLY) break;
     const unit = legend.get(tag.toLowerCase())?.unit || null;
     const injectHere = INJECT && tag === INJECT.tag;
     const pts = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([b, agg]) => {
@@ -233,10 +246,13 @@ for (const [tag, m] of series) {
         unit: legend.get(tag.toLowerCase())?.unit || '',
         current_value: vals[vals.length - 1],
         trend: vals.length > 1 ? (vals.at(-1) > vals.at(-2) ? 'rising' : vals.at(-1) < vals.at(-2) ? 'falling' : 'stable') : null,
-        // The alarm line Predict reads: the paper's band where it has one,
-        // else the loaded data's 1st/99th percentile (an envelope, not a limit).
-        alarm_low: leg.crit_low ?? round6(q(0.01)),
-        alarm_high: leg.crit_high ?? round6(q(0.99)),
+        // The alarm line Predict reads: the paper's band where it has one;
+        // otherwise nothing (or the p1/p99 envelope with --envelope-bands).
+        alarm_low: leg.crit_low ?? (ENVELOPE_BANDS ? round6(q(0.01)) : null),
+        alarm_high: leg.crit_high ?? (ENVELOPE_BANDS ? round6(q(0.99)) : null),
+        // Deadband / persistence (0205) live on the reading DEFINITION, which
+        // provision-boiler-demo.mjs writes from the legend and the live loader
+        // merges through sensor_tag — not on this projection row.
         readings: vals.slice(-50),
     };
     const id = idByTag.get(tag.toLowerCase());

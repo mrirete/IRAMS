@@ -205,6 +205,10 @@ for (const [code, d] of Object.entries(LEGEND.columns)) {
         sensor_tag: code, is_active: true,
         min_warning: d.warn_low ?? null, max_warning: d.warn_high ?? null, min_critical: d.crit_low ?? null, max_critical: d.crit_high ?? null,
         limit_source: d.band_source ?? null,
+        // ISA-18.2 rationalisation (0205): the engine's default deadband is 10 %
+        // of the limit VALUE (55 °C on a 550 °C limit), so state it per point.
+        alarm_deadband_pct: d.deadband_pct ?? null,
+        alarm_persistence: d.persistence ?? null,
     };
     const { error } = await sb.from('reading_definitions').insert(row);
     if (error) fail(`definition ${code}: ${error.message}`);
