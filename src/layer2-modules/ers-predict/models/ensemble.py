@@ -26,8 +26,8 @@ from ..schemas import (
     ConfidenceBand,
 )
 from .base import BasePredictionModel
-from .xgboost_model import XGBoostPredictor
-from .lstm_autoencoder import LSTMAutoencoderDetector
+from .heuristic_health_scorer import HeuristicHealthScorer
+from .zscore_anomaly_detector import ZScoreAnomalyDetector
 from .weibull_survival import WeibullSurvivalModel
 from .physics_informed import PhysicsInformedModel
 
@@ -35,8 +35,8 @@ logger = logging.getLogger("ers.predict.ensemble")
 
 # Default ensemble weights per model
 DEFAULT_WEIGHTS = {
-    "xgboost": 0.35,
-    "lstm_autoencoder": 0.20,
+    "heuristic_health": 0.35,
+    "zscore_anomaly": 0.20,
     "weibull_survival": 0.25,
     "physics_informed": 0.20,
 }
@@ -63,8 +63,8 @@ class PredictionEnsemble:
 
         # Initialize all sub-models
         self.models: Dict[str, BasePredictionModel] = {
-            "xgboost": XGBoostPredictor(asset_class),
-            "lstm_autoencoder": LSTMAutoencoderDetector(asset_class),
+            "heuristic_health": HeuristicHealthScorer(asset_class),
+            "zscore_anomaly": ZScoreAnomalyDetector(asset_class),
             "weibull_survival": WeibullSurvivalModel(asset_class),
             "physics_informed": PhysicsInformedModel(asset_class),
         }
@@ -160,7 +160,7 @@ class PredictionEnsemble:
 
         # Feature importances (from XGBoost if available)
         contributing_factors: Dict[str, float] = {}
-        xgb_pred = predictions.get("xgboost", {})
+        xgb_pred = predictions.get("heuristic_health", {})
         meta = xgb_pred.get("metadata", {})
         if "feature_importance" in meta:
             contributing_factors = meta["feature_importance"]

@@ -1,5 +1,5 @@
 """
-ERS Predict — XGBoost Prediction Model
+ERS Predict — Heuristic Health Scorer (NOT a trained model)
 ═══════════════════════════════════════
 Primary gradient-boosted predictor for asset health index
 and failure probability. Structural stub with heuristic scoring.
@@ -15,7 +15,7 @@ from ..schemas import FeatureVector
 from .base import BasePredictionModel
 
 
-class XGBoostPredictor(BasePredictionModel):
+class HeuristicHealthScorer(BasePredictionModel):
     """
     Primary health index predictor using gradient-boosted features.
 
@@ -35,7 +35,7 @@ class XGBoostPredictor(BasePredictionModel):
         }
 
     def get_name(self) -> str:
-        return "xgboost"
+        return "heuristic_health"
 
     def train(
         self,

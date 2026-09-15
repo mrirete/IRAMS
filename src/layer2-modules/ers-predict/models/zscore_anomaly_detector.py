@@ -1,5 +1,5 @@
 """
-ERS Predict — LSTM Autoencoder Anomaly Detector
+ERS Predict — Z-Score Anomaly Detector (NOT a trained model)
 ════════════════════════════════════════════════
 Anomaly detection via reconstruction error. Flags anomalous
 patterns when reconstruction error exceeds learned thresholds.
@@ -15,7 +15,7 @@ from ..schemas import FeatureVector
 from .base import BasePredictionModel
 
 
-class LSTMAutoencoderDetector(BasePredictionModel):
+class ZScoreAnomalyDetector(BasePredictionModel):
     """
     Anomaly detection using autoencoder reconstruction error.
 
@@ -32,7 +32,7 @@ class LSTMAutoencoderDetector(BasePredictionModel):
         self.normal_std: Dict[str, float] = {}  # tag → std dev
 
     def get_name(self) -> str:
-        return "lstm_autoencoder"
+        return "zscore_anomaly"
 
     def train(
         self,
