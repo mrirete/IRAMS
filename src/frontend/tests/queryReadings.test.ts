@@ -112,6 +112,9 @@ describe('query_readings — live feed', () => {
         const args = rpc!.ops[0][1][0] as Record<string, unknown>;
         expect(args.p_asset_id).toBe('a-1');
         expect(args.p_tag).toBe('BOILER_OUTLET_STEAM_TEMP');
+        // The warning band travels to the database so the time share is a sample count (0368).
+        expect(args.p_lo).toBe(530);
+        expect(args.p_hi).toBe(545);
         // Citations name the history table.
         expect(r.sources[0].kind).toBe('ers_sensor_reading_points');
         expect(c.sources).toHaveLength(1);

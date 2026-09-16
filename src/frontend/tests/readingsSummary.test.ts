@@ -108,10 +108,28 @@ describe('summarizeWindow — bands and excursions', () => {
         expect(s.excursions.crit_high).toBe(1);
         expect(s.excursions.warn_low).toBe(0);
         expect(s.excursions.pct_buckets_outside_warn).toBeCloseTo(16.7, 1);
-        // Time share judges each bucket by its MEAN: the same 4 buckets sit outside → 16.7 %.
+        // No database counts on these synthetic buckets → time share falls back to
+        // bucket MEANS: the same 4 buckets sit outside → 16.7 %, and it says so.
+        expect(s.excursions.time_share_basis).toBe('bucket-mean');
         expect(s.excursions.pct_time_outside_warn).toBeCloseTo(16.7, 1);
         expect(s.headline).toContain('1 of 24 buckets beyond CRITICAL');
-        expect(s.headline).toContain('~16.7% of the time outside the band');
+        expect(s.headline).toContain('~16.7% of the time outside the band (by bucket mean — short dips not counted)');
+    });
+
+    it('with database sample counts the time share is exact and a short dip inside a bucket is counted', () => {
+        // The B-301 case: 96 buckets of ~1.75 h; the excursions are minute-scale dips.
+        // Every bucket mean sits inside 530–545, yet 8 % of the samples are outside.
+        const b: WindowBucket[] = Array.from({ length: 96 }, (_, i) => ({
+            ts: new Date(T0 + i * 105 * 60_000).toISOString(), n: 105, min: i % 12 === 0 ? 517 : 534, avg: 537, max: 541, last: 537,
+            n_below: i % 12 === 0 ? 100 : 0, n_above: 0,
+        }));
+        const s = summarizeWindow(b, { from: new Date(T0).toISOString(), to: new Date(T0 + 96 * 105 * 60_000).toISOString(), bands: { warn_low: 530, warn_high: 545 } });
+        expect(s.excursions.time_share_basis).toBe('samples');
+        expect(s.excursions.pct_time_outside_warn).toBeCloseTo(7.9, 1);   // 8 × 100 / (96 × 105)
+        expect(s.excursions.warn_low).toBe(8);
+        expect(s.headline).toContain('; 7.9% of the time outside the band');   // exact: no '~', no bucket-mean caveat
+        expect(s.headline).not.toContain('~7.9%');
+        expect(s.headline).not.toContain('by bucket mean');
     });
 
     it('a bucket that merely TOUCHED the line counts as an excursion but not as time outside', () => {

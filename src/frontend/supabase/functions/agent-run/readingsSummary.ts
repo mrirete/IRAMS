@@ -22,6 +22,13 @@ export interface WindowBucket {
   avg: number;
   max: number;
   last: number;
+  /**
+   * Samples in the bucket above / below the warning band, counted in the
+   * database (sem_readings_window p_lo/p_hi, 0368). Present on the raw path
+   * only; a bucket mean cannot see a ten-minute dip inside a two-hour bucket.
+   */
+  n_above?: number | null;
+  n_below?: number | null;
 }
 
 /** Alarm bands. Any side may be absent; warn is inside crit. */
@@ -52,8 +59,14 @@ export interface SeriesSummary {
     /** buckets whose MAX/MIN crossed the line — "did it ever touch the limit" */
     warn_high: number; warn_low: number; crit_high: number; crit_low: number;
     pct_buckets_outside_warn: number;
-    /** buckets whose AVERAGE sat outside the warning band — the closer answer to "how often" */
+    /** share of TIME outside the warning band — see time_share_basis for how it was measured */
     pct_time_outside_warn: number;
+    /**
+     * 'samples'     — every sample counted against the band in the database (exact);
+     * 'bucket-mean' — buckets judged by their mean (a short dip inside a long bucket is invisible);
+     * 'none'        — no band, or no data.
+     */
+    time_share_basis: 'samples' | 'bucket-mean' | 'none';
   };
   headline: string;
 }
@@ -133,6 +146,8 @@ export function normalizeBuckets(rows: Array<Record<string, unknown>>): WindowBu
       avg,
       max: num("max", "max_value") ?? avg,
       last: num("last", "last_value") ?? avg,
+      n_above: num("n_above"),
+      n_below: num("n_below"),
     });
   }
   return out.sort((a, b) => toMs(a.ts) - toMs(b.ts));
@@ -160,7 +175,7 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
     n_points: 0, n_buckets: 0, span_days: round(spanDays, 2), coverage_pct: 0,
     first: null, last: null, min: null, avg: null, max: null,
     slope_per_day: null, pct_change: null, drift_pct_of_mean: null, direction: "unknown",
-    excursions: { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0, pct_time_outside_warn: 0 },
+    excursions: { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0, pct_time_outside_warn: 0, time_share_basis: 'none' },
     headline: `no readings in the last ${spanLabel(spanDays)}`,
   };
   if (buckets.length === 0) return empty;
@@ -196,10 +211,13 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
 
   // Excursions: a bucket counts once per band side it crossed. Crit implies
   // warn on the same side when both are set, so warn counts are >= crit counts.
-  const ex = { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0, pct_time_outside_warn: 0 };
+  const ex: SeriesSummary['excursions'] = { warn_high: 0, warn_low: 0, crit_high: 0, crit_low: 0, pct_buckets_outside_warn: 0, pct_time_outside_warn: 0, time_share_basis: 'none' };
   const wh = isNum(bands.warn_high) ? bands.warn_high : isNum(bands.crit_high) ? bands.crit_high : null;
   const wl = isNum(bands.warn_low) ? bands.warn_low : isNum(bands.crit_low) ? bands.crit_low : null;
-  let outsideWarn = 0, avgOutside = 0, weight = 0;
+  const hasBand = wh !== null || wl !== null;
+  // Exact time share needs every bucket to carry database-side sample counts.
+  const sampleCounts = hasBand && buckets.every((b) => isNum(b.n_above) && isNum(b.n_below));
+  let outsideWarn = 0, outsideWeight = 0, weight = 0;
   for (const b of buckets) {
     let out = false;
     if (wh !== null && b.max > wh) { ex.warn_high++; out = true; }
@@ -207,12 +225,17 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
     if (isNum(bands.crit_high) && b.max > bands.crit_high) ex.crit_high++;
     if (isNum(bands.crit_low) && b.min < bands.crit_low) ex.crit_low++;
     if (out) outsideWarn++;
-    // Time share: weight each bucket by its samples, judge it by its mean.
     weight += b.n;
-    if ((wh !== null && b.avg > wh) || (wl !== null && b.avg < wl)) avgOutside += b.n;
+    if (sampleCounts) {
+      outsideWeight += Math.min(b.n, (b.n_above as number) + (b.n_below as number));
+    } else if ((wh !== null && b.avg > wh) || (wl !== null && b.avg < wl)) {
+      // Fallback: weight each bucket by its samples, judge it by its mean.
+      outsideWeight += b.n;
+    }
   }
   ex.pct_buckets_outside_warn = round((outsideWarn / buckets.length) * 100, 1);
-  ex.pct_time_outside_warn = round((avgOutside / Math.max(1, weight)) * 100, 1);
+  ex.pct_time_outside_warn = hasBand ? round((outsideWeight / Math.max(1, weight)) * 100, 1) : 0;
+  ex.time_share_basis = !hasBand ? 'none' : sampleCounts ? 'samples' : 'bucket-mean';
 
   // Headline — the sentence an engineer would say first.
   const u = unit ? ` ${unit}` : "";
@@ -226,7 +249,7 @@ export function summarizeWindow(input: WindowBucket[], opts: SummarizeOptions): 
   }
   if (ex.crit_high || ex.crit_low) parts.push(`${ex.crit_high + ex.crit_low} of ${buckets.length} buckets beyond CRITICAL`);
   else if (ex.warn_high || ex.warn_low) parts.push(`${ex.warn_high + ex.warn_low} of ${buckets.length} buckets outside warning`);
-  if (ex.warn_high || ex.warn_low) parts.push(`~${ex.pct_time_outside_warn}% of the time outside the band`);
+  if (ex.warn_high || ex.warn_low) parts.push(`${ex.time_share_basis === 'samples' ? '' : '~'}${ex.pct_time_outside_warn}% of the time outside the band${ex.time_share_basis === 'bucket-mean' ? ' (by bucket mean — short dips not counted)' : ''}`);
   if (coverage < COVERAGE_MENTION_BELOW_PCT) parts.push(`only ${coverage}% of the window has data`);
 
   return {

@@ -1773,8 +1773,13 @@ async function summarizeAssetSeries(
     const unit = t.unit || def?.unit || null;
     let buckets: WindowBucket[] = [];
     if (!rpcMissing) {
+      // The warning band goes to the database (0368) so "how often outside" is
+      // a count of samples, not a guess from bucket means.
+      const bandLo = bands.warn_low ?? bands.crit_low ?? null;
+      const bandHi = bands.warn_high ?? bands.crit_high ?? null;
       const { data, error } = await ctx.db.rpc("sem_readings_window", {
         p_asset_id: assetId, p_tag: t.tag, p_from: fromIso, p_to: toIso, p_max_buckets: 96,
+        p_lo: bandLo, p_hi: bandHi,
       });
       if (error) {
         rpcMissing = true;
