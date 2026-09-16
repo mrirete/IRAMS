@@ -353,6 +353,12 @@ export function buildPMFromDecision(
      * so completed work codes back to the same item.
      */
     item?: { failureModeCode?: string | null; subunitCode?: string | null; objectPart?: string | null; label?: string | null } | null;
+    /**
+     * 0367: the schedule's visible code ("PM-K-601-R03"). The row id stays the
+     * deterministic RCM-<study>-<decision> so re-runs cannot mint duplicates;
+     * the code is what people read, search and quote. Falls back to the id.
+     */
+    code?: string | null;
   } = {},
 ): PMBuildResult {
   const now = opts.now ?? new Date();
@@ -388,10 +394,13 @@ export function buildPMFromDecision(
   const consequence = d.consequence_code || 'unclassified';
   const taskType = isTaskTypeCode(d.task_type_code) ? TASK_TYPE_LABELS[d.task_type_code].label : null;
   const brief = briefJustification(d.justification);
+  // 0367: the description is what a planner and a technician read on every
+  // order — two short lines. The study reference, revision and justification
+  // are provenance and live in `origin` (shown as the Origin line, linked to
+  // the study), not in the job text.
   const description = [
-    `RCM study "${study.title}"${study.revision ? ` rev ${study.revision}` : ''} · Failure mode: ${failureModeDescription}${opts.item?.label ? ` · Item: ${opts.item.label}` : ''}`,
-    `Strategy: ${d.recommended_strategy_code}${taskType ? ` (${taskType})` : ''} · Consequence: ${consequence}${d.task_owner_craft ? ` · Craft: ${d.task_owner_craft}` : ''}`,
-    brief ? `\n${brief}` : '',
+    `Prevents: ${failureModeDescription}${opts.item?.label ? ` (${opts.item.label})` : ''}`,
+    [taskType || d.recommended_strategy_code, `${consequence} consequence`, d.task_owner_craft].filter(Boolean).join(' · '),
   ].join('\n').trim();
 
   const nextDue = scheduleType === 'TIME' ? nextDueFrom(iv.n, iv.unit, now) : null;
@@ -432,7 +441,7 @@ export function buildPMFromDecision(
     packageLabel: meterCadence ? null : packageLabelFor(iv.n, iv.unit),
     intervalDays: intervalDaysFor(iv.n, iv.unit),
     input: {
-      code: pmCodeFor(study.id, d.id),
+      code: opts.code || pmCodeFor(study.id, d.id),
       title,
       description,
       assetId: study.asset_id,
@@ -451,8 +460,11 @@ export function buildPMFromDecision(
       origin: {
         source: 'rcm',
         study_id: study.id,
+        study_title: study.title,
         study_revision: study.revision ?? 1,
         decision_id: d.id,
+        failure_mode: failureModeDescription,
+        justification: brief || null,
         strategy_code: d.recommended_strategy_code,
         task_type_code: d.task_type_code ?? null,
         consequence_code: d.consequence_code ?? null,

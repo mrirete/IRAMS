@@ -5574,7 +5574,8 @@ export class DatabaseService {
         const newWO: any = {
             id: woId,
             wo_number: woNumber,
-            title: (pm.description || pm.title) + (pm.strategy_package ? ` — ${pm.strategy_package} service` : '') + includedScopesSuffix(merged.included) + ' (Generated)',
+            // 0367: the order carries the schedule's name; the description is the job text.
+            title: (pm.title || pm.description) + (pm.strategy_package ? ` — ${pm.strategy_package} service` : '') + includedScopesSuffix(merged.included) + ' (Generated)',
             description: pm.description || pm.title,
             status: 'OPEN',
             type: pm.job_type || 'PM',

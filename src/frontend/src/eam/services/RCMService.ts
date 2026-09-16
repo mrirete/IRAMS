@@ -1336,16 +1336,37 @@ class RCMServiceImpl {
     return out;
   }
 
+  /**
+   * 0367: the schedule code people read — "PM-<asset tag>-R<nn>", numbered per
+   * asset in creation order (R = raised from an RCM study). The row id stays
+   * the deterministic RCM-<study>-<decision>, so idempotency is unchanged.
+   */
+  private async readablePmCode(study: RCMStudy): Promise<string | null> {
+    if (!study.asset_id) return null;
+    const { data: asset } = await supabase.from('assets').select('tag').eq('id', study.asset_id).maybeSingle();
+    const tag = String((asset as { tag?: string } | null)?.tag || '').trim().toUpperCase();
+    if (!tag) return null;
+    const prefix = `PM-${tag}-R`;
+    const { data: rows } = await supabase.from('recurring_work').select('code').eq('asset_id', study.asset_id).like('code', `${prefix}%`);
+    let max = 0;
+    for (const r of (rows || []) as { code: string }[]) {
+      const n = parseInt(String(r.code).slice(prefix.length), 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    return `${prefix}${String(max + 1).padStart(2, '0')}`;
+  }
+
   private async insertPMForDecision(
     study: RCMStudy, d: RCMDecision, failureModeDescription: string,
   ): Promise<{ ok: true; pmCode: string; meterCadence: boolean; packageLabel: string | null } | { ok: false; reason: string }> {
-    const [jobPlan, spares, item] = await Promise.all([
+    const [jobPlan, spares, item, code] = await Promise.all([
       this.resolveJobPlan(d.task_library_item_id),
       this.matchSpares(d.spares_requirements),
       this.itemContextFor(study.id, d),
+      this.readablePmCode(study),
     ]);
     const readByPerson = await this.readByPersonFor(study, d);
-    const built = buildPMFromDecision(study, d, failureModeDescription, { jobPlan, spares, readByPerson, item });
+    const built = buildPMFromDecision(study, d, failureModeDescription, { jobPlan, spares, readByPerson, item, code });
     if (!built.ok) return built;
     let row: Record<string, unknown>;
     try {

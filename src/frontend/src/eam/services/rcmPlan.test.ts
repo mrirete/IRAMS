@@ -186,7 +186,10 @@ describe('decision → PM', () => {
     expect(String(r.input.nextDueDate).slice(0, 10)).toBe('2028-09-04');
     expect(r.input.origin).toMatchObject({ source: 'rcm', study_id: STUDY.id, study_revision: 2, strategy_code: 'PM_TIME', task_type_code: 'SCHEDULED_DISCARD', consequence_code: 'OPERATIONAL' });
     expect(r.input.description).toContain('Ignitor plug failure');
-    expect(r.input.description).toContain('rev 2');
+    // 0367: the job text is short; the study reference and revision are provenance (origin)
+    expect(r.input.description).toMatch(/^Prevents: /);
+    expect(r.input.description).not.toContain('RCM study');
+    expect((r.input.origin as any).study_revision).toBe(2);
     expect(r.input.description).toContain('Scheduled discard');
     const t = r.input.templates as { tasks: unknown[]; labor: { contactType: string }[]; inventory: { inventoryId: string | null; estQty: number }[] };
     expect(t.tasks).toHaveLength(1);
