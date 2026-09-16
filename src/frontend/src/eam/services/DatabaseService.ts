@@ -38,6 +38,7 @@ import { movementTypeFor } from '../lib/movementType';
 import { isPreventiveWoType, buildWorkOrder } from '../lib/workOrder';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { addCadence, normaliseUnit, toDateOnly } from '../lib/pmCadence';
+import { absorptionWindowDays, includedScopesSuffix, isAbsorbedBy, mergeIncludedScopes, type IncludedScope } from '../lib/pmHierarchy';
 import {
     OperationActual,
     OrderActuals,
@@ -5343,6 +5344,63 @@ export class DatabaseService {
         return data || [];
     }
 
+    /**
+     * 0366: the schedule that carries `pm`'s scope right now, if any — the
+     * explicit parent (parent_pm_id) or a longer exact-multiple package of the
+     * same strategy (0292) — whose due day lies within pm's lead-time window.
+     * Mirrors public.pm_absorber().
+     */
+    public async findPmAbsorber(pm: any, assetId?: string | null): Promise<{ id: string; code: string; due: string } | null> {
+        if (!pm?.next_due_date) return null;
+        const win = absorptionWindowDays({ frequencyInterval: pm.frequency_interval, frequencyUnit: pm.frequency_unit, leadTimeDays: pm.lead_time_days });
+        const cands: { id: string; code: string; next_due_date: string }[] = [];
+        if (pm.parent_pm_id) {
+            const { data: parent } = await supabase.from('recurring_work')
+                .select('id, code, next_due_date, active, status, asset_id')
+                .eq('id', pm.parent_pm_id).maybeSingle();
+            if (parent && parent.active !== false && String(parent.status || 'ACTIVE').toUpperCase() === 'ACTIVE'
+                && parent.next_due_date && (parent.asset_id || '') === (assetId || pm.asset_id || '')) {
+                cands.push(parent);
+            }
+        }
+        if (pm.strategy_id && pm.strategy_package) {
+            const { data: pkgRows } = await supabase.from('strategy_packages').select('label, interval_days').eq('strategy_id', pm.strategy_id);
+            const mine = (pkgRows || []).find((p: any) => p.label === pm.strategy_package);
+            if (mine) {
+                const { data: sibs } = await supabase.from('recurring_work')
+                    .select('id, code, strategy_package, next_due_date, active, status')
+                    .eq('strategy_id', pm.strategy_id).eq('asset_id', assetId || pm.asset_id).neq('id', pm.id);
+                for (const sib of (sibs || []) as any[]) {
+                    const sp = (pkgRows || []).find((p: any) => p.label === sib.strategy_package);
+                    if (sib.active === false || String(sib.status || 'ACTIVE').toUpperCase() !== 'ACTIVE' || !sib.next_due_date || !sp) continue;
+                    if (sp.interval_days > mine.interval_days && sp.interval_days % mine.interval_days === 0) cands.push(sib);
+                }
+            }
+        }
+        const hit = cands
+            .filter(c => isAbsorbedBy(String(pm.next_due_date), String(c.next_due_date), win))
+            .sort((a, b) => toDateOnly(String(a.next_due_date)).localeCompare(toDateOnly(String(b.next_due_date))))[0];
+        return hit ? { id: hit.id, code: hit.code, due: toDateOnly(String(hit.next_due_date)) } : null;
+    }
+
+    /** 0366: the active shorter-cycle schedules whose absorber is `pm` right now (with templates). */
+    public async findIncludedChildren(pm: any, assetId?: string | null): Promise<any[]> {
+        try {
+            const or = pm.strategy_id ? `parent_pm_id.eq.${pm.id},strategy_id.eq.${pm.strategy_id}` : `parent_pm_id.eq.${pm.id}`;
+            const { data } = await supabase.from('recurring_work').select('*').or(or).neq('id', pm.id);
+            const out: any[] = [];
+            for (const c of (data || []) as any[]) {
+                if (c.active === false || String(c.status || 'ACTIVE').toUpperCase() !== 'ACTIVE' || !c.next_due_date) continue;
+                const a = await this.findPmAbsorber(c, assetId || pm.asset_id);
+                if (a?.id === pm.id) out.push(c);
+            }
+            return out.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+        } catch (e: any) {
+            console.warn('[findIncludedChildren] lookup failed (non-blocking):', e?.message);
+            return [];
+        }
+    }
+
     public async createPM(pm: Partial<RecurringWorkRecord>): Promise<any> {
         const data = await this.insertTolerant('recurring_work', pm, ['work_center_id']);
         return data;
@@ -5465,52 +5523,35 @@ export class DatabaseService {
 
         const templates = pm.templates || {};
 
-        // ── Strategy absorption (0292, X-1) ─────────────────────────────────
-        // If this PM implements a strategy package and a LONGER package of the
-        // same strategy+asset is due the SAME day (interval an exact multiple),
-        // the longer service's scope includes this one: raise no WO, roll this
-        // PM forward. One service, not a stack.
-        if (pm.strategy_id && pm.strategy_package) {
+        // ── Included scope (0292 packages + 0366 parent link) ───────────────
+        // If a longer service on the same asset is due within this schedule's
+        // lead-time window, that order carries this scope: raise nothing here
+        // and do NOT roll — the parent rolls this schedule when it is raised.
+        if (meterReading == null) {
             try {
-                const { data: pkgRows } = await supabase
-                    .from('strategy_packages')
-                    .select('label, interval_days')
-                    .eq('strategy_id', pm.strategy_id);
-                const mine = (pkgRows || []).find((p: any) => p.label === pm.strategy_package);
-                if (mine) {
-                    const { data: sibs } = await supabase
-                        .from('recurring_work')
-                        .select('id, strategy_package, next_due_date, active')
-                        .eq('strategy_id', pm.strategy_id)
-                        .eq('asset_id', assetId || pm.asset_id)
-                        .neq('id', pmId);
-                    const myDue = String(pm.next_due_date || new Date().toISOString()).slice(0, 10);
-                    const absorber = (sibs || []).find((s: any) => {
-                        if (s.active === false || !s.next_due_date) return false;
-                        const sp = (pkgRows || []).find((p: any) => p.label === s.strategy_package);
-                        return !!sp && sp.interval_days > mine.interval_days
-                            && sp.interval_days % mine.interval_days === 0
-                            && String(s.next_due_date).slice(0, 10) === myDue;
-                    });
-                    if (absorber) {
-                        const nextDue = new Date(new Date(myDue + 'T00:00:00Z').getTime() + mine.interval_days * 86400000).toISOString();
-                        await supabase.from('recurring_work').update({
-                            last_generated_date: new Date().toISOString(),
-                            next_due_date: nextDue,
-                        }).eq('id', pmId);
-                        const absorbedErr: any = new Error(
-                            `Absorbed: the ${pm.strategy_package} scope is included in the ${absorber.strategy_package} service due the same day — ` +
-                            `no separate work order raised; ${pm.strategy_package} rolled to ${nextDue.slice(0, 10)}.`
-                        );
-                        absorbedErr.absorbed = true;
-                        throw absorbedErr;
-                    }
+                const absorber = await this.findPmAbsorber(pm, assetId || pm.asset_id);
+                if (absorber) {
+                    const absorbedErr: any = new Error(
+                        `Included: ${pm.code} is carried by ${absorber.code} due ${absorber.due} — raise that service; its order carries these steps.`
+                    );
+                    absorbedErr.absorbed = true;
+                    throw absorbedErr;
                 }
             } catch (absorbErr: any) {
                 if (absorbErr?.absorbed) throw absorbErr;
                 console.warn('[generateWOFromPM] absorption check failed (non-blocking):', absorbErr?.message);
             }
         }
+
+        // ── 0366: the shorter-cycle schedules this order carries ────────────
+        const includedChildren = meterReading == null ? await this.findIncludedChildren(pm, assetId || pm.asset_id) : [];
+        const merged = mergeIncludedScopes(
+            { tasks: templates.tasks || [], inventory: templates.inventory || [] },
+            includedChildren.map(c => ({
+                scope: { pmId: c.id, code: c.code, title: c.title, cadence: `${c.frequency_interval} ${c.frequency_unit}`, dueDate: toDateOnly(String(c.next_due_date)) } as IncludedScope,
+                templates: c.templates || {},
+            })),
+        );
 
         // 2. Create WO with traceability link
         const woId = crypto.randomUUID();
@@ -5525,7 +5566,7 @@ export class DatabaseService {
         const newWO: any = {
             id: woId,
             wo_number: woNumber,
-            title: (pm.description || pm.title) + (pm.strategy_package ? ` — ${pm.strategy_package} service` : '') + ' (Generated)',
+            title: (pm.description || pm.title) + (pm.strategy_package ? ` — ${pm.strategy_package} service` : '') + includedScopesSuffix(merged.included) + ' (Generated)',
             description: pm.description || pm.title,
             status: 'OPEN',
             type: pm.job_type || 'PM',
@@ -5542,6 +5583,8 @@ export class DatabaseService {
             assigned_to: leadLabourContact(pm.templates),
             due_date: dueDate,
             date_due_start: dueDate,
+            // 0366: the scopes this order carries — arming and the technician's step list both read it.
+            ...(merged.included.length ? { properties: { included_pm_ids: merged.included.map(i => i.pmId), included_scopes: merged.included } } : {}),
             est_duration: pm.est_duration || pm.estimated_duration || 0,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -5583,8 +5626,8 @@ export class DatabaseService {
         // intact: operation number, work centre, control key and planned rate
         // were previously dropped here, which quietly stripped an imported SAP
         // task list back to bare descriptions by the time a technician saw it.
-        if (templates.tasks && templates.tasks.length > 0) {
-            const taskRows = templates.tasks.map((task: any, idx: number) => {
+        if (merged.tasks.length > 0) {
+            const taskRows = merged.tasks.map((task: any, idx: number) => {
                 const seq = task.sequence || (idx + 1) * 10;
                 return {
                     id: crypto.randomUUID(),
@@ -5658,8 +5701,8 @@ export class DatabaseService {
         }
 
         // 6. Copy template inventory → work_order_parts
-        if (templates.inventory && templates.inventory.length > 0) {
-            const partRows = templates.inventory.map((item: any) => ({
+        if (merged.inventory.length > 0) {
+            const partRows = merged.inventory.map((item: any) => ({
                 id: crypto.randomUUID(),
                 wo_id: woId,
                 item_id: item.inventoryId || null,
@@ -5670,6 +5713,22 @@ export class DatabaseService {
             }));
             if (!await tryWrite(supabase.from('work_order_parts').insert(partRows), `planned parts for WO ${woId}`)) {
                 copyFailures.push(`${partRows.length} planned part line(s)`);
+            }
+        }
+
+        // 6b. 0366: roll each included child past this order's due day (at least one step).
+        for (const c of includedChildren) {
+            try {
+                const floor = [toDateOnly(new Date()), toDateOnly(dueDate)].sort().pop() as string;
+                let nxt = toDateOnly(String(c.next_due_date));
+                let steps = 0;
+                do { nxt = addCadence(nxt, c.frequency_interval, c.frequency_unit); steps++; } while (nxt <= floor && steps < 120);
+                await supabase.from('recurring_work')
+                    .update({ last_generated_date: new Date().toISOString(), next_due_date: nxt })
+                    .eq('id', c.id);
+            } catch (e: any) {
+                console.warn(`[generateWOFromPM] could not roll included schedule ${c.code}:`, e?.message);
+                copyFailures.push(`rolling ${c.code} forward`);
             }
         }
 
@@ -5719,6 +5778,7 @@ export class DatabaseService {
         if (copyFailures.length > 0) {
             console.error(`[generateWOFromPM] WO ${data?.wo_number ?? woId} generated WITHOUT ${copyFailures.join(', ')}`);
             (data as any).__copyFailures = copyFailures;
+            (data as any).__includedScopes = includedChildren.map(c => c.id);
         }
         return data;
     }
