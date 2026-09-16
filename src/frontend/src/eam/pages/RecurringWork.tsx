@@ -210,6 +210,7 @@ export const RecurringWork: React.FC = () => {
             const mappedPMs: RecurringJob[] = dbPMs.map((pm: any) => ({
                 id: pm.id,
                 code: pm.code,
+                title: pm.title || '',
                 description: pm.description || pm.title,
                 jobDescription: pm.description || pm.title,
                 status: pm.status,
@@ -579,11 +580,15 @@ export const RecurringWork: React.FC = () => {
         }
         // Search text
         if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
+            // A trailing space or a pasted en-dash ("PM–44743") used to match
+            // nothing while the pill counts still said 9 — the list just went blank.
+            const norm = (v: string) => v.toLowerCase().replace(/[‐-―−]/g, '-').replace(/\s+/g, ' ').trim();
+            const q = norm(searchQuery);
             result = result.filter(j =>
-                j.code?.toLowerCase().includes(q) ||
-                (j.jobDescription || j.description || '').toLowerCase().includes(q) ||
-                j.jobType?.toLowerCase().includes(q)
+                norm(j.code || '').includes(q) ||
+                norm(j.title || '').includes(q) ||
+                norm(j.jobDescription || j.description || '').includes(q) ||
+                norm(j.jobType || '').includes(q)
             );
         }
         return result;
@@ -1205,6 +1210,15 @@ export const RecurringWork: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
+                    {filteredJobs.length === 0 && (
+                        <div className="p-10 text-center text-sm text-slate-500">
+                            {jobs.length === 0
+                                ? 'No recurring jobs yet — create one with New.'
+                                : searchQuery.trim()
+                                    ? <>No schedule matches “{searchQuery.trim()}” — searched code, title, description and type across {jobs.length} schedules.</>
+                                    : 'No schedules match the current filters.'}
+                        </div>
+                    )}
                     {(Object.entries(groupedJobs) as [string, RecurringJob[]][]).map(([groupLabel, groupItems]) => (
                         <div key={groupLabel}>
                             {groupBy !== 'none' && (
@@ -1237,7 +1251,10 @@ export const RecurringWork: React.FC = () => {
                                                     <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold uppercase">{job.scheduleType}</span>
                                                 </div>
                                             </div>
-                                            <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{job.jobDescription || job.description}</h3>
+                                            <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{job.title || job.jobDescription || job.description}</h3>
+                                            {job.title && (job.jobDescription || job.description) && (job.jobDescription || job.description) !== job.title && (
+                                                <p className="text-[11px] text-slate-500 -mt-0.5 mb-1 line-clamp-1">{job.jobDescription || job.description}</p>
+                                            )}
                                             <div className="text-[11px] text-slate-500 flex gap-3 flex-wrap">
                                                 <span className="flex items-center gap-1">
                                                     <Clock size={11} /> {job.frequencyInterval} {job.frequencyUnit}

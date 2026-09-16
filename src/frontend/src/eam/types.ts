@@ -1112,6 +1112,8 @@ export interface JobFile {
 export interface RecurringJob {
   id: string;
   code: string; // Auto-generated
+  /** The schedule's name as entered ("Strategy Title") — recurring_work.title. Was dropped by the mapper, so it was neither shown nor searchable. */
+  title?: string;
   description: string;
   status: 'ACTIVE' | 'PAUSED' | 'EXPIRED' | 'DRAFT';
 
