@@ -223,7 +223,7 @@ export const RecurringWork: React.FC = () => {
                 autoGenerate: pm.auto_generate !== false, // 0304 Autopilot opt-out
                 parentId: pm.parent_pm_id || undefined, // 0366 nested within
                 nestingMode: pm.nesting_mode === 'COMBINES' ? 'COMBINES' : 'SUPERSEDES',
-                leadTimeDays: pm.lead_time_days || 7,
+                leadTimeDays: pm.lead_time_days ?? 7, // 0 is a real value (daily rounds) — `||` showed 7 for it
                 jobType: pm.job_type,
                 priority: pm.priority_code,
                 strategyId: pm.strategy_id || undefined,
@@ -572,10 +572,10 @@ export const RecurringWork: React.FC = () => {
         // Overdue deep-link: active programmes whose next due date has passed
         // (same definition the Specialist's digest and missions use).
         if (overdueOnly) {
-            const now = Date.now();
+            const today = toDateOnly(new Date());
             result = result.filter(j => {
                 const due = (j as any).nextDueDate || (j as any).next_due_date || '';
-                return j.status === 'ACTIVE' && due && new Date(due).getTime() < now;
+                return j.status === 'ACTIVE' && due && toDateOnly(due) < today;
             });
         }
         // Search text
@@ -1228,7 +1228,10 @@ export const RecurringWork: React.FC = () => {
                             )}
                             {groupItems.map(job => {
                                 const nextDue = (job as any).next_due_date || (job as any).nextDueDate;
-                                const isOverdue = nextDue && new Date(nextDue) < new Date();
+                                // Overdue = due DAY earlier than today (0365 stores midnight due dates,
+                                // so a timestamp compare flagged a schedule overdue on its own due day).
+                                const isOverdue = !!nextDue && toDateOnly(nextDue) < toDateOnly(new Date());
+                                const isDueToday = !!nextDue && toDateOnly(nextDue) === toDateOnly(new Date());
                                 const isSelected = selectedIds.has(job.id);
                                 return (
                                     <div
@@ -1268,10 +1271,14 @@ export const RecurringWork: React.FC = () => {
                                                         <span className="overdue-badge overdue-pulse">
                                                             Overdue
                                                         </span>
+                                                    ) : isDueToday ? (
+                                                        <span className="flex items-center gap-1 font-bold text-amber-700">
+                                                            <Calendar size={11} /> Due today
+                                                        </span>
                                                     ) : (
                                                         <span className="flex items-center gap-1 font-medium text-emerald-600">
                                                             <Calendar size={11} />
-                                                            {new Date(nextDue).toLocaleDateString()}
+                                                            {toDateOnly(nextDue)}
                                                         </span>
                                                     )
                                                 )}
@@ -1381,7 +1388,7 @@ export const RecurringWork: React.FC = () => {
                                     totalPMs: jobs.length,
                                     activePMs: jobs.filter(j => j.status === 'ACTIVE').length,
                                     suspendedPMs: jobs.filter(j => j.status === 'PAUSED').length,
-                                    overdueCount: jobs.filter(j => (j as any).nextDueDate && new Date((j as any).nextDueDate) < new Date()).length,
+                                    overdueCount: jobs.filter(j => (j as any).nextDueDate && toDateOnly((j as any).nextDueDate) < toDateOnly(new Date())).length,
                                     complianceRate: statusCounts['ACTIVE'] > 0 ? Math.round((statusCounts['ACTIVE'] / jobs.length) * 100) : 0,
                                     selectedPM: selectedJob ? {
                                         code: selectedJob.code,
