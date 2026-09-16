@@ -5403,6 +5403,27 @@ export class DatabaseService {
         }
     }
 
+    /**
+     * 0367: a readable schedule code for a PM raised from an analysis —
+     * "PM-<asset tag>-<letter><nn>", numbered per asset in creation order.
+     * Letters: R = RCM study (RCMService mints its own), W = Weibull analysis.
+     * Returns null when the asset has no tag; the caller then keeps the default.
+     */
+    public async readablePmCode(assetId: string, letter: 'W' | 'R' | 'P'): Promise<string | null> {
+        if (!assetId) return null;
+        const { data: asset } = await supabase.from('assets').select('tag').eq('id', assetId).maybeSingle();
+        const tag = String((asset as { tag?: string } | null)?.tag || '').trim().toUpperCase();
+        if (!tag) return null;
+        const prefix = `PM-${tag}-${letter}`;
+        const { data: rows } = await supabase.from('recurring_work').select('code').eq('asset_id', assetId).like('code', `${prefix}%`);
+        let max = 0;
+        for (const r of (rows || []) as { code: string }[]) {
+            const n = parseInt(String(r.code).slice(prefix.length), 10);
+            if (Number.isFinite(n) && n > max) max = n;
+        }
+        return `${prefix}${String(max + 1).padStart(2, '0')}`;
+    }
+
     public async createPM(pm: Partial<RecurringWorkRecord>): Promise<any> {
         const data = await this.insertTolerant('recurring_work', pm, ['work_center_id']);
         return data;

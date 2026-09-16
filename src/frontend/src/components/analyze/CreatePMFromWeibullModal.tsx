@@ -100,16 +100,16 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
             : `${pct}% of characteristic life (eta)`;
 
         const isClass = !!(data.classAssets && data.classAssets.length);
+        // 0367: the name is the job, not the method — the same "Prevents: …"
+        // shape as RCM-generated schedules. β, η, R², B10 and the data basis are
+        // provenance and live in `origin` (the Origin line on the PM detail).
         setTitle(isClass
-            ? `PM — ${data.className} class (${data.classAssets!.length} assets) — Weibull-based`
-            : `PM — ${data.asset.tag} — Weibull-based replacement`);
-        // Keep the description human-sized: the analysis numbers (β, η, R², B10,
-        // data basis) live in structured `origin` provenance below and render as
-        // the compact Origin chip on the PM detail — not as prose.
+            ? `${data.className} class — time-directed replacement (${data.classAssets!.length} assets)`
+            : `${data.asset.tag} — time-directed replacement`);
         setDescription(
-            `Time-directed replacement PM from Weibull analysis of ${data.dataPoints} failure intervals. ` +
-            `Interval basis: ${basisLabel} (${pmHrs.toLocaleString()} h).` +
-            (isClass ? ` Applies to all ${data.classAssets!.length} assets in the ${data.className} class (pooled fit).` : '')
+            `Prevents: wear-out failures of ${isClass ? `the ${data.className} class` : (data.asset.name || data.asset.tag)}\n` +
+            `Time-directed replacement · every ${pmHrs.toLocaleString()} h (${basisLabel})` +
+            (isClass ? ` · pooled fit across ${data.classAssets!.length} assets` : '')
         );
         setIntervalHours(pmHrs);
         setIntervalBasis(basisLabel);
@@ -151,7 +151,10 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
             const intervalAsHours = Math.round(intervalValue * (HOURS_PER[frequencyType] ?? 24));
             // Map the modal's frequency unit to the recurring_work convention.
             const FREQ_UNIT: Record<string, string> = { HOURS: 'Hours', DAYS: 'Days', WEEKS: 'Weeks', MONTHS: 'Months' };
+            // 0367: "PM-<asset tag>-W<nn>" (W = from Weibull analysis) instead of five random digits.
+            const code = await DatabaseService.getInstance().readablePmCode(cls ? cls[0].id : data.asset.id, 'W').catch(() => null);
             const createdPM = await DatabaseService.getInstance().createPM(buildPMStrategy({
+                ...(code ? { code } : {}),
                 title,
                 description,
                 // Class PM: representative asset + assigned_assets across the whole class.
