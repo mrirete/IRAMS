@@ -864,6 +864,7 @@ export class DatabaseService {
         return (data || []).map((r: any) => ({
             id: r.id, code: r.code, name: r.name, description: r.description || undefined,
             country: r.country || undefined, currency: r.currency || undefined, active: r.active !== false,
+            pmAutoGenerate: r.pm_auto_generate !== false,
         }));
     }
 
@@ -877,6 +878,7 @@ export class DatabaseService {
             active: c.active !== false,
             updated_at: new Date().toISOString(),
         };
+        if (c.pmAutoGenerate !== undefined) row.pm_auto_generate = c.pmAutoGenerate;
         if (c.id) row.id = c.id;
         const { error } = await supabase.from('companies').upsert(row, { onConflict: 'id' });
         if (error) { console.error('DatabaseService.saveCompany:', error); throw error; }

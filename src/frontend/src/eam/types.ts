@@ -48,6 +48,8 @@ export interface Company {
   country?: string;
   currency?: string;
   active: boolean;
+  /** 0304 companies.pm_auto_generate — Automatic (daily sweep raises due PM work orders) or Manual (Generator only). Default true. */
+  pmAutoGenerate?: boolean;
 }
 
 /** Per-company number-range override (SAP NRIV per Company Code) — W-2 T-2. */

@@ -26,6 +26,8 @@ export interface PMStrategyInput {
     code?: string;                 // else generated
     status?: string;               // defaults ACTIVE
     nextDueDate?: string;
+    /** 0304 Autopilot: false = this schedule is raised by the manual Generator only. Omit = company default (true). */
+    autoGenerate?: boolean;
     assignedAssets?: unknown[];
     templates?: unknown;
     strategyId?: string;           // 0292: strategy this PM implements
@@ -79,6 +81,7 @@ export function buildPMStrategy(i: PMStrategyInput): Record<string, unknown> {
     if (i.workCenterId !== undefined) row.work_center_id = i.workCenterId || null;
     if (i.createdBy !== undefined) row.created_by = i.createdBy || null;
     if (i.nextDueDate) row.next_due_date = i.nextDueDate;
+    if (i.autoGenerate !== undefined) row.auto_generate = i.autoGenerate;
     if (i.assignedAssets !== undefined) row.assigned_assets = i.assignedAssets;
     if (i.templates !== undefined) row.templates = i.templates;
     if (i.strategyId) { row.strategy_id = i.strategyId; row.strategy_package = i.strategyPackage || null; }

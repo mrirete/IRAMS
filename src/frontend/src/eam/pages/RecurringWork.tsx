@@ -264,6 +264,16 @@ export const RecurringWork: React.FC = () => {
     // ── 0304/0305 — Autopilot status per schedule (loud gaps) ──────────────
     // A schedule the daily sweep can't serve says so on the list instead of
     // freezing silently: wrong cadence, unarmed, blocked by an open WO, or off.
+    // Company-wide generation mode (companies.pm_auto_generate, Admin › Your Company).
+    const [companyAuto, setCompanyAuto] = useState<boolean>(true);
+    useEffect(() => {
+        (async () => {
+            try {
+                const co = (await DatabaseService.getInstance().getCompanies(false))[0];
+                setCompanyAuto(co ? co.pmAutoGenerate !== false : true);
+            } catch { /* default Automatic */ }
+        })();
+    }, []);
     const [woRollup, setWoRollup] = useState<Record<string, { completed: boolean; open: boolean; openNumber?: string }>>({});
     const [rollupTick, setRollupTick] = useState(0);
     useEffect(() => {
@@ -296,8 +306,10 @@ export const RecurringWork: React.FC = () => {
         if (String(job.scheduleType || 'TIME').toUpperCase() !== 'TIME') return null; // meter cadence — readings path
         if (!AUTOPILOT_CALENDAR_UNITS.includes(String(job.frequencyUnit || '').toUpperCase()))
             return { label: '⚠ Meter unit on a time schedule', cls: 'bg-red-50 text-red-700 border-red-200' };
+        if (!companyAuto)
+            return { label: 'Manual — company setting', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
         if (job.autoGenerate === false)
-            return { label: 'Autopilot off', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
+            return { label: 'Manual (Generator only)', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
         const parent = waitingInParent(job);
         if (parent)
             return { label: `Waiting — satisfied by ${parent.code}`, cls: 'bg-violet-50 text-violet-700 border-violet-200' };
@@ -1514,7 +1526,7 @@ export const RecurringWork: React.FC = () => {
                             window allows, and an unbounded form is harder to read than a bounded
                             one. Binds only on wide monitors; narrower panes are unchanged. */}
                         <div className="ers-page-record">
-                            {activeTab === 'details' && <DetailsTab job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
+                            {activeTab === 'details' && <DetailsTab companyAuto={companyAuto} job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
                             {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleJobUpdate} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
                             {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} />}
                             {activeTab === 'jsa' && <JSATab job={selectedJob} onUpdate={handleJobUpdate} />}
@@ -1557,9 +1569,15 @@ export const RecurringWork: React.FC = () => {
                         </div>
 
                         {/* 0304 — the daily server sweep now owns routine generation */}
-                        <div className="mx-6 mt-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800">
-                            <span className="font-bold">Autopilot is on:</span> a daily server sweep generates due work orders for every schedule whose first generated PM has been completed (one open occurrence at a time; meter-based cadences excluded). This manual run stays for previews, backfills, and schedules that haven't armed yet — or that opted out.
-                        </div>
+                        {companyAuto ? (
+                            <div className="mx-6 mt-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800">
+                                <span className="font-bold">Automatic generation is on:</span> a daily server sweep raises due work orders for every schedule whose first generated PM has been completed (one open occurrence at a time; meter-based cadences excluded). This manual run stays for previews, backfills, first occurrences, and schedules set to Manual.
+                            </div>
+                        ) : (
+                            <div className="mx-6 mt-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-700">
+                                <span className="font-bold">Manual generation:</span> this company raises PM work orders only from here (Admin › Your Company › Preventive work order generation). Review the due list and create what should go out.
+                            </div>
+                        )}
 
                         <div className="flex-1 overflow-y-auto p-6">
                             {generatedPreview.length > 0 ? (
@@ -1695,7 +1713,7 @@ export const RecurringWork: React.FC = () => {
     );
 };
 
-const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>) => void, dictionaries?: any[], jobs?: RecurringJob[], assets?: Asset[] }> = ({ job, onUpdate, dictionaries = [], jobs = [], assets = [] }) => {
+const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>) => void, dictionaries?: any[], jobs?: RecurringJob[], assets?: Asset[], companyAuto?: boolean }> = ({ job, onUpdate, dictionaries = [], jobs = [], assets = [], companyAuto = true }) => {
     // 0292: strategy-package linkage — makes cycle absorption reach the real schedule.
     const [strategies, setStrategies] = useState<any[]>([]);
     useEffect(() => {
@@ -1886,10 +1904,15 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                     <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transform transition-transform ${job.autoGenerate !== false ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
                                 </button>
                                 <div className="min-w-0">
-                                    <div className="text-xs font-bold text-slate-700">Autopilot — generate due work orders automatically</div>
+                                    <div className="text-xs font-bold text-slate-700">{job.autoGenerate !== false ? 'Automatic (Autopilot)' : 'Manual (Generator only)'}</div>
                                     <p className="text-[10px] text-slate-500 mt-0.5">
-                                        A daily server sweep raises this schedule's due work orders. It arms only after the first generated PM has been completed, keeps one open occurrence at a time, and never touches meter-based cadences. Off = manual Generator only.
+                                        {job.autoGenerate !== false
+                                            ? 'A daily server sweep raises this schedule\'s due work orders. It arms only after the first generated PM has been completed, keeps one open occurrence at a time, and never touches meter-based cadences.'
+                                            : 'Nothing is raised on its own — a planner creates each occurrence from Generate.'}
                                     </p>
+                                    {!companyAuto && (
+                                        <p className="text-[10px] text-amber-700 mt-1">Company setting is Manual (Admin › Your Company) — this switch takes effect once Automatic is enabled there.</p>
+                                    )}
                                 </div>
                             </div>
 

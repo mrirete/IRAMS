@@ -39,7 +39,10 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
         // …and the first occurrence is raised on the spot, which also arms
         // Autopilot once the technician completes it (0304 arming rule).
         generateNow: true,
+        // Automatic (daily sweep) or Manual (Generator only) — defaults to the company's choice.
+        autoGenerate: true,
     });
+    const [companyAuto, setCompanyAuto] = useState<boolean>(true);
 
     const [currentUser, setCurrentUser] = useState<string>('');
 
@@ -74,6 +77,12 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
 
             setAssets(assetData);
             setWorkCenters(wcData);
+            try {
+                const co = (await DatabaseService.getInstance().getCompanies(false))[0];
+                const auto = co ? co.pmAutoGenerate !== false : true;
+                setCompanyAuto(auto);
+                setFormData(f => ({ ...f, autoGenerate: auto }));
+            } catch { /* default stays Automatic */ }
             if (dictData.length > 0) setDictionaries(dictData);
             if (userData.length > 0) setCurrentUser(userData[0].id);
         } catch (err) {
@@ -113,6 +122,7 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                 workCenterId: formData.workCenterId || null,
                 createdBy: currentUser || null,
                 nextDueDate: firstDue,
+                autoGenerate: formData.autoGenerate,
             });
 
             const db = DatabaseService.getInstance();
@@ -259,6 +269,19 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                             />
                                             Raise the first work order now
                                         </label>
+                                        <div className="col-span-2 md:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {([
+                                                [true, 'Automatic (Autopilot)', companyAuto
+                                                    ? 'After the first order is completed, the daily sweep raises each due occurrence by itself.'
+                                                    : 'Company setting is Manual — this takes effect once Automatic is enabled in Admin › Your Company.'],
+                                                [false, 'Manual (Generator)', 'Nothing is raised on its own; a planner creates each occurrence from Recurring Work › Generate.'],
+                                            ] as const).map(([mode, label, help]) => (
+                                                <label key={String(mode)} className={`flex items-start gap-2 p-2 rounded-lg border text-[11px] cursor-pointer ${formData.autoGenerate === mode ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                                                    <input type="radio" name="pm-generation" className="mt-0.5" checked={formData.autoGenerate === mode} onChange={() => setFormData({ ...formData, autoGenerate: mode })} />
+                                                    <span><span className="font-bold text-slate-700">{label}</span><br /><span className="text-slate-500">{help}</span></span>
+                                                </label>
+                                            ))}
+                                        </div>
                                         <p className="col-span-2 md:col-span-4 text-[11px] text-slate-500 -mt-2">
                                             {leadDropped
                                                 ? `Lead time is longer than the cadence, so it is treated as 0 — the order is raised on the due day.`
@@ -266,8 +289,8 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                             {' '}
                                             {formData.generateNow
                                                 ? (dueNow
-                                                    ? 'The first one is raised immediately; completing it arms Autopilot for the rest.'
-                                                    : 'The first one is not yet inside its lead time — Autopilot raises it after the first completed order; use the Generator before then.')
+                                                    ? (formData.autoGenerate && companyAuto ? 'The first one is raised immediately; completing it arms Autopilot for the rest.' : 'The first one is raised immediately; later occurrences come from the Generator.')
+                                                    : (formData.autoGenerate && companyAuto ? 'The first one is not yet inside its lead time — Autopilot raises it after the first completed order; use the Generator before then.' : 'The first one is not yet inside its lead time — raise it from the Generator when due.'))
                                                 : 'Nothing is raised until you run the Generator once.'}
                                         </p>
                                     </div>

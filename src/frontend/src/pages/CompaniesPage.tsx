@@ -72,6 +72,7 @@ export const CompaniesPage: React.FC = () => {
                     country: r.country,
                     currency: r.currency?.trim().toUpperCase(),
                     active: r.active !== false,
+                    pmAutoGenerate: r.pmAutoGenerate !== false,
                 });
             }
             showToast('Company details saved', 'success');
@@ -119,6 +120,30 @@ export const CompaniesPage: React.FC = () => {
                 </div>
             ) : (
                 <>
+                {/* ── Preventive work order generation — the company-wide choice.
+                     Automatic: the daily sweep raises due PM work orders (each schedule
+                     arms after its first generated order is completed). Manual: nothing
+                     is raised unless a planner runs the Generator. Per-schedule Autopilot
+                     switches only take effect under Automatic. */}
+                {rows.map((r, idx) => (
+                    <div key={`gen-${r.id}`} className="bg-white border border-slate-200 rounded-xl p-4">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                            Preventive work order generation{rows.length > 1 ? ` — ${r.name || r.code}` : ''}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {([
+                                [true, 'Automatic (Autopilot)', 'A daily server sweep raises each schedule\'s due work orders on the day (or lead-time days early). A schedule arms after its first generated order is completed; one open occurrence at a time. Planners can still switch individual schedules to manual.'],
+                                [false, 'Manual (Generator)', 'Nothing is raised on its own. A planner opens Recurring Work → Generate, reviews the due list and creates the orders. Per-schedule Autopilot switches are ignored.'],
+                            ] as const).map(([mode, label, help]) => (
+                                <label key={String(mode)} className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer text-sm ${(r.pmAutoGenerate !== false) === mode ? 'border-primary-300 bg-primary-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                                    <input type="radio" name={`pm-gen-${r.id}`} className="mt-0.5" checked={(r.pmAutoGenerate !== false) === mode}
+                                        onChange={() => update(idx, { pmAutoGenerate: mode })} />
+                                    <span><span className="font-semibold text-slate-800">{label}</span><br /><span className="text-xs text-slate-500">{help}</span></span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                ))}
                 {/* ── Phone: one stacked card per company ──
                      The table is an editable seven-column grid ~700px wide. Inside a
                      sideways scroller that means editing one company by dragging the
