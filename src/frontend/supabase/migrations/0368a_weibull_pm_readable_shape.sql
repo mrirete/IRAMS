@@ -1,4 +1,4 @@
--- 0368 — The Weibull-created schedule gets the readable shape of 0367.
+-- 0368a — The Weibull-created schedule gets the readable shape of 0367.
 --
 -- 0367 was applied before this data fix was added to it (the repo copy has
 -- been restored to the applied version); this forward migration carries the
