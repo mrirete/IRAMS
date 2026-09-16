@@ -17,7 +17,7 @@ import { MOCK_RECURRING_JOBS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS }
 import { RecurringJob, Asset, WorkOrderType, JobJSA, JobLabor, JobInventory, JobFile, JobTask, InstructionBlock, Contact, JSAHazard, GenerationRule, LibraryTask } from '../types';
 import { CreatePMModal } from '../components/modals/CreatePMModal';
 import { addCadence, cadenceDays, firstDueDate, isWithinCallHorizon, sensibleLeadTimeDays, toDateOnly } from '../lib/pmCadence';
-import { absorptionWindowDays, canBeParentOf, isAbsorbedBy } from '../lib/pmHierarchy';
+import { absorptionWindowDays, canBeParentOf, isAbsorbedBy, isHarmonic } from '../lib/pmHierarchy';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { sapCycleUnit, cadenceEquals, cadenceLabel, cadenceSuffix, isMeterUnit } from '../lib/sapCycles';
 import { splitOperationsByCadence } from '../lib/jobPlanImport';
@@ -220,7 +220,8 @@ export const RecurringWork: React.FC = () => {
                 frequencyInterval: pm.frequency_interval,
                 frequencyUnit: pm.frequency_unit,
                 autoGenerate: pm.auto_generate !== false, // 0304 Autopilot opt-out
-                parentId: pm.parent_pm_id || undefined, // 0366 included-in
+                parentId: pm.parent_pm_id || undefined, // 0366 nested within
+                nestingMode: pm.nesting_mode === 'COMBINES' ? 'COMBINES' : 'SUPERSEDES',
                 leadTimeDays: pm.lead_time_days || 7,
                 jobType: pm.job_type,
                 priority: pm.priority_code,
@@ -282,7 +283,7 @@ export const RecurringWork: React.FC = () => {
     }, [jobs.length]);
 
     const AUTOPILOT_CALENDAR_UNITS = ['DAYS', 'WEEKS', 'MONTHS', 'YEARS'];
-    // 0366: is this schedule currently riding inside its parent's next order?
+    // 0366: is this schedule's next occurrence satisfied by its longer-interval task's next order?
     const waitingInParent = (job: RecurringJob): RecurringJob | null => {
         if (!job.parentId || !job.nextDueDate) return null;
         const p = jobs.find(j => j.id === job.parentId);
@@ -297,7 +298,7 @@ export const RecurringWork: React.FC = () => {
             return { label: 'Autopilot off', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
         const parent = waitingInParent(job);
         if (parent)
-            return { label: `Waiting — included in ${parent.code}`, cls: 'bg-violet-50 text-violet-700 border-violet-200' };
+            return { label: `Waiting — satisfied by ${parent.code}`, cls: 'bg-violet-50 text-violet-700 border-violet-200' };
         const r = woRollup[job.id];
         if (!r?.completed)
             return { label: 'Arms after 1st completed PM', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
@@ -346,7 +347,7 @@ export const RecurringWork: React.FC = () => {
                 }
             }
 
-            // 0365: lead time is a call horizon (raise lead-time days before due) and
+            // 0365: lead time is an advance generation window (raise lead-time days before due) and
             // the comparison is on the calendar day, exactly as the daily sweep does it.
             const lead = rj.scheduleType === 'TIME' ? sensibleLeadTimeDays(rj.leadTimeDays, rj.frequencyInterval, rj.frequencyUnit) : 0;
             const isDue = !nextDue || isWithinCallHorizon(nextDue, lead, generateDate);
@@ -380,10 +381,10 @@ export const RecurringWork: React.FC = () => {
                             asset: asset?.tag || asset?.name || 'Unknown Asset',
                             desc: rj.jobDescription || rj.description,
                             dueDate: nextDue ? toDateOnly(nextDue) : generateDate,
-                            status: parent ? 'Included' : 'Scheduled',
+                            status: parent ? 'Nested' : 'Scheduled',
                             triggerType: 'TIME',
                             reason: parent
-                                ? `Included in ${parent.code} (due ${toDateOnly(parent.nextDueDate!)}) — raised with that service`
+                                ? `Nested within ${parent.code} (due ${toDateOnly(parent.nextDueDate!)}) — satisfied by that order`
                                 : `Due per ${rj.frequencyInterval} ${rj.frequencyUnit} cycle`
                         });
                     } else if (rj.scheduleType === 'READING') {
@@ -434,8 +435,8 @@ export const RecurringWork: React.FC = () => {
             pmGroups[item.pmId].push(item);
         }
 
-        // 0366: parents first — a parent's order carries its due children, and a
-        // child already carried must not be raised again as its own order.
+        // 0366: longer-interval tasks first — their order satisfies the nested
+        // occurrences, and a nested task already satisfied must not be raised again.
         const hasChildren = (id: string) => jobs.some(j => j.parentId === id);
         const carried: string[] = [];
         const carriedBy = new Map<string, string>();
@@ -447,7 +448,7 @@ export const RecurringWork: React.FC = () => {
                 continue;
             }
             if (carriedBy.has(pmId)) {
-                carried.push(`${items[0]?.jobCode ?? pmId} carried by ${carriedBy.get(pmId)}`);
+                carried.push(`${items[0]?.jobCode ?? pmId} satisfied by ${carriedBy.get(pmId)}`);
                 continue;
             }
             for (let i = 0; i < items.length; i++) {
@@ -466,7 +467,7 @@ export const RecurringWork: React.FC = () => {
                     const missing = (wo as any)?.__copyFailures as string[] | undefined;
                     if (missing?.length) incomplete.push(`${(wo as any).wo_number ?? pmId}: ${missing.join(', ')}`);
                 } catch (e: any) {
-                    if (e?.absorbed) { carried.push(String(e.message || '').replace(/^Included: /, '')); continue; }
+                    if (e?.absorbed) { carried.push(String(e.message || '').replace(/^Nested: /, '')); continue; }
                     console.error(`Failed to generate WO for PM ${pmId} / asset ${item.asset}:`, e);
                     errors++;
                 }
@@ -476,7 +477,7 @@ export const RecurringWork: React.FC = () => {
         setGenerating(false);
         let resultMsg = `Created ${created} Work Order${created !== 1 ? 's' : ''}${errors > 0 ? `, ${errors} failed` : ''} successfully.`;
         if (carried.length > 0) {
-            resultMsg += ` ${carried.length} scope${carried.length === 1 ? '' : 's'} carried inside a parent service — ${carried.join('; ')}.`;
+            resultMsg += ` ${carried.length} nested occurrence${carried.length === 1 ? '' : 's'} satisfied by a longer-interval order — ${carried.join('; ')}.`;
         }
         if (incomplete.length > 0) {
             resultMsg += ` ${incomplete.length} generated without part of their plan — ${incomplete.join('; ')}.`;
@@ -677,7 +678,8 @@ export const RecurringWork: React.FC = () => {
                 frequency_interval: selectedJob.frequencyInterval,
                 frequency_unit: selectedJob.frequencyUnit,
                 auto_generate: selectedJob.autoGenerate !== false, // 0304 Autopilot
-                parent_pm_id: selectedJob.parentId || null,       // 0366 included-in
+                parent_pm_id: selectedJob.parentId || null,       // 0366 nested within
+                nesting_mode: selectedJob.nestingMode === 'COMBINES' ? 'COMBINES' : 'SUPERSEDES',
                 lead_time_days: selectedJob.leadTimeDays,
                 job_type: selectedJob.jobType,
                 priority_code: selectedJob.priority,
@@ -1258,11 +1260,11 @@ export const RecurringWork: React.FC = () => {
                                                 )}
                                                 {job.parentId && (() => {
                                                     const p = jobs.find(j => j.id === job.parentId);
-                                                    return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200" title="Scope included in the parent service when both are due together">in {p?.code || 'parent'}</span>;
+                                                    return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200" title="Nested within a longer-interval task — satisfied by that order when both are due together">nested in {p?.code || '…'}</span>;
                                                 })()}
                                                 {(() => {
                                                     const n = jobs.filter(j => j.parentId === job.id).length;
-                                                    return n > 0 ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200" title="This service carries shorter-cycle scopes when they fall due together">includes {n}</span> : null;
+                                                    return n > 0 ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200" title="Shorter-interval tasks nested within this one — satisfied by this order when they fall due together">nests {n}</span> : null;
                                                 })()}
                                                 {(() => {
                                                     const chip = autopilotChip(job);
@@ -1854,7 +1856,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             </div>
 
                             <div className="col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Included in (parent service)</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nested within (longer-interval task)</label>
                                 {(() => {
                                     // 0366: same asset, longer calendar cadence, one level, no cycles.
                                     const hier = (j: RecurringJob) => ({
@@ -1864,6 +1866,8 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                     const candidates = jobs.filter(j => canBeParentOf(hier(job), hier(j)));
                                     const children = jobs.filter(j => j.parentId === job.id);
                                     const win = absorptionWindowDays(job);
+                                    const parent = job.parentId ? jobs.find(j => j.id === job.parentId) : undefined;
+                                    const harmonic = parent ? isHarmonic(hier(job), hier(parent)) : true;
                                     return (
                                         <>
                                             <select
@@ -1877,14 +1881,30 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                                     <option key={j.id} value={j.id}>{j.code} — every {j.frequencyInterval} {j.frequencyUnit} — {j.jobDescription || j.description}</option>
                                                 ))}
                                                 {job.parentId && !candidates.some(j => j.id === job.parentId) && (
-                                                    <option value={job.parentId}>{jobs.find(j => j.id === job.parentId)?.code || job.parentId} (no longer a valid parent — same asset, longer cadence)</option>
+                                                    <option value={job.parentId}>{jobs.find(j => j.id === job.parentId)?.code || job.parentId} (no longer valid — same asset, longer interval)</option>
                                                 )}
                                             </select>
+                                            {job.parentId && (
+                                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    {([
+                                                        ['SUPERSEDES', 'Supersedes', `The longer task's plan already covers this scope. Its order carries the longer plan only; this occurrence is recorded on it.`],
+                                                        ['COMBINES', 'Combines', `Distinct scope done on the same visit. This task's steps and parts are appended to the longer order, tagged [${job.code}].`],
+                                                    ] as const).map(([mode, label, help]) => (
+                                                        <label key={mode} className={`flex items-start gap-2 p-2 rounded-lg border text-[11px] cursor-pointer ${(job.nestingMode || 'SUPERSEDES') === mode ? 'border-violet-300 bg-violet-50' : 'border-slate-200 bg-white'}`}>
+                                                            <input type="radio" name={`nesting-${job.id}`} className="mt-0.5" checked={(job.nestingMode || 'SUPERSEDES') === mode} onChange={() => onUpdate({ nestingMode: mode })} />
+                                                            <span><span className="font-bold text-slate-700">{label}</span><br /><span className="text-slate-500">{help}</span></span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {job.parentId && !harmonic && (
+                                                <p className="text-[10px] text-amber-700 mt-2">Intervals are not harmonic ({job.frequencyInterval} {job.frequencyUnit} within {parent?.frequencyInterval} {parent?.frequencyUnit}) — the two only coincide occasionally; on the other dates this task raises its own order.</p>
+                                            )}
                                             <p className="text-[10px] text-slate-500 mt-2">
-                                                When the parent falls due within this schedule's lead time ({win === 0 ? 'the same day' : `±${win} days`}), no separate order is raised: the parent's order carries these steps and parts tagged <span className="font-mono">[{job.code}]</span>, and this schedule rolls forward. Completing that order also counts as this schedule's first completed PM.
+                                                When the longer task falls due within this schedule's lead time ({win === 0 ? 'the same day' : `±${win} days`}), no separate order is raised — its order satisfies this occurrence and this schedule rolls forward. That order counts for this schedule's PM compliance and arms its Autopilot.
                                             </p>
                                             {children.length > 0 && (
-                                                <p className="text-[10px] text-violet-700 mt-1">Includes: {children.map(c => `${c.code} (${c.frequencyInterval} ${c.frequencyUnit})`).join(', ')}</p>
+                                                <p className="text-[10px] text-violet-700 mt-1">Nests: {children.map(c => `${c.code} (${c.frequencyInterval} ${c.frequencyUnit}, ${(c.nestingMode || 'SUPERSEDES').toLowerCase()})`).join(', ')}</p>
                                             )}
                                         </>
                                     );
@@ -3914,17 +3934,21 @@ const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[] }> = ({ jo
     // invented from the row ("PM Strategy Created by Admin, 90 days ago",
     // "Completed — On-Time") — an audit trail cannot carry events that never happened.
     const [orders, setOrders] = useState<any[]>([]);
+    const [satisfiedBy, setSatisfiedBy] = useState<any[]>([]);
     useEffect(() => {
         let alive = true;
         (async () => {
             try {
-                const { data } = await supabase.from('work_orders')
-                    .select('id, wo_number, title, status, created_at, updated_at, created_by, due_date, completed_at, completed_by, closed_at')
-                    .eq('recurring_work_id', job.id)
-                    .order('created_at', { ascending: false })
-                    .limit(200);
-                if (alive) setOrders(data || []);
-            } catch { if (alive) setOrders([]); }
+                const cols = 'id, wo_number, title, status, created_at, updated_at, created_by, due_date, completed_at, completed_by, closed_at, properties';
+                const [own, nested] = await Promise.all([
+                    supabase.from('work_orders').select(cols).eq('recurring_work_id', job.id).order('created_at', { ascending: false }).limit(200),
+                    // 0366: longer-interval orders that satisfied this schedule's occurrences
+                    supabase.from('work_orders').select(cols).contains('properties', { included_pm_ids: [job.id] }).order('created_at', { ascending: false }).limit(200),
+                ]);
+                if (!alive) return;
+                setOrders(own.data || []);
+                setSatisfiedBy(nested.data || []);
+            } catch { if (alive) { setOrders([]); setSatisfiedBy([]); } }
         })();
         return () => { alive = false; };
     }, [job.id]);
@@ -3953,6 +3977,28 @@ const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[] }> = ({ jo
                 entries.push({ id: `canc-${w.id}`, date: w.updated_at || w.created_at, event: 'Work order cancelled', user: 'System', details: num, type: 'status' });
             }
         }
+        for (const w of satisfiedBy) {
+            const num = w.wo_number ? `WO-${w.wo_number}` : String(w.id);
+            const scope = (w.properties?.included_scopes || []).find((x: any) => x?.pmId === job.id);
+            const mode = String(scope?.mode || 'SUPERSEDES').toLowerCase();
+            entries.push({
+                id: `nest-${w.id}`, date: w.created_at, event: 'Occurrence satisfied by a longer-interval order',
+                user: w.created_by ? 'Generator' : 'Autopilot',
+                details: `${num}${scope?.dueDate ? ` — this task was due ${scope.dueDate}` : ''} (${mode})`,
+                type: 'generation',
+            });
+            const st = String(w.status || '').toUpperCase();
+            const doneAt = w.completed_at || w.closed_at;
+            if (['COMP', 'TECO', 'CLOSED'].includes(st) && doneAt) {
+                const late = !!scope?.dueDate && toDateOnly(String(doneAt)) > String(scope.dueDate);
+                entries.push({
+                    id: `nest-done-${w.id}`, date: doneAt, event: 'Nested occurrence completed',
+                    user: w.completed_by ? 'Technician' : 'System',
+                    details: `${num} — ${late ? 'after this task\'s due date' : 'on time'}`,
+                    type: 'compliance',
+                });
+            }
+        }
         if (job.createdAt) {
             entries.push({
                 id: 'created', date: job.createdAt, event: 'PM strategy created',
@@ -3962,7 +4008,7 @@ const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[] }> = ({ jo
             });
         }
         return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [orders, job]);
+    }, [orders, satisfiedBy, job]);
 
     const typeColors: Record<string, string> = {
         generation: 'bg-blue-100 text-blue-700',

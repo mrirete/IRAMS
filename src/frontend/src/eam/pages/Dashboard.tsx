@@ -48,7 +48,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
   ] = await Promise.all([
     // 1. ALL work orders (single query replaces 5 separate ones)
     supabase.from('work_orders')
-      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id, actual_downtime_hrs')
+      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id, actual_downtime_hrs, properties')
       .order('updated_at', { ascending: false }),
     // 2. Service requests — counts only
     supabase.from('service_requests').select('status'),

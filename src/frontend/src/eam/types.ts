@@ -1148,7 +1148,9 @@ export interface RecurringJob {
   departmentId?: string;          // Link to OrgUnit
 
   // Hierarchy
-  parentId?: string; // For suppression logic
+  parentId?: string; // 0366: the longer-interval task this one is nested within (recurring_work.parent_pm_id)
+  /** 0366: SUPERSEDES (longer plan already covers this scope) | COMBINES (append this scope to the longer order). */
+  nestingMode?: 'SUPERSEDES' | 'COMBINES';
 
   // Job Template
   jobType: WorkOrderType;

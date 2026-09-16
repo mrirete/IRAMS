@@ -33,7 +33,7 @@ describe('pmCadence — the PM-44743 class (unit ignored → daily reads as mont
     });
 });
 
-describe('pmCadence — lead time as a call horizon', () => {
+describe('pmCadence — lead time as an advance generation window', () => {
     it('keeps a lead time shorter than the cadence and drops one that is not', () => {
         expect(sensibleLeadTimeDays(7, 3, 'Months')).toBe(7);
         expect(sensibleLeadTimeDays(7, 1, 'Days')).toBe(0);

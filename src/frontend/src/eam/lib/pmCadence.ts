@@ -70,7 +70,7 @@ export function firstDueDate(now: Date = new Date()): string {
 }
 
 /**
- * Lead time (call horizon) that makes sense for a cadence: the 7-day default
+ * Lead time (advance generation window) that makes sense for a cadence: the 7-day default
  * is fine for a quarterly service and nonsense for a daily round. Anything
  * ≥ the cadence collapses to 0 — the sweep clamps the same way (0365).
  */
@@ -81,7 +81,7 @@ export function sensibleLeadTimeDays(requested: number, interval: number, unit: 
     return lead >= cad ? 0 : lead;
 }
 
-/** Is an occurrence due `dueDate` inside its call horizon on `asOf`? */
+/** Is an occurrence due `dueDate` inside its advance generation window (lead time) on `asOf`? */
 export function isWithinCallHorizon(dueDate: string | Date, leadTimeDays: number, asOf: Date | string = new Date()): boolean {
     const due = atLocalMidnight(dueDate);
     due.setDate(due.getDate() - Math.max(0, Math.floor(Number(leadTimeDays) || 0)));

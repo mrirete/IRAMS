@@ -1,17 +1,30 @@
--- 0366 — PM hierarchy: the 6-monthly carries the 3-monthly.
+-- 0366 — Nested PM intervals: the 6-monthly satisfies the 3-monthly.
 --
--- A shorter-cycle PM whose scope is included in a longer-cycle PM on the same
--- asset (parent_pm_id, or a longer 0292 strategy package) raises nothing when
--- the two fall due together: it WAITS, and the parent's work order carries the
--- child's steps and parts tagged with the child's code, records the included
--- scopes on the order, and rolls the child forward. "Together" = within the
--- child's lead-time window (0365 call horizon), so one day of catch-up drift
--- no longer yields two orders. 0292 used to roll the child forward with no
--- order and no merge — the 6M plan had to be authored to contain the 3M steps.
+-- Grounding (vendor-neutral): RCM task packaging (IEC 60300-3-11 / SAE
+-- JA1012) groups tasks with harmonic intervals into work packages and lets a
+-- longer-interval package supersede a shorter one on coincident dates;
+-- ISO 14224 wants the maintenance record to carry every interval an order
+-- satisfied; ISO 55001 §7.5 wants the rule and its outcome documented.
 --
--- Arming (0304) now also counts a completed parent order that included this
--- schedule's scope, so a child that has only ever ridden inside its parent can
--- still self-generate on the cycles where the parent is not due.
+-- A shorter-interval preventive task nested within a longer-interval task on
+-- the same asset (parent_pm_id, or a longer 0292 strategy package) raises no
+-- order of its own when the two fall due together: it WAITS, and the
+-- longer-interval order satisfies it. Two modes (nesting_mode):
+--   SUPERSEDES — the longer plan already contains this scope: the order
+--                carries the longer plan only; the nested occurrence is
+--                recorded on the order (properties.included_scopes) and the
+--                nested schedule is rolled forward.  Default; also the rule
+--                for strategy packages (restores 0292's original semantics).
+--   COMBINES   — distinct scope on the same visit: the nested task's steps
+--                and parts are appended, tagged "[code · interval]".
+-- "Together" = within the nested task's lead-time window (0365), so one day
+-- of catch-up drift no longer yields two orders.
+--
+-- Arming (0304) also counts a completed longer-interval order that satisfied
+-- this schedule, so a nested task that has only ever been satisfied by its
+-- longer task still self-generates on the cycles where the longer task is not
+-- due. PM compliance (lib/reliabilityKpis) counts each satisfied occurrence at
+-- its own due date.
 --
 -- Mirrors lib/pmHierarchy.ts + DatabaseService.generateWOFromPM (manual path).
 -- The sweep is DROP+CREATEd → EXECUTE revoked again (0361 lesson).
@@ -19,19 +32,26 @@ BEGIN;
 
 ALTER TABLE public.recurring_work
     ADD COLUMN IF NOT EXISTS parent_pm_id text REFERENCES public.recurring_work(id) ON DELETE SET NULL;
+ALTER TABLE public.recurring_work
+    ADD COLUMN IF NOT EXISTS nesting_mode text NOT NULL DEFAULT 'SUPERSEDES';
 ALTER TABLE public.recurring_work DROP CONSTRAINT IF EXISTS chk_recurring_work_parent_not_self;
 ALTER TABLE public.recurring_work
     ADD CONSTRAINT chk_recurring_work_parent_not_self CHECK (parent_pm_id IS NULL OR parent_pm_id <> id);
+ALTER TABLE public.recurring_work DROP CONSTRAINT IF EXISTS chk_recurring_work_nesting_mode;
+ALTER TABLE public.recurring_work
+    ADD CONSTRAINT chk_recurring_work_nesting_mode CHECK (nesting_mode IN ('SUPERSEDES', 'COMBINES'));
 CREATE INDEX IF NOT EXISTS recurring_work_parent_pm_idx
     ON public.recurring_work (parent_pm_id) WHERE parent_pm_id IS NOT NULL;
 COMMENT ON COLUMN public.recurring_work.parent_pm_id IS
-  '0366: the longer-cycle PM on the same asset whose scope includes this one. When both are due together (within this PM''s lead-time window) the parent''s order carries this PM''s steps and parts and this PM is rolled forward.';
+  '0366: the longer-interval task on the same asset this one is nested within. When both are due together (within this task''s lead-time window) the longer order satisfies this occurrence and this schedule rolls forward.';
+COMMENT ON COLUMN public.recurring_work.nesting_mode IS
+  '0366: SUPERSEDES = the longer plan already covers this scope (order carries the longer plan only); COMBINES = append this task''s steps and parts to the longer order, tagged.';
 
--- Which schedule carries this one's scope right now, if any: the explicit
--- parent, or a longer exact-multiple package of the same strategy (0292),
--- whose due day lies within the child's call-horizon window.
+-- Which schedule satisfies this one's next occurrence right now, if any: the
+-- explicit longer-interval task, or a longer exact-multiple package of the
+-- same strategy (0292), whose due day lies within this task's lead-time window.
 CREATE OR REPLACE FUNCTION public.pm_absorber(p_child_id text)
- RETURNS TABLE(absorber_id text, absorber_code text, absorber_due date)
+ RETURNS TABLE(absorber_id text, absorber_code text, absorber_due date, nesting_mode text)
  LANGUAGE sql
  STABLE
  SECURITY DEFINER
@@ -42,7 +62,7 @@ AS $$
     ), win AS (
         SELECT public.pm_call_horizon_days(c.lead_time_days, c.frequency_interval, c.frequency_unit) AS d FROM c
     ), cands AS (
-        SELECT p.id, p.code, date(p.next_due_date) AS due
+        SELECT p.id, p.code, date(p.next_due_date) AS due, coalesce(c.nesting_mode, 'SUPERSEDES') AS mode
         FROM c
         JOIN public.recurring_work p ON p.id = c.parent_pm_id
         WHERE p.active IS NOT FALSE
@@ -50,7 +70,7 @@ AS $$
           AND p.next_due_date IS NOT NULL
           AND coalesce(p.asset_id, '') = coalesce(c.asset_id, '')
         UNION ALL
-        SELECT s.id, s.code, date(s.next_due_date)
+        SELECT s.id, s.code, date(s.next_due_date), 'SUPERSEDES'
         FROM c
         JOIN public.strategy_packages mine ON mine.strategy_id = c.strategy_id AND mine.label = c.strategy_package
         JOIN public.recurring_work s ON s.strategy_id = c.strategy_id AND s.id <> c.id AND s.asset_id = c.asset_id
@@ -61,7 +81,7 @@ AS $$
           AND sp.interval_days > mine.interval_days
           AND sp.interval_days % mine.interval_days = 0
     )
-    SELECT cands.id, cands.code, cands.due
+    SELECT cands.id, cands.code, cands.due, cands.mode
     FROM cands, c, win
     WHERE c.next_due_date IS NOT NULL
       AND abs(cands.due - date(c.next_due_date)) <= win.d
@@ -96,6 +116,7 @@ DECLARE
     abs_id      text;
     abs_code    text;
     abs_due     date;
+    abs_mode    text;
     v_children  jsonb;
     v_incl      text;
     v_props     jsonb;
@@ -125,20 +146,21 @@ BEGIN
             RETURN NEXT; CONTINUE;
         END IF;
 
-        -- 0366: included in a longer service due together? Wait for it — that
-        -- order carries this scope and rolls this schedule when it is raised.
-        abs_id := NULL; abs_code := NULL; abs_due := NULL;
-        SELECT a.absorber_id, a.absorber_code, a.absorber_due INTO abs_id, abs_code, abs_due
+        -- 0366: nested within a longer-interval task due together? Wait — that
+        -- order satisfies this occurrence and rolls this schedule when raised.
+        abs_id := NULL; abs_code := NULL; abs_due := NULL; abs_mode := NULL;
+        SELECT a.absorber_id, a.absorber_code, a.absorber_due, a.nesting_mode
+        INTO abs_id, abs_code, abs_due, abs_mode
         FROM public.pm_absorber(rw.id) a;
         IF abs_id IS NOT NULL THEN
             schedule_id := rw.id; schedule_code := rw.code; wo_id := NULL;
-            action := format('waiting: scope included in %s due %s — raised with that service', abs_code, abs_due);
+            action := format('waiting: nested within %s due %s (%s) — satisfied by that order', abs_code, abs_due, lower(abs_mode));
             RETURN NEXT; CONTINUE;
         END IF;
 
         -- ARMING: the loop must be proven by a human completing the first
         -- generated occurrence before the autopilot takes the schedule. A
-        -- completed parent order that carried this scope counts (0366).
+        -- completed longer-interval order that satisfied this schedule counts.
         IF NOT EXISTS (
             SELECT 1 FROM public.work_orders w
             WHERE upper(w.status::text) IN ('COMP', 'TECO', 'CLOSED')
@@ -171,8 +193,8 @@ BEGIN
 
         -- Catch-up: one WO at the oldest missed date; roll next_due past today.
         -- Always step once (the occurrence being raised — it may still be in
-        -- the future, inside its call horizon), then over any missed days.
-        -- Day granularity: next_due is a midnight from here on.
+        -- the future, inside its advance generation window), then over any
+        -- missed days. Day granularity: next_due is a midnight from here on.
         due_at  := date(rw.next_due_date)::timestamptz;
         nxt     := due_at;
         covered := 0;
@@ -199,14 +221,15 @@ BEGIN
             v_assignee := NULL;
         END;
 
-        -- 0366: the shorter-cycle schedules this order carries — explicit
-        -- children and shorter strategy packages whose absorber is this schedule.
+        -- 0366: the nested schedules this order satisfies — explicit children
+        -- and shorter strategy packages whose absorber is this schedule.
         v_children := '[]'::jsonb;
         BEGIN
             SELECT coalesce(jsonb_agg(jsonb_build_object(
                        'id', c.id, 'code', c.code, 'title', c.title,
                        'cadence', c.frequency_interval || ' ' || c.frequency_unit,
                        'due', date(c.next_due_date),
+                       'mode', CASE WHEN c.parent_pm_id = rw.id THEN coalesce(c.nesting_mode, 'SUPERSEDES') ELSE 'SUPERSEDES' END,
                        'freq_int', c.frequency_interval, 'freq_unit', upper(c.frequency_unit),
                        'templates', coalesce(c.templates, '{}'::jsonb))
                    ORDER BY c.code), '[]'::jsonb)
@@ -220,7 +243,7 @@ BEGIN
               AND (SELECT a.absorber_id FROM public.pm_absorber(c.id) a) = rw.id;
         EXCEPTION WHEN OTHERS THEN
             v_children := '[]'::jsonb;
-            RAISE NOTICE 'pm_autogen_sweep: included-scope lookup failed for %: %', rw.code, SQLERRM;
+            RAISE NOTICE 'pm_autogen_sweep: nested-scope lookup failed for %: %', rw.code, SQLERRM;
         END;
         v_incl := NULL;
         IF jsonb_array_length(v_children) > 0 THEN
@@ -230,7 +253,7 @@ BEGIN
                        'included_pm_ids', coalesce(jsonb_agg(e ->> 'id'), '[]'::jsonb),
                        'included_scopes', coalesce(jsonb_agg(jsonb_build_object(
                            'pmId', e ->> 'id', 'code', e ->> 'code', 'title', e ->> 'title',
-                           'cadence', e ->> 'cadence', 'dueDate', e ->> 'due')), '[]'::jsonb))
+                           'cadence', e ->> 'cadence', 'dueDate', e ->> 'due', 'mode', e ->> 'mode')), '[]'::jsonb))
             INTO v_props
             FROM jsonb_array_elements(v_children) e;
         ELSE
@@ -242,7 +265,7 @@ BEGIN
         v_won := to_char(now(), 'YYYY') || '-' || lpad((seq % 1000000)::text, 6, '0');
         v_title := coalesce(nullif(r ->> 'description', ''), rw.title)
                    || CASE WHEN coalesce(r ->> 'strategy_package', '') <> '' THEN ' — ' || (r ->> 'strategy_package') || ' service' ELSE '' END
-                   || CASE WHEN v_incl IS NOT NULL THEN ' (incl. ' || v_incl || ')' ELSE '' END
+                   || CASE WHEN v_incl IS NOT NULL THEN ' (also satisfies ' || v_incl || ')' ELSE '' END
                    || CASE WHEN covered > 1 THEN format(' (Generated — covers %s missed occurrences)', covered) ELSE ' (Generated)' END;
 
         INSERT INTO public.work_orders (
@@ -308,13 +331,15 @@ BEGIN
             RAISE NOTICE 'pm_autogen_sweep: job-step copy failed for WO %: %', v_won, SQLERRM;
         END;
 
-        -- 0366: included scopes — steps and parts after the parent's own, each
-        -- tagged "[code · cadence]" so the technician sees which service a
-        -- step belongs to. Numbering continues in tens.
+        -- 0366: COMBINES children — steps and parts after the longer plan's
+        -- own, each tagged "[code · interval]" so the technician sees which
+        -- task a step belongs to. Numbering continues in tens. SUPERSEDES
+        -- children add nothing: the longer plan already covers them.
         IF jsonb_array_length(v_children) > 0 THEN
             BEGIN
                 SELECT coalesce(max(sequence), 0) INTO v_seq FROM public.job_tasks WHERE job_tasks.wo_id = v_wo;
                 FOR ch IN SELECT e FROM jsonb_array_elements(v_children) e LOOP
+                    CONTINUE WHEN (ch ->> 'mode') <> 'COMBINES';
                     INSERT INTO public.job_tasks (
                         id, wo_id, sequence, description, est_hours, status, instructions,
                         operation_no, control_key, work_center_id, planned_rate,
@@ -348,12 +373,12 @@ BEGIN
                     FROM jsonb_array_elements(coalesce(ch -> 'templates' -> 'inventory', '[]'::jsonb)) AS p;
                 END LOOP;
             EXCEPTION WHEN OTHERS THEN
-                RAISE NOTICE 'pm_autogen_sweep: included-scope copy failed for WO %: %', v_won, SQLERRM;
+                RAISE NOTICE 'pm_autogen_sweep: nested-scope copy failed for WO %: %', v_won, SQLERRM;
             END;
 
-            -- Roll each included child past this order's due day (at least one
+            -- Roll each nested schedule past this order's due day (at least one
             -- step) — in its own block so a copy problem above never leaves a
-            -- child due again tomorrow beside an order that already carries it.
+            -- nested task due again tomorrow beside an order that satisfies it.
             FOR ch IN SELECT e FROM jsonb_array_elements(v_children) e LOOP
                 BEGIN
                     nxt_c := (ch ->> 'due')::date::timestamptz;
@@ -373,10 +398,10 @@ BEGIN
                     SET last_generated_date = now(), next_due_date = nxt_c
                     WHERE id = ch ->> 'id';
                     schedule_id := ch ->> 'id'; schedule_code := ch ->> 'code'; wo_id := v_wo;
-                    action := format('included in %s (%s), next due %s', v_won, rw.code, date(nxt_c));
+                    action := format('satisfied by %s (%s, %s), next due %s', v_won, rw.code, lower(ch ->> 'mode'), date(nxt_c));
                     RETURN NEXT;
                 EXCEPTION WHEN OTHERS THEN
-                    RAISE NOTICE 'pm_autogen_sweep: could not roll included schedule %: %', ch ->> 'code', SQLERRM;
+                    RAISE NOTICE 'pm_autogen_sweep: could not roll nested schedule %: %', ch ->> 'code', SQLERRM;
                 END;
             END LOOP;
         END IF;
@@ -444,9 +469,9 @@ BEGIN
         schedule_id := rw.id; schedule_code := rw.code; wo_id := v_wo;
         action := CASE WHEN covered > 1
                        THEN format('generated %s (due %s, covers %s missed occurrences%s), next due %s', v_won, date(due_at), covered,
-                                   CASE WHEN v_incl IS NOT NULL THEN ', incl. ' || v_incl ELSE '' END, date(nxt))
+                                   CASE WHEN v_incl IS NOT NULL THEN ', also satisfies ' || v_incl ELSE '' END, date(nxt))
                        ELSE format('generated %s (due %s%s), next due %s', v_won, date(due_at),
-                                   CASE WHEN v_incl IS NOT NULL THEN ', incl. ' || v_incl ELSE '' END, date(nxt)) END;
+                                   CASE WHEN v_incl IS NOT NULL THEN ', also satisfies ' || v_incl ELSE '' END, date(nxt)) END;
         RETURN NEXT;
     END LOOP;
 END;
@@ -455,6 +480,6 @@ $function$
 -- DROP+CREATE re-arms the default EXECUTE grant to PUBLIC (0361) — take it back.
 REVOKE ALL ON FUNCTION public.pm_autogen_sweep() FROM public, anon;
 COMMENT ON FUNCTION public.pm_autogen_sweep() IS
-  '0304/0354/0365/0366 PM Autopilot: raises due calendar PMs on the calendar day inside their lead-time horizon; arms after the first completed generated (or included) WO; one open WO at a time; catch-up = one WO covering missed occurrences; assigns the plan''s lead labour contact; a child due together with its parent waits and rides inside the parent''s order (steps/parts tagged, included_scopes recorded).';
+  '0304/0354/0365/0366 PM Autopilot: raises due calendar PMs on the calendar day inside their advance generation window (lead time); arms after the first completed generated (or satisfied-by-longer-task) WO; one open WO at a time; catch-up = one WO covering missed occurrences; assigns the plan''s lead labour contact; a task nested within a longer-interval task due together waits and is satisfied by that order (SUPERSEDES: no extra steps; COMBINES: steps/parts appended and tagged), recorded in properties.included_scopes.';
 
 COMMIT;

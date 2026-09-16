@@ -38,7 +38,7 @@ import { movementTypeFor } from '../lib/movementType';
 import { isPreventiveWoType, buildWorkOrder } from '../lib/workOrder';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { addCadence, normaliseUnit, toDateOnly } from '../lib/pmCadence';
-import { absorptionWindowDays, includedScopesSuffix, isAbsorbedBy, mergeIncludedScopes, type IncludedScope } from '../lib/pmHierarchy';
+import { absorptionWindowDays, includedScopesSuffix, isAbsorbedBy, mergeIncludedScopes, type IncludedScope, type NestingMode } from '../lib/pmHierarchy';
 import {
     OperationActual,
     OrderActuals,
@@ -5345,22 +5345,22 @@ export class DatabaseService {
     }
 
     /**
-     * 0366: the schedule that carries `pm`'s scope right now, if any — the
-     * explicit parent (parent_pm_id) or a longer exact-multiple package of the
-     * same strategy (0292) — whose due day lies within pm's lead-time window.
-     * Mirrors public.pm_absorber().
+     * 0366: the longer-interval task that satisfies `pm`'s next occurrence, if
+     * any — the explicit one (parent_pm_id, with pm's nesting_mode) or a longer
+     * exact-multiple package of the same strategy (0292, always SUPERSEDES) —
+     * whose due day lies within pm's lead-time window. Mirrors public.pm_absorber().
      */
-    public async findPmAbsorber(pm: any, assetId?: string | null): Promise<{ id: string; code: string; due: string } | null> {
+    public async findPmAbsorber(pm: any, assetId?: string | null): Promise<{ id: string; code: string; due: string; mode: NestingMode } | null> {
         if (!pm?.next_due_date) return null;
         const win = absorptionWindowDays({ frequencyInterval: pm.frequency_interval, frequencyUnit: pm.frequency_unit, leadTimeDays: pm.lead_time_days });
-        const cands: { id: string; code: string; next_due_date: string }[] = [];
+        const cands: { id: string; code: string; next_due_date: string; mode: NestingMode }[] = [];
         if (pm.parent_pm_id) {
             const { data: parent } = await supabase.from('recurring_work')
                 .select('id, code, next_due_date, active, status, asset_id')
                 .eq('id', pm.parent_pm_id).maybeSingle();
             if (parent && parent.active !== false && String(parent.status || 'ACTIVE').toUpperCase() === 'ACTIVE'
                 && parent.next_due_date && (parent.asset_id || '') === (assetId || pm.asset_id || '')) {
-                cands.push(parent);
+                cands.push({ ...parent, mode: (pm.nesting_mode === 'COMBINES' ? 'COMBINES' : 'SUPERSEDES') });
             }
         }
         if (pm.strategy_id && pm.strategy_package) {
@@ -5373,17 +5373,17 @@ export class DatabaseService {
                 for (const sib of (sibs || []) as any[]) {
                     const sp = (pkgRows || []).find((p: any) => p.label === sib.strategy_package);
                     if (sib.active === false || String(sib.status || 'ACTIVE').toUpperCase() !== 'ACTIVE' || !sib.next_due_date || !sp) continue;
-                    if (sp.interval_days > mine.interval_days && sp.interval_days % mine.interval_days === 0) cands.push(sib);
+                    if (sp.interval_days > mine.interval_days && sp.interval_days % mine.interval_days === 0) cands.push({ ...sib, mode: 'SUPERSEDES' });
                 }
             }
         }
         const hit = cands
             .filter(c => isAbsorbedBy(String(pm.next_due_date), String(c.next_due_date), win))
             .sort((a, b) => toDateOnly(String(a.next_due_date)).localeCompare(toDateOnly(String(b.next_due_date))))[0];
-        return hit ? { id: hit.id, code: hit.code, due: toDateOnly(String(hit.next_due_date)) } : null;
+        return hit ? { id: hit.id, code: hit.code, due: toDateOnly(String(hit.next_due_date)), mode: hit.mode } : null;
     }
 
-    /** 0366: the active shorter-cycle schedules whose absorber is `pm` right now (with templates). */
+    /** 0366: the active nested schedules whose next occurrence `pm` satisfies right now (with templates and `__mode`). */
     public async findIncludedChildren(pm: any, assetId?: string | null): Promise<any[]> {
         try {
             const or = pm.strategy_id ? `parent_pm_id.eq.${pm.id},strategy_id.eq.${pm.strategy_id}` : `parent_pm_id.eq.${pm.id}`;
@@ -5392,7 +5392,7 @@ export class DatabaseService {
             for (const c of (data || []) as any[]) {
                 if (c.active === false || String(c.status || 'ACTIVE').toUpperCase() !== 'ACTIVE' || !c.next_due_date) continue;
                 const a = await this.findPmAbsorber(c, assetId || pm.asset_id);
-                if (a?.id === pm.id) out.push(c);
+                if (a && a.id === pm.id) out.push({ ...c, __mode: a.mode });
             }
             return out.sort((a, b) => String(a.code).localeCompare(String(b.code)));
         } catch (e: any) {
@@ -5523,16 +5523,17 @@ export class DatabaseService {
 
         const templates = pm.templates || {};
 
-        // ── Included scope (0292 packages + 0366 parent link) ───────────────
-        // If a longer service on the same asset is due within this schedule's
-        // lead-time window, that order carries this scope: raise nothing here
-        // and do NOT roll — the parent rolls this schedule when it is raised.
+        // ── Nested interval (0292 packages + 0366 parent link) ──────────────
+        // If a longer-interval task on the same asset is due within this
+        // schedule's lead-time window, that order satisfies this occurrence:
+        // raise nothing here and do NOT roll — the longer task rolls this
+        // schedule when its order is raised.
         if (meterReading == null) {
             try {
                 const absorber = await this.findPmAbsorber(pm, assetId || pm.asset_id);
                 if (absorber) {
                     const absorbedErr: any = new Error(
-                        `Included: ${pm.code} is carried by ${absorber.code} due ${absorber.due} — raise that service; its order carries these steps.`
+                        `Nested: ${pm.code} is satisfied by ${absorber.code} due ${absorber.due} (${absorber.mode.toLowerCase()}) — raise that task; its order records this occurrence.`
                     );
                     absorbedErr.absorbed = true;
                     throw absorbedErr;
@@ -5543,12 +5544,17 @@ export class DatabaseService {
             }
         }
 
-        // ── 0366: the shorter-cycle schedules this order carries ────────────
+        // ── 0366: the nested schedules this order satisfies ─────────────────
         const includedChildren = meterReading == null ? await this.findIncludedChildren(pm, assetId || pm.asset_id) : [];
         const merged = mergeIncludedScopes(
             { tasks: templates.tasks || [], inventory: templates.inventory || [] },
             includedChildren.map(c => ({
-                scope: { pmId: c.id, code: c.code, title: c.title, cadence: `${c.frequency_interval} ${c.frequency_unit}`, dueDate: toDateOnly(String(c.next_due_date)) } as IncludedScope,
+                scope: {
+                    pmId: c.id, code: c.code, title: c.title,
+                    cadence: `${c.frequency_interval} ${c.frequency_unit}`,
+                    dueDate: toDateOnly(String(c.next_due_date)),
+                    mode: (c.__mode || 'SUPERSEDES') as NestingMode,
+                } as IncludedScope,
                 templates: c.templates || {},
             })),
         );
@@ -5583,7 +5589,7 @@ export class DatabaseService {
             assigned_to: leadLabourContact(pm.templates),
             due_date: dueDate,
             date_due_start: dueDate,
-            // 0366: the scopes this order carries — arming and the technician's step list both read it.
+            // 0366: the nested occurrences this order satisfies — arming, PM compliance and the History tab read it.
             ...(merged.included.length ? { properties: { included_pm_ids: merged.included.map(i => i.pmId), included_scopes: merged.included } } : {}),
             est_duration: pm.est_duration || pm.estimated_duration || 0,
             created_at: new Date().toISOString(),
@@ -5716,7 +5722,7 @@ export class DatabaseService {
             }
         }
 
-        // 6b. 0366: roll each included child past this order's due day (at least one step).
+        // 6b. 0366: roll each nested schedule past this order's due day (at least one step).
         for (const c of includedChildren) {
             try {
                 const floor = [toDateOnly(new Date()), toDateOnly(dueDate)].sort().pop() as string;
@@ -5727,7 +5733,7 @@ export class DatabaseService {
                     .update({ last_generated_date: new Date().toISOString(), next_due_date: nxt })
                     .eq('id', c.id);
             } catch (e: any) {
-                console.warn(`[generateWOFromPM] could not roll included schedule ${c.code}:`, e?.message);
+                console.warn(`[generateWOFromPM] could not roll nested schedule ${c.code}:`, e?.message);
                 copyFailures.push(`rolling ${c.code} forward`);
             }
         }

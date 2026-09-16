@@ -28,6 +28,25 @@ export interface KpiWoRow {
     actual_downtime_hrs?: number | null;
     /** Order-level actual repair hours (0283) — the SMRP 3.5.2 MTTR basis. */
     actual_duration_hrs?: number | null;
+    /** 0366: nested-interval occurrences this order also satisfied (work_orders.properties.included_scopes). */
+    properties?: { included_scopes?: { dueDate?: string | null }[] | null } | null;
+}
+
+/**
+ * 0366: an order that satisfied nested-interval occurrences counts once per
+ * occurrence — each at its own due date, completed when the order was. Without
+ * this a 3-monthly superseded by the 6-monthly vanished from PM compliance
+ * (no order of its own), understating the denominator every second cycle.
+ */
+export function expandIncludedScopes<T extends KpiWoRow>(wos: T[]): T[] {
+    const out: T[] = [];
+    for (const w of wos) {
+        out.push(w);
+        for (const s of w.properties?.included_scopes || []) {
+            if (s?.dueDate) out.push({ ...w, due_date: s.dueDate, properties: null });
+        }
+    }
+    return out;
 }
 
 export interface MtbfResult {
@@ -135,7 +154,7 @@ export interface PmComplianceResult {
  */
 const DONE_STATUSES = ['CLOSED', 'TECO', 'COMP', 'CANCELLED'];
 export function computePmCompliance(wos: KpiWoRow[], windowStartMs: number, nowMs: number): PmComplianceResult {
-    const due = wos.filter((w) => {
+    const due = expandIncludedScopes(wos).filter((w) => {
         if (!isPm(w.type) || !w.due_date) return false;
         const d = new Date(w.due_date).getTime();
         if (!Number.isFinite(d)) return false;
@@ -144,11 +163,15 @@ export function computePmCompliance(wos: KpiWoRow[], windowStartMs: number, nowM
         const open = !DONE_STATUSES.includes(String(w.status ?? '').toUpperCase());
         return open && d < nowMs;
     });
+    // On time = completed by the due DAY. Due dates are days (generated orders
+    // carry midnight), so a timestamp compare called an order closed at 10:00
+    // on its due date late — every same-day completion read as a miss.
     const onTime = due.filter((w) => {
         if (!w.closed_at) return false;
         const closed = new Date(w.closed_at).getTime();
         const dueMs = new Date(w.due_date as string).getTime();
-        return Number.isFinite(closed) && closed <= dueMs;
+        return Number.isFinite(closed) && Number.isFinite(dueMs)
+            && new Date(closed).toISOString().slice(0, 10) <= new Date(dueMs).toISOString().slice(0, 10);
     });
     return {
         due: due.length,
