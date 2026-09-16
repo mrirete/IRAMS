@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
     Search, Plus, Filter, Save, Calendar, Clock, Gauge, FileText,
     Link as LinkIcon, Layers, Package, Users, ClipboardList,
-    ChevronRight, ChevronLeft, Zap, Play, CheckCircle, AlertTriangle, Repeat, Shield,
+    ChevronRight, ChevronLeft, Zap, CheckCircle, AlertTriangle, Repeat, Shield,
     MoveUp, MoveDown, Trash2, Edit2, CheckSquare, Hash, AlignLeft, X, Loader2,
     Copy, Maximize2, Minimize2, Star, ArrowUpRight, ArrowLeft, History, ChevronDown, ChevronUp,
     PauseCircle, PlayCircle, BarChart3, Eye, TrendingUp, Upload, BookOpen
@@ -411,10 +411,6 @@ export const RecurringWork: React.FC = () => {
         });
         setGeneratedPreview(newJobs);
         setSelectedGenItems(new Set(newJobs.map((_, i) => i)));
-
-        if (newJobs.length === 0) {
-            showToast('No PMs are due by the selected date', 'info');
-        }
     };
 
     const handleCreateJobs = async () => {
@@ -626,6 +622,22 @@ export const RecurringWork: React.FC = () => {
         setShowGenerator(true);
         // Pre-load generator with selected items only
     };
+
+    // The due-list is a pure local calculation over the loaded schedules, so it
+    // runs by itself when the window opens and whenever the date or the
+    // schedules change — no "Run Analysis" click, no empty placeholder, and no
+    // stale tick-set from a previous run counting on the Create button.
+    const closeGenerator = () => {
+        setShowGenerator(false);
+        setGeneratedPreview([]);
+        setSelectedGenItems(new Set());
+        setGenerationResult(null);
+    };
+    useEffect(() => {
+        if (!showGenerator || generationResult) return;
+        handleRunGenerator();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showGenerator, generateDate, jobs]);
 
     const toggleSelect = (id: string) => {
         setSelectedIds(prev => {
@@ -1515,12 +1527,12 @@ export const RecurringWork: React.FC = () => {
                                 <h2 className="text-xl font-bold flex items-center gap-2"><Zap size={20} /> Recurring Job Generator</h2>
                                 <p className="text-blue-100 text-sm">Process due PMs and create Work Orders.</p>
                             </div>
-                            <button onClick={() => setShowGenerator(false)} className="text-white/70 hover:text-white p-2 hover:bg-blue-500 rounded-full transition">X</button>
+                            <button onClick={closeGenerator} className="text-white/70 hover:text-white p-2 hover:bg-blue-500 rounded-full transition">X</button>
                         </div>
 
-                        <div className="p-6 bg-slate-50 border-b border-slate-200 flex gap-4 items-end">
-                            <div className="flex-1">
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Process Up To</label>
+                        <div className="p-6 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-4 items-end">
+                            <div className="w-full sm:w-64">
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Due on or before</label>
                                 <input
                                     type="date"
                                     value={generateDate}
@@ -1528,18 +1540,11 @@ export const RecurringWork: React.FC = () => {
                                     className="w-full p-2 border border-slate-300 rounded-lg"
                                 />
                             </div>
-                            <div className="flex-1">
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Filter by Parent (Area)</label>
-                                <select className="w-full p-2 border border-slate-300 rounded-lg">
-                                    <option value="">All Areas</option>
-                                </select>
-                            </div>
-                            <button
-                                onClick={handleRunGenerator}
-                                className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2"
-                            >
-                                <Play size={16} fill="currentColor" /> Run Analysis
-                            </button>
+                            <p className="text-xs text-slate-500 pb-2">
+                                {generatedPreview.length === 0
+                                    ? 'Nothing is due by this date.'
+                                    : `${generatedPreview.length} occurrence${generatedPreview.length === 1 ? '' : 's'} due — untick anything you do not want raised.`}
+                            </p>
                         </div>
 
                         {/* 0304 — the daily server sweep now owns routine generation */}
@@ -1621,7 +1626,7 @@ export const RecurringWork: React.FC = () => {
                             ) : (
                                 <div className="text-center py-12 text-slate-400">
                                     <Repeat size={48} className="mx-auto mb-4 opacity-20" />
-                                    <p>Select a date and click "Run Analysis" to see jobs that are due.</p>
+                                    <p>No schedule is due on or before {generateDate} — move the date forward to preview upcoming work.</p>
                                 </div>
                             )}
                         </div>
@@ -1635,7 +1640,7 @@ export const RecurringWork: React.FC = () => {
                                 )}
                             </div>
                             <div className="flex gap-3">
-                                <button onClick={() => { setShowGenerator(false); setGeneratedPreview([]); setGenerationResult(null); }} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">
+                                <button onClick={closeGenerator} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">
                                     {generationResult ? 'Close' : 'Cancel'}
                                 </button>
                                 {!generationResult && (
