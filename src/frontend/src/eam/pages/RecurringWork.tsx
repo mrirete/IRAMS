@@ -264,24 +264,25 @@ export const RecurringWork: React.FC = () => {
     // ── 0304/0305 — Autopilot status per schedule (loud gaps) ──────────────
     // A schedule the daily sweep can't serve says so on the list instead of
     // freezing silently: wrong cadence, unarmed, blocked by an open WO, or off.
-    const [woRollup, setWoRollup] = useState<Record<string, { completed: boolean; open: boolean }>>({});
+    const [woRollup, setWoRollup] = useState<Record<string, { completed: boolean; open: boolean; openNumber?: string }>>({});
+    const [rollupTick, setRollupTick] = useState(0);
     useEffect(() => {
         (async () => {
             try {
                 const { data } = await supabase.from('work_orders')
-                    .select('recurring_work_id, status')
+                    .select('recurring_work_id, status, wo_number')
                     .not('recurring_work_id', 'is', null);
-                const acc: Record<string, { completed: boolean; open: boolean }> = {};
+                const acc: Record<string, { completed: boolean; open: boolean; openNumber?: string }> = {};
                 for (const w of (data || []) as any[]) {
                     const st = String(w.status || '').toUpperCase();
                     const m = acc[w.recurring_work_id] || (acc[w.recurring_work_id] = { completed: false, open: false });
                     if (['COMP', 'TECO', 'CLOSED'].includes(st)) m.completed = true;
-                    else if (st !== 'CANCELLED') m.open = true;
+                    else if (st !== 'CANCELLED') { m.open = true; m.openNumber = w.wo_number ? `WO-${w.wo_number}` : m.openNumber; }
                 }
                 setWoRollup(acc);
             } catch { /* chip is advisory only */ }
         })();
-    }, [jobs.length]);
+    }, [jobs.length, rollupTick]);
 
     const AUTOPILOT_CALENDAR_UNITS = ['DAYS', 'WEEKS', 'MONTHS', 'YEARS'];
     // 0366: is this schedule's next occurrence satisfied by its longer-interval task's next order?
@@ -375,6 +376,7 @@ export const RecurringWork: React.FC = () => {
                     const asset = dbAssets.find(a => a.id === ra.assetId);
                     if (rj.scheduleType === 'TIME') {
                         const parent = waitingInParent(rj);
+                        const openOrder = woRollup[rj.id]?.open ? (woRollup[rj.id]?.openNumber || 'an open order') : null;
                         newJobs.push({
                             pmId: rj.id,
                             jobCode: rj.code,
@@ -382,11 +384,16 @@ export const RecurringWork: React.FC = () => {
                             asset: asset?.tag || asset?.name || 'Unknown Asset',
                             desc: rj.jobDescription || rj.description,
                             dueDate: nextDue ? toDateOnly(nextDue) : generateDate,
-                            status: parent ? 'Nested' : 'Scheduled',
+                            status: openOrder ? 'Blocked' : parent ? 'Nested' : 'Scheduled',
                             triggerType: 'TIME',
-                            reason: parent
-                                ? `Nested within ${parent.code} (due ${toDateOnly(parent.nextDueDate!)}) — satisfied by that order`
-                                : `Due per ${rj.frequencyInterval} ${rj.frequencyUnit} cycle`
+                            // The sweep never stacks a second open order on a schedule; the
+                            // manual path applies the same rule instead of raising a duplicate.
+                            blocked: !!openOrder || !!parent,
+                            reason: openOrder
+                                ? `${openOrder} is still open — complete or cancel it first (one open occurrence per schedule)`
+                                : parent
+                                    ? `Nested within ${parent.code} (due ${toDateOnly(parent.nextDueDate!)}) — satisfied by that order`
+                                    : `Due per ${rj.frequencyInterval} ${rj.frequencyUnit} cycle`
                         });
                     } else if (rj.scheduleType === 'READING') {
                         const lastReading = ra.lastReadingValue || 0;
@@ -410,7 +417,7 @@ export const RecurringWork: React.FC = () => {
             }
         });
         setGeneratedPreview(newJobs);
-        setSelectedGenItems(new Set(newJobs.map((_, i) => i)));
+        setSelectedGenItems(new Set(newJobs.map((j, i) => (j.blocked ? -1 : i)).filter(i => i >= 0)));
     };
 
     const handleCreateJobs = async () => {
@@ -481,8 +488,10 @@ export const RecurringWork: React.FC = () => {
         }
         setGenerationResult(resultMsg);
         showToast(resultMsg, errors > 0 || incomplete.length > 0 ? 'warning' : 'success');
-        // Reload strategies to reflect updated next_due_date
+        // Reload strategies to reflect updated next_due_date; refresh the open-order
+        // roll-up so the chips and the next Generator run see the orders just raised.
         await loadStrategies();
+        setRollupTick(t => t + 1);
     };
 
     const handleJobUpdate = (updates: Partial<RecurringJob>) => {
@@ -637,7 +646,7 @@ export const RecurringWork: React.FC = () => {
         if (!showGenerator || generationResult) return;
         handleRunGenerator();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showGenerator, generateDate, jobs]);
+    }, [showGenerator, generateDate, jobs, woRollup]);
 
     const toggleSelect = (id: string) => {
         setSelectedIds(prev => {
@@ -1543,7 +1552,7 @@ export const RecurringWork: React.FC = () => {
                             <p className="text-xs text-slate-500 pb-2">
                                 {generatedPreview.length === 0
                                     ? 'Nothing is due by this date.'
-                                    : `${generatedPreview.length} occurrence${generatedPreview.length === 1 ? '' : 's'} due — untick anything you do not want raised.`}
+                                    : `${generatedPreview.length} occurrence${generatedPreview.length === 1 ? '' : 's'} due${generatedPreview.some((j: any) => j.blocked) ? ` (${generatedPreview.filter((j: any) => j.blocked).length} held back — see reason)` : ''} — untick anything you do not want raised.`}
                             </p>
                         </div>
 
@@ -1613,7 +1622,7 @@ export const RecurringWork: React.FC = () => {
                                                                     {triggerType === 'READING' && (
                                                                         <td className="p-3 text-sm font-mono text-amber-700 font-bold">{item.lastReading ?? '-'}</td>
                                                                     )}
-                                                                    <td className={`p-3 text-sm font-medium ${triggerType === 'READING' ? 'text-amber-600' : 'text-green-600'}`}>{item.reason}</td>
+                                                                    <td className={`p-3 text-sm font-medium ${item.blocked ? 'text-amber-700' : triggerType === 'READING' ? 'text-amber-600' : 'text-green-600'}`}>{item.reason}</td>
                                                                 </tr>
                                                             );
                                                         })}
