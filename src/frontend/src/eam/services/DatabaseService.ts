@@ -37,6 +37,7 @@ import { evaluateReading } from '../../lib/readingAlarm';
 import { movementTypeFor } from '../lib/movementType';
 import { isPreventiveWoType, buildWorkOrder } from '../lib/workOrder';
 import { buildPMStrategy } from '../lib/pmStrategy';
+import { addCadence, normaliseUnit, toDateOnly } from '../lib/pmCadence';
 import {
     OperationActual,
     OrderActuals,
@@ -109,6 +110,13 @@ export function describeUserHistory(refs: { table: string; column: string; rows:
     for (const r of refs) byTable.set(r.table, (byTable.get(r.table) || 0) + Number(r.rows || 0));
     const parts = Array.from(byTable.entries()).map(([t, n]) => `${n} ${labels[t.replace(/^public./, '')] || t.replace(/_/g, ' ')}`);
     return `has operational history (${parts.join(', ')}) and cannot be deleted. Disable the login instead — the history stays attributable.`;
+}
+
+/** 0365: the technician a generated PM order belongs to — the plan's lead labour line, else its first named person. */
+function leadLabourContact(templates: any): string | null {
+    const labor: any[] = Array.isArray(templates?.labor) ? templates.labor : [];
+    const lead = labor.find(l => l?.isLead && l?.contactId) || labor.find(l => l?.contactId);
+    return lead?.contactId ? String(lead.contactId) : null;
 }
 
 export class DatabaseService {
@@ -5528,6 +5536,10 @@ export class DatabaseService {
             frozen_labor_cost: 0,
             frozen_material_cost: 0,
             created_by: null,  // System-generated; null avoids UUID FK constraint
+            // 0365: the plan's lead labour line names the technician — stamp them
+            // on the order so it is theirs on My Work even if the labour copy
+            // below fails, and so the assignment notification reaches them.
+            assigned_to: leadLabourContact(pm.templates),
             due_date: dueDate,
             date_due_start: dueDate,
             est_duration: pm.est_duration || pm.estimated_duration || 0,
@@ -5630,7 +5642,12 @@ export class DatabaseService {
                 wo_id: woId,
                 contact_id: l.contactId || null,
                 contact_type_code: l.contactType || 'TECHNICIAN',
-                hours_worked: l.estDuration || 0,
+                // 0365: a plan line is remaining work, not hours worked — writing
+                // estDuration into hours_worked put planned hours into "worked" reports
+                // on the day the order was raised.
+                hours_worked: 0,
+                remaining_hours: l.estDuration || 0,
+                is_lead: !!l.isLead,
                 rate_per_hour: 0,
                 date_worked: new Date().toISOString().split('T')[0],
                 created_at: new Date().toISOString(),
@@ -5664,21 +5681,17 @@ export class DatabaseService {
             const freqUnit = (pm.frequency_type || pm.frequency_unit || '').toUpperCase();
             const freqInterval = pm.interval || pm.frequency_interval || 0;
 
-            // Roll forward from current next_due_date (not from today)
-            let nextDue: Date | null = null;
-            if (freqUnit && freqInterval) {
-                const baseDate = pm.next_due_date ? new Date(pm.next_due_date) : now2;
-                nextDue = new Date(baseDate);
-                if (freqUnit === 'DAYS') nextDue.setDate(nextDue.getDate() + freqInterval);
-                else if (freqUnit === 'WEEKS') nextDue.setDate(nextDue.getDate() + freqInterval * 7);
-                else if (freqUnit === 'MONTHS') nextDue.setMonth(nextDue.getMonth() + freqInterval);
-                else if (freqUnit === 'YEARS') nextDue.setFullYear(nextDue.getFullYear() + freqInterval);
-                else if (freqUnit === 'HOURS') nextDue.setHours(nextDue.getHours() + freqInterval);
+            // Roll forward from the current next_due_date (not from today), on the
+            // calendar day (0365): the sweep compares dates, so a due date must
+            // never carry a clock time that makes "today" read as "not yet".
+            let nextDue: string | null = null;
+            if (normaliseUnit(freqUnit) && freqInterval) {
+                nextDue = addCadence(pm.next_due_date ? toDateOnly(String(pm.next_due_date)) : now2, freqInterval, freqUnit);
             }
 
             await supabase.from('recurring_work').update({
                 last_generated_date: now2.toISOString(),
-                ...(nextDue ? { next_due_date: nextDue.toISOString() } : {}),
+                ...(nextDue ? { next_due_date: nextDue } : {}),
             }).eq('id', pmId);
         }
 

@@ -16,6 +16,7 @@ import { aiContextService } from '../services/AIContextService';
 import { MOCK_RECURRING_JOBS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS } from '../constants';
 import { RecurringJob, Asset, WorkOrderType, JobJSA, JobLabor, JobInventory, JobFile, JobTask, InstructionBlock, Contact, JSAHazard, GenerationRule, LibraryTask } from '../types';
 import { CreatePMModal } from '../components/modals/CreatePMModal';
+import { addCadence, cadenceDays, firstDueDate, isWithinCallHorizon, sensibleLeadTimeDays, toDateOnly } from '../lib/pmCadence';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { sapCycleUnit, cadenceEquals, cadenceLabel, cadenceSuffix, isMeterUnit } from '../lib/sapCycles';
 import { splitOperationsByCadence } from '../lib/jobPlanImport';
@@ -229,6 +230,9 @@ export const RecurringWork: React.FC = () => {
                 estDowntime: pm.est_downtime || 0,
                 nextDueDate: pm.next_due_date || '',
                 lastGeneratedDate: pm.last_generated_date || '',
+                // 0365: what the row said when loaded — Save compares against it
+                loadedCadence: `${pm.frequency_interval}|${pm.frequency_unit}`,
+                loadedNextDue: pm.next_due_date || '',
                 // Failure Impact (ISO 14224 §B.2.5)
                 localImpact: pm.local_impact || '',
                 plantWideImpact: pm.plant_wide_impact || '',
@@ -236,8 +240,8 @@ export const RecurringWork: React.FC = () => {
                 jsa: { id: 'jsa-mock', status: 'DRAFT', hazards: [], permits: [], signoffs: [] },
                 labor: [],
                 inventory: [],
-                createdById: 'system',
-                createdAt: new Date().toISOString()
+                createdById: pm.created_by || 'system',
+                createdAt: pm.created_at || new Date().toISOString()
             }));
 
             setJobs(mappedPMs);
@@ -299,8 +303,6 @@ export const RecurringWork: React.FC = () => {
 
     const handleRunGenerator = () => {
         setGenerationResult(null);
-        const processUpTo = new Date(generateDate);
-        processUpTo.setHours(23, 59, 59, 999);
         const newJobs: any[] = [];
 
         console.log(`[Generator] Running for date: ${generateDate}, processing ${jobs.length} PMs`);
@@ -328,18 +330,14 @@ export const RecurringWork: React.FC = () => {
                     .filter(t => !isNaN(t));
 
                 if (completedDates.length > 0) {
-                    const mostRecent = new Date(Math.max(...completedDates));
-                    const unit = (rj.frequencyUnit || 'months').toLowerCase();
-                    const interval = rj.frequencyInterval;
-                    if (unit === 'days') mostRecent.setDate(mostRecent.getDate() + interval);
-                    else if (unit === 'weeks') mostRecent.setDate(mostRecent.getDate() + interval * 7);
-                    else if (unit === 'months') mostRecent.setMonth(mostRecent.getMonth() + interval);
-                    else if (unit === 'years') mostRecent.setFullYear(mostRecent.getFullYear() + interval);
-                    nextDue = mostRecent.toISOString();
+                    nextDue = addCadence(new Date(Math.max(...completedDates)), rj.frequencyInterval, rj.frequencyUnit);
                 }
             }
 
-            const isDue = !nextDue || new Date(nextDue) <= processUpTo;
+            // 0365: lead time is a call horizon (raise lead-time days before due) and
+            // the comparison is on the calendar day, exactly as the daily sweep does it.
+            const lead = rj.scheduleType === 'TIME' ? sensibleLeadTimeDays(rj.leadTimeDays, rj.frequencyInterval, rj.frequencyUnit) : 0;
+            const isDue = !nextDue || isWithinCallHorizon(nextDue, lead, generateDate);
             console.log(`[Generator] ${rj.code}: nextDue=${nextDue || '(empty)'}, isDue=${isDue}, assets=${rj.assignedAssets.length}`);
             if (!isDue) return;
 
@@ -673,16 +671,31 @@ export const RecurringWork: React.FC = () => {
                 .filter(t => !isNaN(t));
 
             if (completedDates.length > 0 && selectedJob.frequencyInterval) {
-                const mostRecent = new Date(Math.max(...completedDates));
-                const unit = (selectedJob.frequencyUnit || 'months').toLowerCase();
-                const interval = selectedJob.frequencyInterval;
-                if (unit === 'days') mostRecent.setDate(mostRecent.getDate() + interval);
-                else if (unit === 'weeks') mostRecent.setDate(mostRecent.getDate() + interval * 7);
-                else if (unit === 'months') mostRecent.setMonth(mostRecent.getMonth() + interval);
-                else if (unit === 'years') mostRecent.setFullYear(mostRecent.getFullYear() + interval);
-                headerPayload.next_due_date = mostRecent.toISOString();
-                // Update local state so generator sees it immediately
-                const updatedJob = { ...selectedJob, nextDueDate: mostRecent.toISOString() };
+                headerPayload.next_due_date = addCadence(new Date(Math.max(...completedDates)), selectedJob.frequencyInterval, selectedJob.frequencyUnit);
+            }
+            // 0365 — on a calendar schedule: the planner's own next-due date wins; a
+            // cadence change on a schedule that has never generated moves the first
+            // due date to today (PM-44743 kept a +30-day date after "Months" became
+            // "Days"); lead time is clamped below the cadence, as the sweep clamps it.
+            if (String(selectedJob.scheduleType || 'TIME').toUpperCase() === 'TIME') {
+                const dOnly = (v?: string) => (v ? toDateOnly(v) : '');
+                const cadenceNow = `${selectedJob.frequencyInterval}|${selectedJob.frequencyUnit}`;
+                if (dOnly(selectedJob.nextDueDate) !== dOnly(selectedJob.loadedNextDue)) {
+                    headerPayload.next_due_date = dOnly(selectedJob.nextDueDate) || null;
+                } else if (!headerPayload.next_due_date && !selectedJob.lastGeneratedDate
+                    && selectedJob.loadedCadence && selectedJob.loadedCadence !== cadenceNow) {
+                    headerPayload.next_due_date = firstDueDate();
+                }
+                headerPayload.lead_time_days = sensibleLeadTimeDays(selectedJob.leadTimeDays, selectedJob.frequencyInterval, selectedJob.frequencyUnit);
+            }
+            if (headerPayload.next_due_date !== undefined) {
+                // Update local state so the Generator and the Autopilot chip see it immediately
+                const updatedJob = {
+                    ...selectedJob,
+                    nextDueDate: headerPayload.next_due_date || '',
+                    loadedNextDue: headerPayload.next_due_date || '',
+                    loadedCadence: `${selectedJob.frequencyInterval}|${selectedJob.frequencyUnit}`,
+                };
                 setSelectedJob(updatedJob);
                 setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
             }
@@ -1773,7 +1786,10 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
 
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Lead Time (Days)</label>
-                                <input type="number" value={job.leadTimeDays} onChange={(e) => onUpdate({ leadTimeDays: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+                                <input type="number" min={0} value={job.leadTimeDays} onChange={(e) => onUpdate({ leadTimeDays: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+                                {job.scheduleType === 'TIME' && cadenceDays(job.frequencyInterval, job.frequencyUnit) > 0 && (job.leadTimeDays || 0) >= cadenceDays(job.frequencyInterval, job.frequencyUnit) && (
+                                    <p className="text-[11px] text-amber-700 mt-1">Longer than the cadence — orders are raised on the due day (treated as 0).</p>
+                                )}
                             </div>
 
                             {/* 0304 PM Autopilot — per-schedule opt-out. The sweep only takes a
@@ -2091,9 +2107,16 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                     </div>
                     <div>
                         <p className="text-xs text-slate-500 uppercase font-bold mb-2">Next Due</p>
-                        <p className="text-sm font-medium text-slate-800">
-                            {job.nextDueDate || 'Not computed'}
-                        </p>
+                        {job.scheduleType === 'TIME' ? (
+                            <input
+                                type="date"
+                                value={job.nextDueDate ? toDateOnly(job.nextDueDate) : ''}
+                                onChange={(e) => onUpdate({ nextDueDate: e.target.value })}
+                                className="w-full p-1.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-800 focus:ring-2 focus:ring-primary-500"
+                            />
+                        ) : (
+                            <p className="text-sm font-medium text-slate-800">{job.nextDueDate || 'Not computed'}</p>
+                        )}
                         {job.nextDueDate && (() => {
                             const daysUntil = Math.ceil((new Date(job.nextDueDate).getTime() - Date.now()) / 86400000);
                             return (
@@ -2376,7 +2399,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                 <div className="sm:hidden divide-y divide-slate-100">
                     {job.assignedAssets.map((ra, idx) => {
                         const asset = assets.find(a => a.id === ra.assetId);
-                        const nextDue = ra.lastCompletedDate ? new Date(new Date(ra.lastCompletedDate).setMonth(new Date(ra.lastCompletedDate).getMonth() + job.frequencyInterval)).toLocaleDateString() : 'Pending';
+                        const nextDue = ra.lastCompletedDate ? addCadence(ra.lastCompletedDate, job.frequencyInterval, job.frequencyUnit) : 'Pending';
                         const crit = asset?.criticality;
                         return (
                             <div key={idx} className="p-3">
@@ -2453,7 +2476,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                     <tbody className="divide-y divide-slate-200">
                         {job.assignedAssets.map((ra, idx) => {
                             const asset = assets.find(a => a.id === ra.assetId);
-                            const nextDue = ra.lastCompletedDate ? new Date(new Date(ra.lastCompletedDate).setMonth(new Date(ra.lastCompletedDate).getMonth() + job.frequencyInterval)).toLocaleDateString() : 'Pending';
+                            const nextDue = ra.lastCompletedDate ? addCadence(ra.lastCompletedDate, job.frequencyInterval, job.frequencyUnit) : 'Pending';
                             const crit = asset?.criticality;
 
                             return (
@@ -3822,55 +3845,60 @@ const FilesTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
 // Phase 4B — History / Audit Tab
 // ─────────────────────────────────────────────────────────────
 const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[] }> = ({ job }) => {
-    // Generate mock history from job data
-    const history = useMemo(() => {
-        const entries: { id: string; date: string; event: string; user: string; details: string; type: 'generation' | 'edit' | 'status' | 'compliance' }[] = [];
+    type Entry = { id: string; date: string; event: string; user: string; details: string; type: 'generation' | 'edit' | 'status' | 'compliance' };
+    // 0365: the audit trail is the schedule's real work orders. It used to be
+    // invented from the row ("PM Strategy Created by Admin, 90 days ago",
+    // "Completed — On-Time") — an audit trail cannot carry events that never happened.
+    const [orders, setOrders] = useState<any[]>([]);
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            try {
+                const { data } = await supabase.from('work_orders')
+                    .select('id, wo_number, title, status, created_at, updated_at, created_by, due_date, completed_at, completed_by, closed_at')
+                    .eq('recurring_work_id', job.id)
+                    .order('created_at', { ascending: false })
+                    .limit(200);
+                if (alive) setOrders(data || []);
+            } catch { if (alive) setOrders([]); }
+        })();
+        return () => { alive = false; };
+    }, [job.id]);
 
-        // Mock WO generation history based on assigned assets
-        job.assignedAssets.forEach((ra, i) => {
-            const asset = MOCK_ASSETS.find(a => a.id === ra.assetId);
-            if (ra.lastCompletedDate) {
+    const history = useMemo(() => {
+        const entries: Entry[] = [];
+        for (const w of orders) {
+            const num = w.wo_number ? `WO-${w.wo_number}` : String(w.id);
+            entries.push({
+                id: `gen-${w.id}`, date: w.created_at, event: 'Work order generated',
+                user: w.created_by ? 'Generator' : 'Autopilot',
+                details: `${num}${w.due_date ? ` — due ${toDateOnly(String(w.due_date))}` : ''}`,
+                type: 'generation',
+            });
+            const st = String(w.status || '').toUpperCase();
+            const doneAt = w.completed_at || w.closed_at;
+            if (['COMP', 'TECO', 'CLOSED'].includes(st) && doneAt) {
+                const late = !!w.due_date && toDateOnly(String(doneAt)) > toDateOnly(String(w.due_date));
                 entries.push({
-                    id: `hist-gen-${i}`,
-                    date: ra.lastCompletedDate,
-                    event: 'Work Order Generated',
-                    user: 'System (Auto-Generator)',
-                    details: `WO generated for asset ${asset?.tag || ra.assetId}. PM Code: ${job.code}`,
-                    type: 'generation',
-                });
-                entries.push({
-                    id: `hist-comp-${i}`,
-                    date: ra.lastCompletedDate,
-                    event: 'Work Order Completed',
-                    user: 'Technician',
-                    details: `Completed on ${asset?.tag || ra.assetId}. Compliance: On-Time.`,
+                    id: `done-${w.id}`, date: doneAt, event: 'Work order completed',
+                    user: w.completed_by ? 'Technician' : 'System',
+                    details: `${num} — ${late ? 'after the due date' : 'on time'}`,
                     type: 'compliance',
                 });
+            } else if (st === 'CANCELLED') {
+                entries.push({ id: `canc-${w.id}`, date: w.updated_at || w.created_at, event: 'Work order cancelled', user: 'System', details: num, type: 'status' });
             }
-        });
-
-        // Add job creation/edit events
-        entries.push({
-            id: 'hist-create',
-            date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            event: 'PM Strategy Created',
-            user: 'Admin',
-            details: `Created ${job.code} — ${job.jobDescription || job.description}. Schedule: ${job.frequencyInterval} ${job.frequencyUnit}.`,
-            type: 'edit',
-        });
-        if (job.status !== 'DRAFT') {
+        }
+        if (job.createdAt) {
             entries.push({
-                id: 'hist-activate',
-                date: new Date(Date.now() - 85 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                event: 'Status Changed → ACTIVE',
-                user: 'Admin',
-                details: 'PM strategy activated for WO generation.',
-                type: 'status',
+                id: 'created', date: job.createdAt, event: 'PM strategy created',
+                user: job.createdById && job.createdById !== 'system' ? 'Planner' : 'System',
+                details: `${job.code} — ${job.jobDescription || job.description}. Cadence: ${job.frequencyInterval} ${job.frequencyUnit}.`,
+                type: 'edit',
             });
         }
-
         return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [job]);
+    }, [orders, job]);
 
     const typeColors: Record<string, string> = {
         generation: 'bg-blue-100 text-blue-700',

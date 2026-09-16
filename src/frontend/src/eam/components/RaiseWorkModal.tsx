@@ -9,6 +9,7 @@ import { X, FileText, Wrench, Clock, Save, Loader2, AlertTriangle, Users } from 
 import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
 import { buildWorkOrder } from '../lib/workOrder';
+import { firstDueDate, sensibleLeadTimeDays } from '../lib/pmCadence';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,7 +47,6 @@ const PRIORITIES = [{ v: 'LOW', l: 'Low' }, { v: 'MEDIUM', l: 'Medium' }, { v: '
 const TIME_UNITS = ['Days', 'Weeks', 'Months', 'Years'];
 const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
-const unitToDays: Record<string, number> = { Days: 1, Weeks: 7, Months: 30, Years: 365 };
 
 export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays, woProperties }) => {
     const { showToast } = useToast();
@@ -119,13 +119,15 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 onClose();
                 if ((req as any)?.id) navigate('/requests');
             } else {
-                const days = scheduleType === 'TIME' ? (unitToDays[freqUnit] || 30) * interval : 0;
+                // 0365: a new calendar schedule is due today (date-only — the
+                // sweep compares on the calendar day); meter schedules carry none.
                 const pm = await db.createPM(buildPMStrategy({
                     title, description, assetId: asset.id,
                     scheduleType, frequencyInterval: interval, frequencyUnit: freqUnit,
                     priorityCode: priority, workCenterId: workCenterId || null,
                     createdBy: requesterId || null,
-                    nextDueDate: new Date(Date.now() + days * 86400000).toISOString(),
+                    leadTimeDays: scheduleType === 'TIME' ? sensibleLeadTimeDays(7, interval, freqUnit) : 7,
+                    nextDueDate: scheduleType === 'TIME' ? firstDueDate() : undefined,
                 }));
                 if (onCreated) await onCreated('PM', (pm as any)?.id ?? null);
                 showToast('PM strategy created.', 'success');

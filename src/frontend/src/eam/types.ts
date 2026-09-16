@@ -1121,6 +1121,10 @@ export interface RecurringJob {
   frequencyUnit: string; // 'Months', 'Weeks', 'Hours', 'KM'
   leadTimeDays: number;
   nextDueDate?: string; // ISO date — computed from last completion + interval
+  /** 0365: cadence + next-due as loaded, so Save can tell a cadence change on a never-generated schedule from a no-op. */
+  loadedCadence?: string;
+  loadedNextDue?: string;
+  lastGeneratedDate?: string;
   // 0304 PM Autopilot: daily server sweep may generate this schedule's due WOs.
   // Default ON, but the sweep only takes a schedule after its first generated
   // WO has been completed (the loop is proven). False = manual Generator only.

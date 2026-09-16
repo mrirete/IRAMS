@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar, AlertTriangle, Clock, Hash } from 'lucide-react';
 import { DatabaseService } from '../../services/DatabaseService';
 import { buildPMStrategy } from '../../lib/pmStrategy';
+import { firstDueDate, isWithinCallHorizon, sensibleLeadTimeDays, cadenceDays } from '../../lib/pmCadence';
 import { Asset, WorkOrderStatus } from '../../types';
 import { SearchableDropdown } from '../ui/SearchableDropdown';
 import { useToast } from '../../contexts/ToastContext';
@@ -31,7 +32,13 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
         interval: 1,
         frequencyUnit: 'Months',
         leadTimeDays: 7,
-        workCenterId: ''
+        workCenterId: '',
+        // 0365: a new schedule is due today unless the planner says otherwise —
+        // the cadence is the gap between occurrences, not a wait before the first.
+        firstDue: firstDueDate(),
+        // …and the first occurrence is raised on the spot, which also arms
+        // Autopilot once the technician completes it (0304 arming rule).
+        generateNow: true,
     });
 
     const [currentUser, setCurrentUser] = useState<string>('');
@@ -86,6 +93,13 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
 
         setSubmitting(true);
         try {
+            const isTime = formData.scheduleType === 'TIME';
+            // 0365: unit-aware — "1 Days" once meant first-due in 30 days (interval × 30),
+            // so a daily PM read as monthly and its first work order was a month away.
+            const leadTimeDays = isTime
+                ? sensibleLeadTimeDays(formData.leadTimeDays, formData.interval, formData.frequencyUnit)
+                : formData.leadTimeDays;
+            const firstDue = isTime ? (formData.firstDue || firstDueDate()) : undefined;
             const newPM = buildPMStrategy({
                 title: formData.title,
                 description: formData.description,
@@ -93,16 +107,33 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                 scheduleType: formData.scheduleType,
                 frequencyInterval: formData.interval,
                 frequencyUnit: formData.frequencyUnit,
-                leadTimeDays: formData.leadTimeDays,
+                leadTimeDays,
                 jobType: formData.type,
                 priorityCode: formData.priority,
                 workCenterId: formData.workCenterId || null,
                 createdBy: currentUser || null,
-                nextDueDate: new Date(Date.now() + (formData.interval * 30 * 24 * 60 * 60 * 1000)).toISOString(),
+                nextDueDate: firstDue,
             });
 
-            await DatabaseService.getInstance().createPM(newPM);
-            showToast("Strategy created successfully", 'success');
+            const db = DatabaseService.getInstance();
+            await db.createPM(newPM);
+
+            // Raise the first occurrence now when it is already inside its call
+            // horizon. Without this the schedule sits unarmed until someone finds
+            // the Generator — and the technician never sees the job.
+            let generated = false;
+            if (isTime && formData.generateNow && firstDue && isWithinCallHorizon(firstDue, leadTimeDays)) {
+                try {
+                    await db.generateWOFromPM(String(newPM.id));
+                    generated = true;
+                } catch (genErr) {
+                    console.error('CreatePMModal: first work order not generated', genErr);
+                    showToast('Strategy created, but its first work order could not be raised — use the Generator on Recurring Work.', 'warning');
+                }
+            }
+            if (generated) showToast('Strategy created — first work order raised and on the technician\'s list.', 'success');
+            else if (!(isTime && formData.generateNow)) showToast('Strategy created successfully', 'success');
+            else if (firstDue && !isWithinCallHorizon(firstDue, leadTimeDays)) showToast(`Strategy created — first work order will be raised ${leadTimeDays > 0 ? `${leadTimeDays} days before ` : 'on '}${firstDue}.`, 'success');
             onSave();
             onClose();
         } catch (e: any) {
@@ -194,6 +225,54 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                     </select>
                                 </div>
                             </div>
+                            {formData.scheduleType === 'TIME' && (() => {
+                                const lead = sensibleLeadTimeDays(formData.leadTimeDays, formData.interval, formData.frequencyUnit);
+                                const leadDropped = formData.leadTimeDays > 0 && lead === 0 && cadenceDays(formData.interval, formData.frequencyUnit) > 0;
+                                const dueNow = !!formData.firstDue && isWithinCallHorizon(formData.firstDue, lead);
+                                return (
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                                        <div className="col-span-2 md:col-span-1">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">First due</label>
+                                            <input
+                                                type="date"
+                                                className="w-full text-sm border-slate-300 rounded-md"
+                                                value={formData.firstDue}
+                                                onChange={e => setFormData({ ...formData, firstDue: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Lead time (days)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                className="w-full text-sm border-slate-300 rounded-md"
+                                                value={formData.leadTimeDays}
+                                                onChange={e => setFormData({ ...formData, leadTimeDays: parseInt(e.target.value) || 0 })}
+                                            />
+                                        </div>
+                                        <label className="col-span-2 flex items-center gap-2 text-xs text-slate-700 pb-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-slate-300"
+                                                checked={formData.generateNow}
+                                                onChange={e => setFormData({ ...formData, generateNow: e.target.checked })}
+                                            />
+                                            Raise the first work order now
+                                        </label>
+                                        <p className="col-span-2 md:col-span-4 text-[11px] text-slate-500 -mt-2">
+                                            {leadDropped
+                                                ? `Lead time is longer than the cadence, so it is treated as 0 — the order is raised on the due day.`
+                                                : `Work orders are raised ${lead > 0 ? `${lead} day${lead === 1 ? '' : 's'} before` : 'on'} each due date.`}
+                                            {' '}
+                                            {formData.generateNow
+                                                ? (dueNow
+                                                    ? 'The first one is raised immediately; completing it arms Autopilot for the rest.'
+                                                    : 'The first one is not yet inside its lead time — Autopilot raises it after the first completed order; use the Generator before then.')
+                                                : 'Nothing is raised until you run the Generator once.'}
+                                        </p>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {/* 2. Job Template */}
