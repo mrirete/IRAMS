@@ -1818,7 +1818,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
     const criticality = primaryAsset?.criticality;
 
     return (
-        <div className="space-y-3 sm:space-y-6 animate-in fade-in">
+        <div className="ers-dense ers-dense-labels space-y-3 sm:space-y-6 animate-in fade-in">
             {/* Criticality Badge */}
             {criticality && (
                 <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] sm:text-xs ${criticality === 'A' ? 'bg-red-50 border-red-200 text-red-800' :
@@ -2010,11 +2010,11 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                     <div className="text-xs font-bold text-slate-700">{job.autoGenerate !== false ? 'Automatic (Autopilot)' : 'Manual (Generator only)'}</div>
                                     <p className="text-[10px] text-slate-500 mt-0.5">
                                         {job.autoGenerate !== false
-                                            ? 'A daily server sweep raises this schedule\'s due work orders. It arms only after the first generated PM has been completed, keeps one open occurrence at a time, and never touches meter-based cadences.'
+                                            ? 'Raises due work orders daily once the first PM is completed — one open occurrence at a time.'
                                             : 'Nothing is raised on its own — a planner creates each occurrence from Generate.'}
                                     </p>
                                     {!companyAuto && (
-                                        <p className="text-[10px] text-amber-700 mt-1">Company setting is Manual (Admin › Your Company) — this switch takes effect once Automatic is enabled there.</p>
+                                        <p className="text-[10px] text-amber-700 mt-1">Company setting is Manual (Admin › Your Company) — applies once Automatic is enabled there.</p>
                                     )}
                                 </div>
                             </div>
@@ -2065,7 +2065,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                                 <p className="text-[10px] text-amber-700 mt-2">Intervals are not harmonic ({job.frequencyInterval} {job.frequencyUnit} within {parent?.frequencyInterval} {parent?.frequencyUnit}) — the two only coincide occasionally; on the other dates this task raises its own order.</p>
                                             )}
                                             <p className="text-[10px] text-slate-500 mt-2">
-                                                When the longer task falls due within this schedule's lead time ({win === 0 ? 'the same day' : `±${win} days`}), no separate order is raised — its order satisfies this occurrence and this schedule rolls forward. That order counts for this schedule's PM compliance and arms its Autopilot.
+                                                Due {win === 0 ? 'on the same day as' : `within ±${win} days of`} the longer task: that order covers this one and counts for its compliance.
                                             </p>
                                             {children.length > 0 && (
                                                 <p className="text-[10px] text-violet-700 mt-1">Nests: {children.map(c => `${c.code} (${c.frequencyInterval} ${c.frequencyUnit}, ${(c.nestingMode || 'SUPERSEDES').toLowerCase()})`).join(', ')}</p>

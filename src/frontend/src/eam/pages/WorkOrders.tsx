@@ -4616,7 +4616,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : undefined);
 
     return (
-        <div className="animate-in fade-in duration-300">
+        <div className="ers-dense ers-dense-labels animate-in fade-in duration-300">
         {/* Centred reading column + a narrow sticky schedule rail, matching the
             Analysis & History shell. Dates are short, low-ink fields — they do not
             deserve half the monitor — so they live in the rail and stay in view

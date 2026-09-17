@@ -1999,6 +1999,10 @@ select {
   .ers-dense input[type="checkbox"] {
     min-height: 0;
   }
+  /* Form captions shrink with their fields (only the standard text-xs label). */
+  .ers-dense-labels label.text-xs {
+    font-size: 11px;
+  }
 }
 
 /* Scrollbar-hide for horizontal scrolling on breadcrumbs/tabs */
