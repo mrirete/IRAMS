@@ -69,7 +69,7 @@ import { NotificationService } from '../services/NotificationService';
 import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { SearchableDropdown } from '../components/ui/SearchableDropdown';
 import { useToast } from '../contexts/ToastContext';
-import { useConfirm } from '../contexts/ConfirmContext';
+import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { ImportType } from '../services/assetTemplates';
 
@@ -1608,7 +1608,7 @@ export const RecurringWork: React.FC = () => {
                             {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} />}
                             {activeTab === 'inventory' && <InventoryTab job={selectedJob} onUpdate={handleJobUpdate} inventoryItems={inventoryItems} dictionaries={dictionaries} />}
                             {activeTab === 'files' && <FilesTab job={selectedJob} onUpdate={handleJobUpdate} />}
-                            {activeTab === 'history' && <HistoryTab job={selectedJob} jobs={jobs} />}
+                            {activeTab === 'history' && <HistoryTab job={selectedJob} jobs={jobs} onUpdate={handleJobUpdate} />}
                         </div>
                     </div>
                 </div>
@@ -1817,31 +1817,23 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
     const primaryAsset = assets.find(a => a.id === primaryAssetId);
     const criticality = primaryAsset?.criticality;
 
-    // PM Compliance (computed mock — in production, sourced from pm_compliance_log)
-    const compliance = job.complianceData || { scheduledCount: 0, executedCount: 0, compliancePct: 0 };
-    const greenThreshold = compliance.greenThreshold ?? 95;
-    const yellowThreshold = compliance.yellowThreshold ?? 85;
-    const complianceColor = compliance.compliancePct >= greenThreshold ? 'green' : compliance.compliancePct >= yellowThreshold ? 'yellow' : 'red';
-
     return (
         <div className="space-y-3 sm:space-y-6 animate-in fade-in">
             {/* Criticality Badge */}
             {criticality && (
-                <div className={`flex items-center gap-2 sm:gap-3 flex-wrap p-3 rounded-lg border text-sm font-medium ${criticality === 'A' ? 'bg-red-50 border-red-200 text-red-800' :
+                <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] sm:text-xs ${criticality === 'A' ? 'bg-red-50 border-red-200 text-red-800' :
                     criticality === 'B' ? 'bg-amber-50 border-amber-200 text-amber-800' :
                         'bg-green-50 border-green-200 text-green-800'
                     }`}>
-                    <span className="text-lg">{criticality === 'A' ? '🔴' : criticality === 'B' ? '🟡' : '🟢'}</span>
-                    <span>
-                        <strong>Criticality {criticality}</strong> — {
-                            criticality === 'A' ? 'Safety Critical (ISO 14224)' :
-                                criticality === 'B' ? 'Production Critical' : 'General'
-                        }
-                        {primaryAsset && <span className="text-xs ml-2 opacity-75">({primaryAsset.tag || primaryAsset.name})</span>}
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${criticality === 'A' ? 'bg-red-500' : criticality === 'B' ? 'bg-amber-500' : 'bg-green-500'}`} />
+                    <span className="truncate min-w-0">
+                        <strong>Criticality {criticality}</strong>
+                        <span className="opacity-80"> · {criticality === 'A' ? 'Safety critical' : criticality === 'B' ? 'Production critical' : 'General'}</span>
+                        {primaryAsset && <span className="opacity-70"> · {primaryAsset.tag || primaryAsset.name}</span>}
                     </span>
                     {criticality === 'A' && !job.jsa?.hazards?.length && (
-                        <span className="ml-auto text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-bold flex items-center gap-1">
-                            <AlertTriangle size={12} /> JSA Required Before Activation
+                        <span className="ml-auto text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold flex items-center gap-1 flex-shrink-0" title="A safety-critical schedule needs a JSA before it can be active">
+                            <AlertTriangle size={11} /> JSA required
                         </span>
                     )}
                 </div>
@@ -1862,8 +1854,8 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                 />
                             </div>
                             <div className="sm:col-span-2">
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Status</label>
-                                <div className="flex gap-2 flex-wrap">
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Status</label>
+                                <div className="flex gap-1.5 flex-nowrap overflow-x-auto scrollbar-hide -mx-1 px-1 sm:flex-wrap">
                                     {(pmStatuses.length > 0
                                         ? pmStatuses.map(s => ({ code: s.code, label: s.description || s.code }))
                                         : [
@@ -1885,7 +1877,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                             <button
                                                 key={opt.code}
                                                 onClick={() => onUpdate({ status: opt.code as any })}
-                                                className={`px-4 py-1.5 rounded-full text-xs font-bold border transition-all ${
+                                                className={`px-2.5 sm:px-3.5 py-1 rounded-full text-[11px] sm:text-xs font-bold border transition-all flex-shrink-0 whitespace-nowrap ${
                                                     isSelected
                                                         ? `${colors.active} ring-2 shadow-sm`
                                                         : `${colors.inactive}`
@@ -1971,6 +1963,35 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                 {job.scheduleType === 'TIME' && cadenceDays(job.frequencyInterval, job.frequencyUnit) > 0 && (job.leadTimeDays || 0) >= cadenceDays(job.frequencyInterval, job.frequencyUnit) && (
                                     <p className="text-[11px] text-amber-700 mt-1">Longer than the cadence — orders are raised on the due day (treated as 0).</p>
                                 )}
+                            </div>
+
+                            {/* Next due sits with the cadence it derives from; the compliance
+                                KPI and its thresholds moved to the History tab. */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Next Due</label>
+                                {job.scheduleType === 'TIME' ? (
+                                    <input
+                                        type="date"
+                                        value={job.nextDueDate ? toDateOnly(job.nextDueDate) : ''}
+                                        onChange={(e) => onUpdate({ nextDueDate: e.target.value })}
+                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                                    />
+                                ) : (
+                                    <p className="text-sm font-medium text-slate-800 py-2">{job.nextDueDate || 'Not computed'}</p>
+                                )}
+                                {job.nextDueDate && (() => {
+                                    const daysUntil = Math.ceil((new Date(job.nextDueDate).getTime() - Date.now()) / 86400000);
+                                    return (
+                                        <span className={`inline-block mt-1.5 text-[10px] px-2 py-0.5 rounded-full font-bold ${daysUntil < 0 ? 'bg-red-100 text-red-700' :
+                                            daysUntil <= job.leadTimeDays ? 'bg-amber-100 text-amber-700' :
+                                                'bg-green-100 text-green-700'
+                                            }`}>
+                                            {daysUntil < 0 ? `${Math.abs(daysUntil)}d overdue` :
+                                                daysUntil === 0 ? 'Due today' :
+                                                    `${daysUntil}d remaining`}
+                                        </span>
+                                    );
+                                })()}
                             </div>
 
                             {/* 0304 PM Autopilot — per-schedule opt-out. The sweep only takes a
@@ -2255,12 +2276,15 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                     </div>
                 </div>
 
-                {/* Failure Effects (ISO 14224 §B.2.5) */}
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                    <h4 className="text-xs font-bold text-slate-600 uppercase mb-3 flex items-center gap-1.5">
+                {/* Failure Effects (ISO 14224 §B.2.5) — kept as the RCM effect record, but
+                    closed by default; it opens on its own only when something is written. */}
+                <details className="mt-4 pt-3 border-t border-slate-100 group" open={!!(job.localImpact || job.plantWideImpact)}>
+                    <summary className="list-none cursor-pointer text-xs font-bold text-slate-600 uppercase flex items-center gap-1.5 select-none">
                         <AlertTriangle size={13} className="text-amber-500" /> Failure Effects (ISO 14224)
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <span className="text-[10px] font-normal normal-case text-slate-400">{(job.localImpact || job.plantWideImpact) ? 'recorded' : 'optional'}</span>
+                        <ChevronDown size={14} className="ml-auto text-slate-400 transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                         <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Local Impact <span className="text-slate-400 font-normal">(Equipment Level)</span></label>
                             <textarea
@@ -2282,7 +2306,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             <p className="text-[10px] text-slate-400 mt-1">Wider consequence to production output, personnel safety, or environmental compliance.</p>
                         </div>
                     </div>
-                </div>
+                </details>
 
                 {criticality === 'A' && (!job.rcmStrategy || !job.functionalFailureCode || !job.failureModeCode) && (
                     <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 flex items-center gap-2">
@@ -2291,112 +2315,6 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                 )}
             </div>
 
-            {/* PM Compliance KPI (ISO 55000) */}
-            <div className="bg-white p-4 sm:p-6 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
-                    📊 PM Compliance (ISO 55000)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                        <p className="text-xs text-slate-500 uppercase font-bold mb-2">Last 12 Months</p>
-                        <div className="flex items-end gap-3">
-                            <span className={`text-3xl font-black ${complianceColor === 'green' ? 'text-green-600' :
-                                complianceColor === 'yellow' ? 'text-amber-500' : 'text-red-600'
-                                }`}>
-                                {compliance.scheduledCount > 0 ? `${Math.round(compliance.compliancePct)}%` : '—'}
-                            </span>
-                            {compliance.scheduledCount > 0 && (
-                                <span className="text-xs text-slate-500 mb-1">({compliance.executedCount}/{compliance.scheduledCount} on-time)</span>
-                            )}
-                        </div>
-                        {compliance.scheduledCount > 0 && (
-                            <div className="w-full h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-                                <div
-                                    className={`h-full rounded-full transition-all ${complianceColor === 'green' ? 'bg-green-500' :
-                                        complianceColor === 'yellow' ? 'bg-amber-400' : 'bg-red-500'
-                                        }`}
-                                    style={{ width: `${Math.min(compliance.compliancePct, 100)}%` }}
-                                />
-                            </div>
-                        )}
-                        {compliance.scheduledCount === 0 && (
-                            <p className="text-xs text-slate-400 mt-1">No compliance history yet</p>
-                        )}
-                    </div>
-                    <div>
-                        <p className="text-xs text-slate-500 uppercase font-bold mb-2">Last Completed</p>
-                        <p className="text-sm font-medium text-slate-800">
-                            {compliance.lastCompletedDate || 'Never'}
-                        </p>
-                        {compliance.lastWOId && (
-                            <p className="text-xs text-blue-600 mt-0.5">{compliance.lastWOId}</p>
-                        )}
-                    </div>
-                    <div>
-                        <p className="text-xs text-slate-500 uppercase font-bold mb-2">Next Due</p>
-                        {job.scheduleType === 'TIME' ? (
-                            <input
-                                type="date"
-                                value={job.nextDueDate ? toDateOnly(job.nextDueDate) : ''}
-                                onChange={(e) => onUpdate({ nextDueDate: e.target.value })}
-                                className="w-full p-1.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-800 focus:ring-2 focus:ring-primary-500"
-                            />
-                        ) : (
-                            <p className="text-sm font-medium text-slate-800">{job.nextDueDate || 'Not computed'}</p>
-                        )}
-                        {job.nextDueDate && (() => {
-                            const daysUntil = Math.ceil((new Date(job.nextDueDate).getTime() - Date.now()) / 86400000);
-                            return (
-                                <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-bold ${daysUntil < 0 ? 'bg-red-100 text-red-700' :
-                                    daysUntil <= job.leadTimeDays ? 'bg-amber-100 text-amber-700' :
-                                        'bg-green-100 text-green-700'
-                                    }`}>
-                                    {daysUntil < 0 ? `${Math.abs(daysUntil)}d OVERDUE` :
-                                        daysUntil === 0 ? 'Due Today' :
-                                            `${daysUntil}d remaining`}
-                                </span>
-                            );
-                        })()}
-                    </div>
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-4 text-[10px] text-slate-500 mb-2">
-                        <span>🟢 ≥ {greenThreshold}% Excellent</span>
-                        <span>🟡 {yellowThreshold}–{greenThreshold - 1}% Acceptable</span>
-                        <span>🔴 &lt; {yellowThreshold}% Below Target</span>
-                        <span className="ml-auto">Oil &amp; Gas benchmark: ≥ 90%</span>
-                    </div>
-                    <div className="flex items-center gap-4 mt-2">
-                        <label className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1">
-                            🟢 Threshold
-                            <input
-                                type="number" min={0} max={100}
-                                value={greenThreshold}
-                                onChange={e => {
-                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
-                                    onUpdate({ complianceData: { ...compliance, greenThreshold: val } });
-                                }}
-                                className="w-14 text-xs p-1 border border-slate-300 rounded text-center ml-1"
-                            />
-                            %
-                        </label>
-                        <label className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1">
-                            🟡 Threshold
-                            <input
-                                type="number" min={0} max={100}
-                                value={yellowThreshold}
-                                onChange={e => {
-                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
-                                    onUpdate({ complianceData: { ...compliance, yellowThreshold: val } });
-                                }}
-                                className="w-14 text-xs p-1 border border-slate-300 rounded text-center ml-1"
-                            />
-                            %
-                        </label>
-                        <span className="hidden sm:inline text-[10px] text-slate-400 ml-auto">Admin-configurable per job</span>
-                    </div>
-                </div>
-            </div>
         </div>
     );
 };
@@ -2783,6 +2701,10 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
 
 const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void }> = ({ job, onUpdate }) => {
     const confirm = useConfirm();
+    const promptModal = usePrompt();
+    const { showToast } = useToast();
+    const { user } = useAuth();
+    const [savingToLibrary, setSavingToLibrary] = useState(false);
     const [tasks, setTasks] = useState<JobTask[]>(job.tasks || []);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
@@ -2878,6 +2800,42 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
         setShowLibraryPicker(false);
     };
 
+    // The way back: a step authored here becomes a Task Library template other
+    // schedules and work orders can import. Instruction blocks are copied with fresh
+    // ids and without any execution data (observations / evidence never exist on a
+    // template, but a step imported from a WO could carry them).
+    const saveStepToLibrary = async (task: JobTask) => {
+        const title = await promptModal({
+            title: 'Save step to Task Library',
+            message: 'Other schedules and work orders can then import it from the Library.',
+            defaultValue: task.description || '',
+            placeholder: 'Template title',
+            confirmLabel: 'Save to Library',
+        });
+        if (!title || !title.trim()) return;
+        setSavingToLibrary(true);
+        try {
+            const category: LibraryTask['category'] = job.jobType === 'Inspection' ? 'INSPECTION' : 'MAINTENANCE';
+            const stamp = Date.now();
+            const created = await DatabaseService.getInstance().createLibraryTask({
+                code: `LIB-${stamp.toString(36).toUpperCase()}`,
+                title: title.trim(),
+                description: `From ${job.code} — ${job.title || job.jobDescription || job.description || ''}`.trim(),
+                category,
+                estimatedDuration: task.estHours || 0,
+                instructions: (task.instructions || []).map((inst, i) => ({ ...inst, id: `lib-src-${stamp}-${i}`, sequence: i + 1, valueString: inst.type === 'TEXT' ? undefined : inst.valueString, photoUrls: undefined })),
+                safetyRequirements: [],
+            }, [], [], [], user?.id || 'unknown');
+            if (created) setLibraryTasks(prev => [created, ...prev]);
+            showToast(`"${title.trim()}" saved to the Task Library`, 'success');
+        } catch (e: any) {
+            const msg = String(e?.message || e);
+            showToast(e?.code === '42501' || /policy|permission/i.test(msg) ? 'Your role cannot add Task Library templates.' : `Could not save to the Library: ${msg}`, 'error');
+        } finally {
+            setSavingToLibrary(false);
+        }
+    };
+
     // Enhancement 1: Filter library tasks
     const filteredLibrary = libraryTasks.filter(t => {
         const matchesCategory = libraryCategory === 'ALL' || t.category === libraryCategory;
@@ -2931,12 +2889,12 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
             </div>
 
             {/* Stacked step rows — full width, same look as the WO Tasks tab */}
-            <div className="border-x border-b border-slate-200 rounded-b-lg overflow-hidden bg-slate-50/50">
+            <div className="ers-dense border-x border-b border-slate-200 rounded-b-lg overflow-hidden bg-slate-50/50">
                 {tasks.map((task, index) => (
                     <div key={task.id} className={index > 0 ? 'border-t border-slate-200' : ''}>
                         <div
                             onClick={() => setEditingTaskId(task.id)}
-                            className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2.5 sm:py-3 cursor-pointer transition-colors group bg-white hover:bg-slate-50 border-l-[3px] border-l-transparent hover:border-l-blue-300"
+                            className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 sm:py-3 cursor-pointer transition-colors group bg-white hover:bg-slate-50 border-l-[3px] border-l-transparent hover:border-l-blue-300"
                         >
                             <ChevronRight size={16} className="text-slate-400 flex-shrink-0" />
                             <span className="font-mono text-xs font-bold px-2 py-0.5 rounded flex-shrink-0 bg-slate-100 text-slate-500">
@@ -3045,7 +3003,7 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             </div>
                         </div>
                         {/* Step name + estimate */}
-                        <div className="px-3 sm:px-5 py-3 bg-white border-b border-slate-200 shrink-0">
+                        <div className="ers-dense px-3 sm:px-5 py-3 bg-white border-b border-slate-200 shrink-0">
                             <label className="text-[11px] font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1.5 mb-1.5">
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Step name
                             </label>
@@ -3076,11 +3034,12 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             </div>
                         </div>
                         {/* Body — instruction builder */}
-                        <div className="flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3">
+                        <div className="ers-dense flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3">
                             <ProcedureBuilder
                                 instructions={editingTask.instructions || []}
                                 onChange={(blocks) => updateTask(editingTask.id, { instructions: blocks })}
                                 mode="EDIT"
+                                context="TEMPLATE"
                             />
                         </div>
                         {/* Footer */}
@@ -3094,6 +3053,14 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                 title="Delete this step from the template"
                             >
                                 <Trash2 size={13} /> Delete step
+                            </button>
+                            <button
+                                onClick={() => void saveStepToLibrary(editingTask)}
+                                disabled={savingToLibrary}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-2 rounded-lg transition-colors disabled:opacity-60"
+                                title="Save this step as a Task Library template"
+                            >
+                                {savingToLibrary ? <Loader2 size={13} className="animate-spin" /> : <BookOpen size={13} />} <span className="hidden sm:inline">Save to </span>Library
                             </button>
                             <span className="hidden sm:flex items-center gap-1 text-[10px] text-slate-400 ml-1">
                                 <CheckCircle size={11} className="text-emerald-500" /> Changes apply to the template — Save the PM to persist
@@ -4230,7 +4197,7 @@ const FilesTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
 // ─────────────────────────────────────────────────────────────
 // Phase 4B — History / Audit Tab
 // ─────────────────────────────────────────────────────────────
-const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[] }> = ({ job }) => {
+const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[]; onUpdate?: (u: Partial<RecurringJob>) => void }> = ({ job, onUpdate }) => {
     type Entry = { id: string; date: string; event: string; user: string; details: string; type: 'generation' | 'edit' | 'status' | 'compliance' };
     // 0365: the audit trail is the schedule's real work orders. It used to be
     // invented from the row ("PM Strategy Created by Admin, 90 days ago",
@@ -4324,21 +4291,55 @@ const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[] }> = ({ jo
     const totalCompleted = history.filter(h => h.type === 'compliance').length;
     const complianceRate = totalGenerated > 0 ? Math.round((totalCompleted / totalGenerated) * 100) : 0;
 
+    // ISO 55000 on-time compliance (job.complianceData, fed by pm_compliance_log) and the
+    // per-job colour thresholds — moved here from Details, where they crowded the setup form.
+    const compliance = job.complianceData || { scheduledCount: 0, executedCount: 0, compliancePct: 0 };
+    const greenThreshold = compliance.greenThreshold ?? 95;
+    const yellowThreshold = compliance.yellowThreshold ?? 85;
+    const complianceTone = compliance.compliancePct >= greenThreshold ? 'text-green-600' : compliance.compliancePct >= yellowThreshold ? 'text-amber-500' : 'text-red-600';
+    const setThreshold = (key: 'greenThreshold' | 'yellowThreshold', raw: string) => {
+        if (!onUpdate) return;
+        const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
+        onUpdate({ complianceData: { ...compliance, [key]: val } });
+    };
+
     return (
-        <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Compliance Summary */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                <div className="bg-white border border-slate-200 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-blue-600">{totalGenerated}</p>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold mt-1">WOs Generated</p>
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-300">
+            {/* Compliance strip (ISO 55000) */}
+            <div className="ers-dense bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+                    <div>
+                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold">On time · 12 months</p>
+                        <p className={`text-lg sm:text-2xl font-black leading-tight ${compliance.scheduledCount > 0 ? complianceTone : 'text-slate-300'}`}>
+                            {compliance.scheduledCount > 0 ? `${Math.round(compliance.compliancePct)}%` : '—'}
+                        </p>
+                        <p className="text-[10px] text-slate-400">{compliance.scheduledCount > 0 ? `${compliance.executedCount}/${compliance.scheduledCount} on time` : 'No history yet'}</p>
+                    </div>
+                    <div>
+                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold">Last completed</p>
+                        <p className="text-sm font-semibold text-slate-800 mt-1">{compliance.lastCompletedDate ? fmtLocalDate(compliance.lastCompletedDate) : 'Never'}</p>
+                        {compliance.lastWOId && <p className="text-[10px] text-blue-600">{compliance.lastWOId}</p>}
+                    </div>
+                    <div>
+                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold">WOs generated</p>
+                        <p className="text-lg sm:text-2xl font-black text-blue-600 leading-tight">{totalGenerated}</p>
+                    </div>
+                    <div>
+                        <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold">Completed</p>
+                        <p className="text-lg sm:text-2xl font-black text-green-600 leading-tight">{totalCompleted}</p>
+                        <p className="text-[10px] text-slate-400">{totalGenerated > 0 ? `${complianceRate}% of generated` : '—'}</p>
+                    </div>
                 </div>
-                <div className="bg-white border border-slate-200 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-green-600">{totalCompleted}</p>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold mt-1">Completed</p>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-lg p-4 text-center">
-                    <p className={`text-2xl font-bold ${complianceRate >= 90 ? 'text-green-600' : complianceRate >= 70 ? 'text-amber-600' : 'text-red-600'}`}>{complianceRate}%</p>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold mt-1">Compliance Rate</p>
+                <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-slate-500">
+                    <span className="font-bold uppercase text-slate-400">Targets</span>
+                    <label className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> ≥
+                        <input type="number" min={0} max={100} value={greenThreshold} disabled={!onUpdate} onChange={e => setThreshold('greenThreshold', e.target.value)} className="w-12 text-xs px-1 py-0.5 border border-slate-200 rounded text-center" />%
+                    </label>
+                    <label className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> ≥
+                        <input type="number" min={0} max={100} value={yellowThreshold} disabled={!onUpdate} onChange={e => setThreshold('yellowThreshold', e.target.value)} className="w-12 text-xs px-1 py-0.5 border border-slate-200 rounded text-center" />%
+                    </label>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> below {yellowThreshold}%</span>
+                    <span className="hidden sm:inline ml-auto text-slate-400">Oil &amp; Gas benchmark ≥ 90%</span>
                 </div>
             </div>
 

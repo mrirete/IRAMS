@@ -23,9 +23,10 @@ interface ProcedureItemEditorProps {
     onDelete: () => void;
     onDuplicate?: () => void;
     onAddSibling?: () => void;
+    context?: 'TEMPLATE' | 'WORK_ORDER';
 }
 
-export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block, onChange, onDelete, onDuplicate, onAddSibling }) => {
+export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block, onChange, onDelete, onDuplicate, onAddSibling, context = 'WORK_ORDER' }) => {
     const [showMenu, setShowMenu] = React.useState(false);
     const [showImageMenu, setShowImageMenu] = React.useState(false);
     const [uploading, setUploading] = React.useState(false);
@@ -176,6 +177,17 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                 );
 
             case 'TEXT':
+                // On a template (PM schedule, Task Library) nobody observes anything —
+                // the block only marks WHERE the technician will write. A quiet dashed
+                // line says that without pretending to be an input.
+                if (context === 'TEMPLATE') {
+                    return (
+                        <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-emerald-200 bg-emerald-50/30 text-[11px] text-emerald-700/70">
+                            <FileText size={12} className="flex-shrink-0" />
+                            <span>Observation field — the technician writes here on the work order.</span>
+                        </div>
+                    );
+                }
                 // Live observation capture — the technician's answer lives on this block
                 // (valueString), so no separate observations field is needed. The emerald
                 // placeholder IS the cue; a typed observation replaces it. Single-line

@@ -17,6 +17,10 @@ interface ProcedureBuilderProps {
     onChange: (blocks: InstructionBlock[]) => void;
     readOnly?: boolean;
     mode: 'EDIT' | 'EXECUTE';
+    /** TEMPLATE = PM schedule / Task Library authoring: TEXT blocks show a quiet
+     *  marker instead of the technician observation box (nobody observes on a
+     *  template). Default WORK_ORDER keeps the live capture field. */
+    context?: 'TEMPLATE' | 'WORK_ORDER';
 }
 
 // ── Main Component ──────────────────────────────────────────────────────────
@@ -84,7 +88,7 @@ const RAIL_LABELS: Partial<Record<InstructionBlockType, string>> = {
     CHECKBOX: 'Checkbox', TEXT: 'Text', PASS_FAIL: 'Inspection', CONDITION_READING: 'Condition',
 };
 
-export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions, onChange, readOnly, mode }) => {
+export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions, onChange, readOnly, mode, context = 'WORK_ORDER' }) => {
 
     const confirm = useConfirm();
     const [showAddMenu, setShowAddMenu] = useState(false);
@@ -200,6 +204,7 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
                                 {mode === 'EDIT' ? (
                                     <ProcedureItemEditor
                                         block={block}
+                                        context={context}
                                         onChange={(u) => updateBlock(block.id, u)}
                                         onDelete={() => deleteBlock(block.id)}
                                         onDuplicate={() => duplicateBlock(block.id)}

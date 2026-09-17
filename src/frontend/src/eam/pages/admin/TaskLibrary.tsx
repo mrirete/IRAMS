@@ -609,6 +609,7 @@ const TaskEditorModal: React.FC<{
                             instructions={formData.instructions || []}
                             onChange={(blocks) => setFormData({ ...formData, instructions: blocks })}
                             mode="EDIT"
+                            context="TEMPLATE"
                         />
                     </div>
 
