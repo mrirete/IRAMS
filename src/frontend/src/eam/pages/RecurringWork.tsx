@@ -85,6 +85,14 @@ const getRiskLevel = (score: number): 'Critical' | 'High' | 'Medium' | 'Low' => 
     return 'Low';
 };
 
+/** Same shape the browser gives a <input type="date"> (dd/mm/yyyy or mm/dd/yyyy per
+ *  locale) so a computed date beside a typed one reads as a matched pair. */
+const fmtLocalDate = (v?: string | null): string => {
+    if (!v) return '—';
+    const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T00:00:00` : v);
+    return isNaN(d.getTime()) ? v : d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
 const RISK_COLORS: Record<string, string> = {
     Critical: 'border-red-500 bg-red-50',
     High: 'border-orange-400 bg-orange-50',
@@ -134,6 +142,14 @@ export const RecurringWork: React.FC = () => {
     const [showBulkImport, setShowBulkImport] = useState(urlParams.get('action') === 'import');
     // Phase 5B — PM Calendar
     const [showCalendar, setShowCalendar] = useState(false);
+    // Phones: group / select-all / calendar live in a bottom sheet so the list owns the screen
+    const [showFilterSheet, setShowFilterSheet] = useState(false);
+    useEffect(() => {
+        if (!showFilterSheet) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowFilterSheet(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [showFilterSheet]);
     const [calendarDate, setCalendarDate] = useState(new Date());
 
     // Load data on mount
@@ -1136,10 +1152,10 @@ export const RecurringWork: React.FC = () => {
     };
 
     return (
-        <div className="flex h-[calc(100vh-6rem)] gap-6 relative">
-            {/* List Sidebar */}
-            <div className={`flex flex-col bg-white rounded-card shadow-card border border-slate-200 overflow-hidden transition-all duration-300 ${isFullscreen ? 'hidden' : selectedJob ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+        <div className="flex lg:h-[calc(100vh-6rem)] gap-6 relative">
+            {/* List Sidebar — below lg the page itself scrolls (no half-height inner list) */}
+            <div className={`flex flex-col bg-white rounded-card shadow-card border border-slate-200 lg:overflow-hidden transition-all duration-300 ${isFullscreen ? 'hidden' : selectedJob ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
+                <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-900">Recurring Jobs</h2>
                     <div className="flex gap-2">
                         <button
@@ -1168,24 +1184,36 @@ export const RecurringWork: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="p-4 border-b border-slate-200 bg-slate-50 space-y-3">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            placeholder="Search PMs..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm"
-                        />
+                <div className="p-3 sm:p-4 border-b border-slate-200 bg-slate-50 space-y-2 sm:space-y-3">
+                    <div className="flex gap-2">
+                        <div className="relative flex-1 min-w-0">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                            <input
+                                type="text"
+                                placeholder="Search PMs..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowFilterSheet(true)}
+                            className={`sm:hidden relative flex-shrink-0 w-11 rounded-lg border flex items-center justify-center ${groupBy !== 'none' ? 'bg-primary-50 border-primary-300 text-primary-700' : 'bg-white border-slate-300 text-slate-600'}`}
+                            title="View options"
+                            aria-label="View options"
+                        >
+                            <Filter size={16} />
+                            {groupBy !== 'none' && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-primary-600 border-2 border-white" />}
+                        </button>
                     </div>
-                    {/* Phase 4A — Status Filter Pills */}
-                    <div className="flex gap-1.5 flex-wrap">
+                    {/* Phase 4A — Status Filter Pills: one swipeable row on phones, wrapping on sm+ */}
+                    <div className="flex gap-1.5 flex-nowrap overflow-x-auto scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">
                         {overdueOnly && (
                             <button
                                 onClick={() => setOverdueOnly(false)}
                                 title="Showing only past-due active programmes — click to clear"
-                                className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border bg-amber-500 text-white border-amber-500 shadow-sm flex items-center gap-1.5"
+                                className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border bg-amber-500 text-white border-amber-500 shadow-sm flex items-center gap-1.5 flex-shrink-0"
                             >
                                 Overdue only ✕
                             </button>
@@ -1194,7 +1222,7 @@ export const RecurringWork: React.FC = () => {
                             <button
                                 key={s}
                                 onClick={() => { setStatusFilter(s); setSelectedIds(new Set()); }}
-                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border transition-all flex items-center gap-1.5 ${statusFilter === s
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border transition-all flex items-center gap-1.5 flex-shrink-0 ${statusFilter === s
                                     ? 'bg-primary-600 text-white border-blue-600 shadow-sm'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                                     }`}
@@ -1205,8 +1233,8 @@ export const RecurringWork: React.FC = () => {
                             </button>
                         ))}
                     </div>
-                    {/* Phase 4A — GroupBy + Select All */}
-                    <div className="flex justify-between items-center">
+                    {/* Phase 4A — GroupBy + Select All (sm+; phones use the view-options sheet) */}
+                    <div className="hidden sm:flex justify-between items-center">
                         <div className="flex items-center gap-2">
                             <label className="text-[10px] font-bold text-slate-400 uppercase">Group:</label>
                             <select
@@ -1229,8 +1257,8 @@ export const RecurringWork: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Phase 5B — PM Calendar toggle */}
-                <div className="px-4 py-2 border-b border-slate-200 bg-white">
+                {/* Phase 5B — PM Calendar toggle (sm+; phones use the view-options sheet) */}
+                <div className="hidden sm:block px-4 py-2 border-b border-slate-200 bg-white">
                     <button
                         onClick={() => setShowCalendar(!showCalendar)}
                         className="text-xs flex items-center gap-2 text-slate-500 hover:text-blue-600 font-medium w-full"
@@ -1338,9 +1366,50 @@ export const RecurringWork: React.FC = () => {
                     ))}
                 </div>
 
-                {/* Phase 4A — Bulk Action Bar */}
+                {/* Phones: view options sheet (group, select all, calendar). Portalled to body —
+                    the shell's bottom nav is z-50 and anything inside this card would paint under it. */}
+                {showFilterSheet && createPortal(
+                    <div className="fixed inset-0 z-[60] sm:hidden" role="dialog" aria-modal="true" aria-label="View options">
+                        <div className="absolute inset-0 bg-slate-900/40" onClick={() => setShowFilterSheet(false)} />
+                        <div className="absolute inset-x-0 bottom-0 bg-white rounded-t-2xl shadow-2xl max-h-[85vh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom,0px))] animate-in slide-in-from-bottom duration-200">
+                            <div className="sticky top-0 bg-white px-4 pt-4 pb-2 border-b border-slate-100 flex items-center justify-between">
+                                <span className="absolute left-1/2 -translate-x-1/2 top-1.5 w-10 h-1 rounded-full bg-slate-200" />
+                                <h3 className="text-sm font-bold text-slate-800">View options</h3>
+                                <button onClick={() => setShowFilterSheet(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={16} /></button>
+                            </div>
+                            <div className="p-4 space-y-4">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Group by</label>
+                                    <select
+                                        value={groupBy}
+                                        onChange={e => setGroupBy(e.target.value as GroupBy)}
+                                        className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-700"
+                                    >
+                                        <option value="none">None</option>
+                                        <option value="status">Status</option>
+                                        <option value="jobType">Job Type</option>
+                                        <option value="rcmStrategy">RCM Strategy</option>
+                                    </select>
+                                </div>
+                                <button
+                                    onClick={toggleSelectAll}
+                                    className="w-full text-sm font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg py-2"
+                                >
+                                    {selectedIds.size === filteredJobs.length && filteredJobs.length > 0 ? 'Deselect all' : `Select all (${filteredJobs.length})`}
+                                </button>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 flex items-center gap-1.5"><Calendar size={12} /> PM Calendar</label>
+                                    <PMCalendarWidget jobs={jobs} calendarDate={calendarDate} onDateChange={setCalendarDate} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
+                {/* Phase 4A — Bulk Action Bar — sticks above the bottom nav while the page scrolls on phones */}
                 {selectedIds.size > 0 && (
-                    <div className="p-3 border-t border-slate-200 bg-blue-50 flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-200">
+                    <div className="p-3 border-t border-slate-200 bg-blue-50 flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-200 sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:static z-10">
                         <span className="text-xs font-bold text-blue-700">{selectedIds.size} selected</span>
                         <div className="flex gap-2">
                             <button onClick={() => handleBulkStatusChange('PAUSED')} className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-amber-200">
@@ -1782,8 +1851,8 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                 {/* Left Column: Scheduling Settings */}
                 <div className="bg-white p-4 sm:p-6 rounded-lg border border-slate-200 shadow-sm space-y-6">
                     <div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="sm:col-span-2">
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Job Description</label>
                                 <textarea
                                     value={job.jobDescription || job.description}
@@ -1792,7 +1861,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                     placeholder="Text to appear on the generated Work Order..."
                                 />
                             </div>
-                            <div className="col-span-2">
+                            <div className="sm:col-span-2">
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Status</label>
                                 <div className="flex gap-2 flex-wrap">
                                     {(pmStatuses.length > 0
@@ -1829,7 +1898,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                     })}
                                 </div>
                             </div>
-                            <div className="col-span-2">
+                            <div className="sm:col-span-2">
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Schedule Basis</label>
                                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
                                     <label className={`flex items-start gap-3 cursor-pointer border p-3 rounded-lg flex-1 transition hover:bg-slate-50 ${job.scheduleType === 'TIME' ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'bg-white border-slate-200'}`}>
@@ -1906,7 +1975,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
 
                             {/* 0304 PM Autopilot — per-schedule opt-out. The sweep only takes a
                                 schedule after its first generated WO has been completed. */}
-                            <div className="col-span-2 flex items-start gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                            <div className="sm:col-span-2 flex items-start gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
                                 <button
                                     type="button"
                                     role="switch"
@@ -1929,7 +1998,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                 </div>
                             </div>
 
-                            <div className="col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                            <div className="sm:col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nested within (longer-interval task)</label>
                                 {(() => {
                                     // 0366: same asset, longer calendar cadence, one level, no cycles.
@@ -2324,7 +2393,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             />
                             %
                         </label>
-                        <span className="text-[10px] text-slate-400 ml-auto">Admin-configurable per job</span>
+                        <span className="hidden sm:inline text-[10px] text-slate-400 ml-auto">Admin-configurable per job</span>
                     </div>
                 </div>
             </div>
@@ -2408,13 +2477,13 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
         <div className="space-y-3 sm:space-y-6">
             {/* Auto-Assignment Rules Engine (Phase 5C) */}
             <div className="bg-white p-3 sm:p-4 rounded-lg border border-slate-200 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3 sm:mb-4">
-                    <div>
-                        <h3 className="font-bold text-slate-800 text-sm uppercase">Auto-Assignment Rules</h3>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Define rules to automatically link matching assets to this PM strategy.</p>
+                <div className="flex justify-between items-start gap-2 mb-3">
+                    <div className="min-w-0">
+                        <h3 className="font-bold text-slate-800 text-xs sm:text-sm uppercase">Auto-Assignment Rules</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Link every asset that matches these rules.</p>
                     </div>
-                    <button onClick={runRules} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm flex items-center gap-1.5 self-start sm:self-auto flex-shrink-0">
-                        <TrendingUp size={12} /> Run Rules Now
+                    <button onClick={runRules} className="text-[11px] sm:text-xs bg-primary-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm flex items-center gap-1.5 flex-shrink-0">
+                        <TrendingUp size={12} /> Run<span className="hidden sm:inline"> Rules Now</span>
                     </button>
                 </div>
 
@@ -2435,30 +2504,32 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                     </div>
                 )}
 
-                {/* Add New Rule — stacks on phones */}
-                <div className="flex flex-col sm:flex-row gap-2 sm:items-end bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    <div className="flex-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-500">Field</label>
-                        <select value={newRule.field} onChange={e => setNewRule(p => ({ ...p, field: e.target.value as any }))} className="w-full text-xs p-1.5 border rounded">
+                {/* Add New Rule — two small selects on one phone row, value + Add on the next; one row on sm+ */}
+                <div className="ers-dense grid grid-cols-2 sm:flex sm:items-end gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    <div className="sm:flex-1 min-w-0">
+                        <label className="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Field</label>
+                        <select value={newRule.field} onChange={e => setNewRule(p => ({ ...p, field: e.target.value as any }))} className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white">
                             <option value="assetType">Asset Type</option>
                             <option value="costCentre">Cost Centre</option>
                             <option value="criticality">Criticality</option>
                             <option value="tag">Asset Tag</option>
                         </select>
                     </div>
-                    <div className="flex-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-500">Operator</label>
-                        <select value={newRule.operator} onChange={e => setNewRule(p => ({ ...p, operator: e.target.value as any }))} className="w-full text-xs p-1.5 border rounded">
+                    <div className="sm:flex-1 min-w-0">
+                        <label className="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Operator</label>
+                        <select value={newRule.operator} onChange={e => setNewRule(p => ({ ...p, operator: e.target.value as any }))} className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white">
                             <option value="equals">Equals</option>
                             <option value="contains">Contains</option>
                             <option value="startsWith">Starts With</option>
                         </select>
                     </div>
-                    <div className="flex-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-500">Value</label>
-                        <input type="text" value={newRule.value} onChange={e => setNewRule(p => ({ ...p, value: e.target.value }))} className="w-full text-xs p-1.5 border rounded" placeholder="e.g. Pump" />
+                    <div className="col-span-2 sm:col-span-1 sm:flex-1 flex items-end gap-2 min-w-0">
+                        <div className="flex-1 min-w-0">
+                            <label className="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Value</label>
+                            <input type="text" value={newRule.value} onChange={e => setNewRule(p => ({ ...p, value: e.target.value }))} className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md" placeholder="e.g. Pump" />
+                        </div>
+                        <button onClick={addRule} className="px-3 min-h-[36px] border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 rounded-md text-xs font-bold flex-shrink-0">Add</button>
                     </div>
-                    <button onClick={addRule} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded text-xs font-bold shadow-sm w-full sm:w-auto flex-shrink-0">Add Rule</button>
                 </div>
 
                 {/* Rule Result */}
@@ -2581,15 +2652,24 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                                     </button>
                                 </div>
                                 <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{asset?.name}</p>
-                                <div className={`mt-2 grid gap-2 ${job.scheduleType === 'READING' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                                <div className={`ers-dense mt-2 grid gap-2 ${job.scheduleType === 'READING' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                                     <div>
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Last completed</label>
-                                        <input type="date" value={ra.lastCompletedDate || ''} onChange={e => {
-                                            if (onUpdate) {
-                                                const updated = job.assignedAssets.map((a, i) => i === idx ? { ...a, lastCompletedDate: e.target.value } : a);
-                                                onUpdate({ assignedAssets: updated });
-                                            }
-                                        }} className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs text-slate-900" />
+                                        {/* The visible text is ours (same formatter as Next due) — a native
+                                            date input shows whatever shape the browser likes. The real input
+                                            sits on top, invisible, so a tap still opens the system picker. */}
+                                        <div className="relative">
+                                            <div className={`w-full min-h-[36px] flex items-center justify-between gap-1 border border-slate-200 rounded-md px-2 py-1 text-sm bg-white tabular-nums ${ra.lastCompletedDate ? 'text-slate-800' : 'text-slate-400'}`}>
+                                                <span className="truncate">{ra.lastCompletedDate ? fmtLocalDate(ra.lastCompletedDate) : 'Set date'}</span>
+                                                <Calendar size={13} className="text-slate-400 flex-shrink-0" />
+                                            </div>
+                                            <input type="date" aria-label="Last completed" value={ra.lastCompletedDate || ''} onChange={e => {
+                                                if (onUpdate) {
+                                                    const updated = job.assignedAssets.map((a, i) => i === idx ? { ...a, lastCompletedDate: e.target.value } : a);
+                                                    onUpdate({ assignedAssets: updated });
+                                                }
+                                            }} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                        </div>
                                     </div>
                                     {job.scheduleType === 'READING' && (
                                         <div>
@@ -2599,12 +2679,12 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                                                     const updated = job.assignedAssets.map((a, i) => i === idx ? { ...a, lastReadingValue: parseFloat(e.target.value) || undefined } : a);
                                                     onUpdate({ assignedAssets: updated });
                                                 }
-                                            }} className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs" />
+                                            }} className="w-full border border-slate-200 rounded-md px-2 py-1 text-sm text-slate-800 bg-white" />
                                         </div>
                                     )}
                                     <div>
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Next due (est)</label>
-                                        <div className="text-xs font-mono text-slate-600 py-1">{nextDue}</div>
+                                        <div className="w-full min-h-[36px] flex items-center border border-slate-200 rounded-md px-2 py-1 text-sm text-slate-800 bg-slate-50 tabular-nums">{fmtLocalDate(nextDue)}</div>
                                     </div>
                                 </div>
                             </div>
@@ -3263,10 +3343,10 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                     const score = typeof h.riskScore === 'number' ? h.riskScore : (h.consequence || 1) * (h.likelihood || 1);
                     const level = h.riskLevel || getRiskLevel(score);
                     return (
-                        <div key={h.id} className={`bg-white border-2 rounded-lg p-3 sm:p-5 hover:shadow-md transition ${RISK_COLORS[level] || 'border-slate-200'}`}>
-                            <div className="flex items-start gap-2 sm:gap-4">
-                                <span className="font-mono text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded mt-1">{idx + 1}</span>
-                                <div className="flex-1 min-w-0 space-y-3 sm:space-y-4">
+                        <div key={h.id} className={`ers-dense bg-white border-2 rounded-lg p-3 sm:p-4 transition ${RISK_COLORS[level] || 'border-slate-200'}`}>
+                            <div className="flex items-start gap-2 sm:gap-3">
+                                <span className="font-mono text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded mt-1 flex-shrink-0">{idx + 1}</span>
+                                <div className="flex-1 min-w-0 space-y-2.5 sm:space-y-3">
                                     {/* Hazard Description */}
                                     <div>
                                         <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Hazard Description</label>
@@ -3275,18 +3355,18 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                             value={h.hazard}
                                             onChange={(e) => updateHazard(h.id, 'hazard', e.target.value)}
                                             placeholder="e.g. Working at height, confined space entry, H₂S exposure..."
-                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                                            className="w-full px-2.5 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500"
                                         />
                                     </div>
 
                                     {/* Risk Matrix Selectors */}
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4">
-                                        <div>
-                                            <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Consequence (1-5)</label>
+                                    <div className="grid grid-cols-[1fr_1fr_auto] sm:grid-cols-3 gap-2 sm:gap-3 items-end">
+                                        <div className="min-w-0">
+                                            <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Consequence</label>
                                             <select
                                                 value={h.consequence || 3}
                                                 onChange={(e) => updateHazard(h.id, 'consequence', Number(e.target.value))}
-                                                className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                                                className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs"
                                             >
                                                 {CONSEQUENCE_LABELS.map((label, i) => (
                                                     <option key={i} value={i + 1}>{i + 1} — {label}</option>
@@ -3294,11 +3374,11 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Likelihood (1-5)</label>
+                                            <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Likelihood</label>
                                             <select
                                                 value={h.likelihood || 3}
                                                 onChange={(e) => updateHazard(h.id, 'likelihood', Number(e.target.value))}
-                                                className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                                                className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs"
                                             >
                                                 {LIKELIHOOD_LABELS.map((label, i) => (
                                                     <option key={i} value={i + 1}>{i + 1} — {label}</option>
@@ -3306,18 +3386,18 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Risk Score</label>
-                                            <div className={`flex items-center gap-2 p-2 rounded-lg border-2 font-bold text-lg ${RISK_COLORS[level] || 'border-slate-300'}`}>
+                                            <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Risk Score</label>
+                                            <div className={`flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-md border-2 font-bold text-sm whitespace-nowrap ${RISK_COLORS[level] || 'border-slate-300'}`}>
                                                 <span>{score}</span>
-                                                <span className="text-xs font-bold uppercase">{level}</span>
+                                                <span className="text-[10px] font-bold uppercase">{level}</span>
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* Hierarchy of Controls (ISO 45001) */}
                                     <div>
-                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-2 block">Hierarchy of Controls (ISO 45001)</label>
-                                        <div className="flex flex-wrap gap-2">
+                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block">Hierarchy of Controls (ISO 45001)</label>
+                                        <div className="flex flex-wrap gap-1.5">
                                             {CONTROL_HIERARCHY.map((ctrl, i) => {
                                                 const active = (h.controlHierarchy || []).includes(ctrl);
                                                 const colors = [
@@ -3331,7 +3411,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                                     <button
                                                         key={ctrl}
                                                         onClick={() => toggleControl(h.id, ctrl)}
-                                                        className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold border-2 transition-all ${active ? colors[i] + ' shadow-sm ring-2 ring-offset-1 ring-current/20' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                                                        className={`px-2 py-1 rounded-md text-[11px] font-bold border transition-all ${active ? colors[i] + ' shadow-sm ring-2 ring-offset-1 ring-current/20' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
                                                             }`}
                                                     >
                                                         {i + 1}. {ctrl}
@@ -3349,7 +3429,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                             value={h.controls}
                                             onChange={(e) => updateHazard(h.id, 'controls', e.target.value)}
                                             placeholder="Describe the specific control measures, procedures, PPE requirements..."
-                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500"
+                                            className="w-full px-2.5 py-1.5 border border-slate-300 rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-primary-500"
                                         />
                                     </div>
 
@@ -3454,33 +3534,47 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
         );
     };
 
+    const craftOptionEls = craftRoles.length > 0
+        ? craftRoles.map(d => <option key={d.code} value={d.code}>{d.description || d.code}</option>)
+        : [
+            <option key="TECH" value="TECHNICIAN">Technician</option>,
+            <option key="ELEC" value="ELECTRICIAN">Electrician</option>,
+            <option key="MECH" value="MECHANIC">Mechanic</option>,
+            <option key="OPR" value="OPERATOR">Operator</option>,
+            <option key="SUP" value="SUPERVISOR">Supervisor</option>,
+            <option key="VEN" value="VENDOR">Vendor / Contractor</option>,
+        ];
+    const contactOptionEls = (roleContacts: Contact[]) => (roleContacts.length > 0 ? roleContacts : contacts).map(c => (
+        <option key={c.id} value={c.id}>{c.name || `${(c as any).firstName || ''} ${(c as any).lastName || ''}`}</option>
+    ));
+
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
             {/* Staffing Summary Card */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex gap-8">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+                <div className="flex items-start sm:items-center justify-between gap-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:flex sm:gap-8 flex-1 min-w-0">
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-blue-500">Total Hours</p>
-                            <p className="text-2xl font-black text-blue-700">{totalHours.toFixed(1)}<span className="text-sm font-normal ml-1">hrs</span></p>
+                            <p className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-500">Total Hours</p>
+                            <p className="text-lg sm:text-2xl font-black text-blue-700 leading-tight">{totalHours.toFixed(1)}<span className="text-xs sm:text-sm font-normal ml-1">hrs</span></p>
                         </div>
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-blue-500">Est. Labour Cost</p>
-                            <p className="text-2xl font-black text-blue-700">${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                            <p className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-500">Est. Labour Cost</p>
+                            <p className="text-lg sm:text-2xl font-black text-blue-700 leading-tight">${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-blue-500">Headcount</p>
-                            <p className="text-2xl font-black text-blue-700">{labor.length}</p>
+                            <p className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-500">Headcount</p>
+                            <p className="text-lg sm:text-2xl font-black text-blue-700 leading-tight">{labor.length}</p>
                         </div>
-                        <div>
-                            <p className="text-[10px] uppercase font-bold text-blue-500">Lead Craft</p>
-                            <p className="text-sm font-bold text-blue-700 mt-1">
+                        <div className="min-w-0">
+                            <p className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-500">Lead Craft</p>
+                            <p className="text-xs sm:text-sm font-bold text-blue-700 mt-0.5 sm:mt-1 truncate">
                                 {leadCraft ? (craftRoles.find(r => r.code === leadCraft.contactType)?.description || leadCraft.contactType) : '—'}
                             </p>
                         </div>
                     </div>
-                    <button onClick={addLabor} className="text-xs bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-500 flex items-center gap-1 font-bold shadow-sm">
-                        <Plus size={14} /> Add Craft Requirement
+                    <button onClick={addLabor} className="text-xs bg-primary-600 text-white px-2.5 sm:px-4 py-2 rounded-lg hover:bg-primary-500 flex items-center gap-1 font-bold shadow-sm flex-shrink-0" title="Add craft requirement">
+                        <Plus size={14} /> <span className="hidden sm:inline">Add Craft Requirement</span><span className="sm:hidden">Add</span>
                     </button>
                 </div>
             </div>
@@ -3488,12 +3582,85 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
             {/* Phase 1: Craft Requirements Table */}
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 <div className="p-3 border-b border-slate-200 bg-slate-50">
-                    <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                    <h3 className="font-bold text-slate-700 text-xs sm:text-sm flex items-center gap-2">
                         <Users size={16} className="text-blue-600" /> Phase 1: Craft Requirements (Planning)
                     </h3>
                     <p className="text-[10px] text-slate-500 mt-0.5">Define the roles and hours needed. Personnel are assigned in Phase 2.</p>
                 </div>
-                <div className="overflow-x-auto">
+                {/* Phones: stacked rows — nothing scrolls sideways; the table stays for sm+ */}
+                <div className="ers-dense sm:hidden divide-y divide-slate-100">
+                    {labor.map((l) => {
+                        const roleContacts = getContactsForRole(l.contactType);
+                        const assignedContact = contacts.find(c => c.id === l.contactId);
+                        const isExternal = assignedContact?.types?.includes('VENDOR') || assignedContact?.types?.includes('CONTRACTOR') || l.contactType === 'VENDOR';
+                        const lineTotal = (l.estDuration || 0) * (l.estRate || 0);
+                        return (
+                            <div key={l.id} className={`p-3 space-y-2 ${l.isLead ? 'bg-amber-50/40' : ''}`}>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => updateLabor(l.id, 'isLead', true)}
+                                        title={l.isLead ? 'Lead Craft' : 'Set as Lead'}
+                                        className={`p-1 rounded flex-shrink-0 ${l.isLead ? 'text-amber-500' : 'text-slate-300'}`}
+                                    >
+                                        <Star size={16} fill={l.isLead ? 'currentColor' : 'none'} />
+                                    </button>
+                                    <select
+                                        value={l.contactType}
+                                        onChange={(e) => updateLabor(l.id, 'contactType', e.target.value)}
+                                        className="flex-1 min-w-0 text-sm border border-slate-200 rounded-md px-2 py-1.5 bg-white font-medium"
+                                    >
+                                        {craftOptionEls}
+                                    </select>
+                                    {isExternal ? (
+                                        <span className="text-[9px] font-bold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded uppercase shrink-0">EXT</span>
+                                    ) : l.contactId ? (
+                                        <span className="text-[9px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded uppercase shrink-0">INT</span>
+                                    ) : null}
+                                    <button onClick={() => deleteLabor(l.id)} className="p-1.5 text-slate-300 hover:text-red-500 rounded flex-shrink-0" title="Remove">
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                                <select
+                                    value={l.contactId || ''}
+                                    onChange={(e) => updateLabor(l.id, 'contactId', e.target.value)}
+                                    className={`w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 bg-white ${!l.contactId ? 'text-slate-400 italic' : ''}`}
+                                >
+                                    <option value="">— Unassigned (Planning) —</option>
+                                    {contactOptionEls(roleContacts)}
+                                </select>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Hours</label>
+                                        <input type="number" value={l.estDuration} onChange={(e) => updateLabor(l.id, 'estDuration', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="0.5" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Rate $/hr</label>
+                                        <input type="number" value={l.estRate || 0} onChange={(e) => updateLabor(l.id, 'estRate', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="5" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Line total</label>
+                                        <div className="min-h-[36px] flex items-center justify-end text-sm font-semibold text-slate-700 tabular-nums px-1">${lineTotal.toFixed(2)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {labor.length === 0 && (
+                        <div className="p-6 text-center text-slate-400">
+                            <Users size={28} className="mx-auto mb-2 opacity-30" />
+                            <p className="text-sm">No craft requirements defined.</p>
+                            <p className="text-xs mt-1">Tap Add to plan the labour needed for this PM.</p>
+                        </div>
+                    )}
+                    {labor.length > 0 && (
+                        <div className="p-3 bg-slate-50 flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-500 uppercase">Totals</span>
+                            <span className="text-slate-700 tabular-nums">{totalHours.toFixed(1)} hrs · <span className="font-bold text-blue-700">${totalCost.toFixed(2)}</span></span>
+                        </div>
+                    )}
+                </div>
+
+                <div className="hidden sm:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-white">
                         <tr>
@@ -3531,19 +3698,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                                 onChange={(e) => updateLabor(l.id, 'contactType', e.target.value)}
                                                 className="flex-1 text-sm border-slate-300 rounded p-1.5 bg-white font-medium"
                                             >
-                                                {craftRoles.length > 0
-                                                    ? craftRoles.map(d => (
-                                                        <option key={d.code} value={d.code}>{d.description || d.code}</option>
-                                                    ))
-                                                    : [
-                                                        <option key="TECH" value="TECHNICIAN">Technician</option>,
-                                                        <option key="ELEC" value="ELECTRICIAN">Electrician</option>,
-                                                        <option key="MECH" value="MECHANIC">Mechanic</option>,
-                                                        <option key="OPR" value="OPERATOR">Operator</option>,
-                                                        <option key="SUP" value="SUPERVISOR">Supervisor</option>,
-                                                        <option key="VEN" value="VENDOR">Vendor / Contractor</option>,
-                                                    ]
-                                                }
+                                                {craftOptionEls}
                                             </select>
                                             {isExternal && (
                                                 <span className="text-[9px] font-bold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded uppercase shrink-0">EXT</span>
@@ -3560,15 +3715,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                             className={`w-full text-sm border-slate-300 rounded p-1.5 bg-white ${!l.contactId ? 'text-slate-400 italic' : ''}`}
                                         >
                                             <option value="">— Unassigned (Planning) —</option>
-                                            {roleContacts.length > 0 ? (
-                                                roleContacts.map(c => (
-                                                    <option key={c.id} value={c.id}>{c.name || `${(c as any).firstName || ''} ${(c as any).lastName || ''}`}</option>
-                                                ))
-                                            ) : (
-                                                contacts.map(c => (
-                                                    <option key={c.id} value={c.id}>{c.name || `${(c as any).firstName || ''} ${(c as any).lastName || ''}`}</option>
-                                                ))
-                                            )}
+                                            {contactOptionEls(roleContacts)}
                                         </select>
                                     </td>
                                     <td className="px-3 py-2 text-right">
@@ -3669,6 +3816,30 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
         description: `${inv.code ? `[${inv.code}] ` : ''}${inv.description || inv.name}`,
     }));
 
+    // Choosing a catalogue part fills description / UOM / unit cost from the item
+    const pickPart = (itemId: string, code: string) => {
+        const selected = inventoryItems.find((inv: any) => inv.id === code);
+        const updates = inventory.map(i => i.id === itemId ? {
+            ...i,
+            inventoryId: code,
+            description: selected?.description || selected?.name || '',
+            uom: selected?.uom || 'EA',
+            estUnitCost: selected?.unitCost || selected?.unit_cost || 0,
+        } : i);
+        onUpdate({ inventory: updates });
+    };
+    const uomDict = dictionaries.filter(d => d.type === 'UOM' && d.active);
+    const uomOptionEls = uomDict.length > 0
+        ? uomDict.map(d => <option key={d.code} value={d.code}>{d.code}</option>)
+        : [
+            <option key="EA" value="EA">EA</option>,
+            <option key="L" value="L">L</option>,
+            <option key="KG" value="KG">KG</option>,
+            <option key="M" value="M">M</option>,
+            <option key="SET" value="SET">SET</option>,
+            <option key="BOX" value="BOX">BOX</option>,
+        ];
+
     // Cost summary
     const totalMaterialCost = inventory.reduce((sum, item) => sum + ((item.estQty || 0) * (item.estUnitCost || 0)), 0);
     const criticalCount = inventory.filter((item: any) => item.isCritical).length;
@@ -3677,30 +3848,30 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
         <div className="space-y-4 animate-in fade-in duration-300">
             {/* Material Cost Summary */}
             {inventory.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-6">
+                <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                         <div>
-                            <p className="text-xs text-slate-500 uppercase font-bold">Items Planned</p>
-                            <p className="text-xl font-black text-slate-800">{inventory.length}</p>
+                            <p className="text-[9px] sm:text-xs text-slate-500 uppercase font-bold">Items Planned</p>
+                            <p className="text-base sm:text-xl font-black text-slate-800">{inventory.length}</p>
                         </div>
                         <div className="h-8 w-px bg-slate-200" />
                         <div>
-                            <p className="text-xs text-slate-500 uppercase font-bold">Est. Material Cost</p>
-                            <p className="text-xl font-black text-blue-600">${totalMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className="text-[9px] sm:text-xs text-slate-500 uppercase font-bold">Est. Material Cost</p>
+                            <p className="text-base sm:text-xl font-black text-blue-600">${totalMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                         {criticalCount > 0 && (
                             <>
                                 <div className="h-8 w-px bg-slate-200" />
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase font-bold">Critical Spares</p>
-                                    <p className="text-xl font-black text-red-600 flex items-center gap-1">
+                                    <p className="text-[9px] sm:text-xs text-slate-500 uppercase font-bold">Critical Spares</p>
+                                    <p className="text-base sm:text-xl font-black text-red-600 flex items-center gap-1">
                                         <AlertTriangle size={16} /> {criticalCount}
                                     </p>
                                 </div>
                             </>
                         )}
                     </div>
-                    <button onClick={addItem} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1 shadow-sm">
+                    <button onClick={addItem} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1 shadow-sm flex-shrink-0">
                         <Plus size={14} /> Add Item
                     </button>
                 </div>
@@ -3708,14 +3879,93 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
 
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 {inventory.length === 0 && (
-                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                        <h3 className="font-bold text-slate-700">Required Spare Parts & Material</h3>
+                    <div className="p-3 sm:p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center gap-3">
+                        <h3 className="font-bold text-slate-700 text-sm">Required Spare Parts & Material</h3>
                         <button onClick={addItem} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1">
                             <Plus size={14} /> Add Item
                         </button>
                     </div>
                 )}
-                <div className="overflow-x-auto">
+                {/* Phones: stacked rows — nothing scrolls sideways; the table stays for sm+ */}
+                <div className="ers-dense sm:hidden divide-y divide-slate-100">
+                    {inventory.map((item) => {
+                        const sourceItem = inventoryItems.find((inv: any) => inv.id === item.inventoryId);
+                        const stockOnHand = sourceItem?.totalQtyOnHand ?? sourceItem?.quantity ?? null;
+                        const lineTotal = (item.estQty || 0) * (item.estUnitCost || 0);
+                        return (
+                            <div key={item.id} className="p-3 space-y-2">
+                                <div className="flex items-start gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        {inventoryItems.length > 0 ? (
+                                            <>
+                                                <SearchableDropdown
+                                                    options={partOptions}
+                                                    value={item.inventoryId || undefined}
+                                                    onChange={(code) => pickPart(item.id, code)}
+                                                    placeholder="Search parts..."
+                                                />
+                                                {item.inventoryId && stockOnHand !== null && (
+                                                    <span className={`inline-flex items-center gap-1 mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${stockOnHand <= 0 ? 'bg-red-100 text-red-700' : stockOnHand <= 5 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                                                        <Package size={10} /> {stockOnHand} on hand
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <input
+                                                type="text"
+                                                value={item.description}
+                                                onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                                                placeholder="Part description..."
+                                                className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5"
+                                            />
+                                        )}
+                                    </div>
+                                    <button onClick={() => deleteItem(item.id)} className="p-1.5 text-slate-300 hover:text-red-500 rounded flex-shrink-0" title="Remove">
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-4 gap-2">
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">UOM</label>
+                                        <select value={item.uom} onChange={(e) => updateItem(item.id, 'uom', e.target.value)} className="w-full text-sm border border-slate-200 rounded-md px-1.5 py-1.5 bg-white">
+                                            {uomOptionEls}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Qty</label>
+                                        <input type="number" value={item.estQty} onChange={(e) => updateItem(item.id, 'estQty', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="1" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Unit cost</label>
+                                        <input type="number" value={item.estUnitCost || 0} onChange={(e) => updateItem(item.id, 'estUnitCost', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="0.01" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Total</label>
+                                        <div className="min-h-[36px] flex items-center justify-end text-sm font-semibold text-slate-700 tabular-nums px-1">${lineTotal.toFixed(2)}</div>
+                                    </div>
+                                </div>
+                                <label className="flex items-center gap-2 text-[11px] text-slate-600">
+                                    <input
+                                        type="checkbox"
+                                        checked={(item as any).isCritical || false}
+                                        onChange={(e) => updateItem(item.id, 'isCritical', e.target.checked)}
+                                        className="rounded border-slate-300 text-red-600 focus:ring-red-500"
+                                    />
+                                    Critical spare — stop work if missing
+                                </label>
+                            </div>
+                        );
+                    })}
+                    {inventory.length === 0 && (
+                        <div className="p-6 text-center text-slate-400">
+                            <Package size={28} className="mx-auto mb-2 opacity-20" />
+                            <p className="text-sm">No inventory requirements defined.</p>
+                            <p className="text-xs mt-1">Tap Add Item to plan spare parts and materials for this PM.</p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="hidden sm:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-white">
                         <tr>
@@ -3742,17 +3992,7 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
                                                 <SearchableDropdown
                                                     options={partOptions}
                                                     value={item.inventoryId || undefined}
-                                                    onChange={(code) => {
-                                                        const selected = inventoryItems.find((inv: any) => inv.id === code);
-                                                        const updates = inventory.map(i => i.id === item.id ? {
-                                                            ...i,
-                                                            inventoryId: code,
-                                                            description: selected?.description || selected?.name || '',
-                                                            uom: selected?.uom || 'EA',
-                                                            estUnitCost: selected?.unitCost || selected?.unit_cost || 0,
-                                                        } : i);
-                                                        onUpdate({ inventory: updates });
-                                                    }}
+                                                    onChange={(code) => pickPart(item.id, code)}
                                                     placeholder="Search parts..."
                                                 />
                                                 {item.inventoryId && stockOnHand !== null && (
@@ -3778,19 +4018,7 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
                                             onChange={(e) => updateItem(item.id, 'uom', e.target.value)}
                                             className="w-full text-sm border-slate-300 rounded p-1.5 bg-white"
                                         >
-                                            {dictionaries.filter(d => d.type === 'UOM' && d.active).length > 0
-                                                ? dictionaries.filter(d => d.type === 'UOM' && d.active).map(d => (
-                                                    <option key={d.code} value={d.code}>{d.code}</option>
-                                                ))
-                                                : [
-                                                    <option key="EA" value="EA">EA</option>,
-                                                    <option key="L" value="L">L</option>,
-                                                    <option key="KG" value="KG">KG</option>,
-                                                    <option key="M" value="M">M</option>,
-                                                    <option key="SET" value="SET">SET</option>,
-                                                    <option key="BOX" value="BOX">BOX</option>,
-                                                ]
-                                            }
+                                            {uomOptionEls}
                                         </select>
                                     </td>
                                     <td className="px-4 py-3 text-right">

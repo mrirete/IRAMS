@@ -767,10 +767,10 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                             const score = typeof h.riskScore === 'number' ? h.riskScore : ((h as any).consequence || 1) * ((h as any).likelihood || 1);
                             const level = (h as any).riskLevel || getWORiskLevel(typeof score === 'number' ? score : 1);
                             return (
-                                <div key={h.id} className={`bg-white border-2 rounded-lg p-3 sm:p-5 hover:shadow-md transition ${WO_RISK_COLORS[level] || 'border-slate-200'}`}>
-                                    <div className="flex items-start gap-2 sm:gap-4">
-                                        <span className="font-mono text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded mt-1 flex-shrink-0">{idx + 1}</span>
-                                        <div className="flex-1 min-w-0 space-y-4">
+                                <div key={h.id} className={`ers-dense bg-white border-2 rounded-lg p-3 sm:p-4 transition ${WO_RISK_COLORS[level] || 'border-slate-200'}`}>
+                                    <div className="flex items-start gap-2 sm:gap-3">
+                                        <span className="font-mono text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded mt-1 flex-shrink-0">{idx + 1}</span>
+                                        <div className="flex-1 min-w-0 space-y-2.5 sm:space-y-3">
                                             {/* Hazard Description */}
                                             <div>
                                                 <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Hazard Description</label>
@@ -779,18 +779,18 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                     value={h.hazard}
                                                     onChange={(e) => updateHazard(h.id, 'hazard', e.target.value)}
                                                     placeholder="e.g. Working at height, confined space entry, H2S exposure..."
-                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                                                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500"
                                                 />
                                             </div>
 
                                             {/* Risk Matrix Selectors */}
-                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                                                <div>
-                                                    <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Consequence (1-5)</label>
+                                            <div className="grid grid-cols-[1fr_1fr_auto] sm:grid-cols-3 gap-2 sm:gap-3 items-end">
+                                                <div className="min-w-0">
+                                                    <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Consequence</label>
                                                     <select
                                                         value={(h as any).consequence || 3}
                                                         onChange={(e) => updateHazard(h.id, 'consequence' as keyof JobHazard, Number(e.target.value))}
-                                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs"
                                                     >
                                                         {CONSEQUENCE_LABELS.map((label, i) => (
                                                             <option key={i} value={i + 1}>{i + 1} — {label}</option>
@@ -798,11 +798,11 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Likelihood (1-5)</label>
+                                                    <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Likelihood</label>
                                                     <select
                                                         value={(h as any).likelihood || 3}
                                                         onChange={(e) => updateHazard(h.id, 'likelihood' as keyof JobHazard, Number(e.target.value))}
-                                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs"
                                                     >
                                                         {LIKELIHOOD_LABELS.map((label, i) => (
                                                             <option key={i} value={i + 1}>{i + 1} — {label}</option>
@@ -810,18 +810,18 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Risk Score</label>
-                                                    <div className={`flex items-center gap-2 p-2 rounded-lg border-2 font-bold text-lg ${WO_RISK_COLORS[level] || 'border-slate-300'}`}>
+                                                    <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Risk Score</label>
+                                                    <div className={`flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-md border-2 font-bold text-sm whitespace-nowrap ${WO_RISK_COLORS[level] || 'border-slate-300'}`}>
                                                         <span>{score}</span>
-                                                        <span className="text-xs font-bold uppercase">{level}</span>
+                                                        <span className="text-[10px] font-bold uppercase">{level}</span>
                                                     </div>
                                                 </div>
                                             </div>
 
                                             {/* Hierarchy of Controls (ISO 45001) */}
                                             <div>
-                                                <label className="text-[10px] uppercase font-bold text-slate-500 mb-2 block">Hierarchy of Controls (ISO 45001)</label>
-                                                <div className="flex flex-wrap gap-2">
+                                                <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block">Hierarchy of Controls (ISO 45001)</label>
+                                                <div className="flex flex-wrap gap-1.5">
                                                     {WO_CONTROL_HIERARCHY.map((ctrl, i) => {
                                                         const active = ((h as any).controlHierarchy || []).includes(ctrl);
                                                         const colors = [
@@ -835,7 +835,7 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                             <button
                                                                 key={ctrl}
                                                                 onClick={() => toggleControl(h.id, ctrl)}
-                                                                className={`px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold border-2 transition-all ${active ? colors[i] + ' shadow-sm ring-2 ring-offset-1 ring-current/20' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                                                                className={`px-2 py-1 rounded-md text-[11px] font-bold border transition-all ${active ? colors[i] + ' shadow-sm ring-2 ring-offset-1 ring-current/20' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
                                                                     }`}
                                                             >
                                                                 {i + 1}. {ctrl}
@@ -853,20 +853,20 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                     value={h.controls}
                                                     onChange={(e) => updateHazard(h.id, 'controls', e.target.value)}
                                                     placeholder="Describe the specific control measures, procedures, PPE requirements..."
-                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500"
+                                                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-primary-500"
                                                 />
                                             </div>
 
                                             {/* ── RESIDUAL RISK (Post-Controls) ── */}
-                                            <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-3 sm:p-4">
-                                                <label className="text-[10px] uppercase font-bold text-blue-600 mb-3 block flex items-center gap-1.5">↕ Residual Risk (Post-Controls)</label>
-                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                                                    <div>
-                                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Residual Consequence</label>
+                                            <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-3">
+                                                <label className="text-[10px] uppercase font-bold text-blue-600 mb-2 flex items-center gap-1.5">↕ Residual Risk (Post-Controls)</label>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+                                                    <div className="min-w-0">
+                                                        <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Residual Consequence</label>
                                                         <select
                                                             value={(h as any).residualConsequence || 1}
                                                             onChange={(e) => updateHazard(h.id, 'residualConsequence' as keyof JobHazard, Number(e.target.value))}
-                                                            className="w-full p-2 border border-blue-200 rounded-lg text-sm bg-white"
+                                                            className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-xs bg-white"
                                                         >
                                                             {CONSEQUENCE_LABELS.map((label, i) => (
                                                                 <option key={i} value={i + 1}>{i + 1} — {label}</option>
@@ -874,30 +874,30 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Residual Likelihood</label>
+                                                        <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Residual Likelihood</label>
                                                         <select
                                                             value={(h as any).residualLikelihood || 1}
                                                             onChange={(e) => updateHazard(h.id, 'residualLikelihood' as keyof JobHazard, Number(e.target.value))}
-                                                            className="w-full p-2 border border-blue-200 rounded-lg text-sm bg-white"
+                                                            className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-xs bg-white"
                                                         >
                                                             {LIKELIHOOD_LABELS.map((label, i) => (
                                                                 <option key={i} value={i + 1}>{i + 1} — {label}</option>
                                                             ))}
                                                         </select>
                                                     </div>
-                                                    <div>
-                                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Risk Reduction</label>
+                                                    <div className="col-span-2 sm:col-span-1">
+                                                        <label className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 mb-0.5 block">Risk Reduction</label>
                                                         {(() => {
                                                             const residualScore = ((h as any).residualConsequence || 1) * ((h as any).residualLikelihood || 1);
                                                             const residualLevel = getWORiskLevel(residualScore);
                                                             const reduction = score > 0 ? Math.round(((score - residualScore) / score) * 100) : 0;
                                                             return (
                                                                 <div className="flex flex-wrap items-center gap-2">
-                                                                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border-2 font-bold text-sm ${WO_RISK_COLORS[level]}`}>
+                                                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border-2 font-bold text-xs ${WO_RISK_COLORS[level]}`}>
                                                                         {score}
                                                                     </div>
-                                                                    <span className="text-lg text-slate-400">→</span>
-                                                                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border-2 font-bold text-sm ${WO_RISK_COLORS[residualLevel]}`}>
+                                                                    <span className="text-sm text-slate-400">→</span>
+                                                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border-2 font-bold text-xs ${WO_RISK_COLORS[residualLevel]}`}>
                                                                         {residualScore}
                                                                     </div>
                                                                     {reduction > 0 && (

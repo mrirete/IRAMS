@@ -1981,6 +1981,24 @@ select {
     min-height: 44px;
     font-size: 16px !important; /* Prevents iOS Safari zoom on focus */
   }
+
+  /* Dense opt-out for secondary controls (rule composers, per-row planning
+     fields, risk selectors): 14px / 36px so a card of six small fields stays a
+     card instead of a column of thumb-sized boxes. Trade-off: iOS Safari may
+     zoom on focus inside these containers (it zooms below 16px). Primary
+     fields (search, description, frequency) keep the 44px default. */
+  .ers-dense input[type="text"],
+  .ers-dense input[type="number"],
+  .ers-dense input[type="date"],
+  .ers-dense input[type="search"],
+  .ers-dense textarea,
+  .ers-dense select {
+    min-height: 36px;
+    font-size: 14px !important;
+  }
+  .ers-dense input[type="checkbox"] {
+    min-height: 0;
+  }
 }
 
 /* Scrollbar-hide for horizontal scrolling on breadcrumbs/tabs */
