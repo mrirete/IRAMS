@@ -64,8 +64,11 @@ export const hasJobPlan = (wo: WorkOrder): boolean =>
     return named || hasInstruction;
   });
 
+// A hazard row with no description is not a hazard — the PM sweep copies
+// nothing else and the SQL gate (pm_mark_planned) counts nothing else, so the
+// order, the schedule and the database agree on what "has a JSA" means.
 export const hasJSA = (wo: WorkOrder): boolean =>
-  !!(wo.jsa && wo.jsa.hazards && wo.jsa.hazards.length > 0);
+  !!(wo.jsa && wo.jsa.hazards && wo.jsa.hazards.some(h => String((h as { hazard?: string })?.hazard || '').trim().length > 0));
 
 /**
  * Lightweight Planned-vs-Reactive classification — no item scoring. Use this for

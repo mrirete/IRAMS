@@ -11,6 +11,8 @@ import {
     PauseCircle, PlayCircle, BarChart3, Eye, TrendingUp, Upload, BookOpen
 } from 'lucide-react';
 import { AskRelanternButton } from '../components/AskRelanternButton';
+import { assessPmReadiness } from '../services/pmReadiness';
+import { PmReadinessBadge, PmReadinessChip } from '../components/PmReadinessBadge';
 import { openStorageRef } from '../../lib/storageUrl';
 import { aiContextService } from '../services/AIContextService';
 import { MOCK_RECURRING_JOBS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS } from '../constants';
@@ -256,10 +258,14 @@ export const RecurringWork: React.FC = () => {
                 // Failure Impact (ISO 14224 §B.2.5)
                 localImpact: pm.local_impact || '',
                 plantWideImpact: pm.plant_wide_impact || '',
-                tasks: [],
-                jsa: { id: 'jsa-mock', status: 'DRAFT', hazards: [], permits: [], signoffs: [] },
-                labor: [],
-                inventory: [],
+                // The row already carries its plan (select('*') includes templates) —
+                // mapping it here lets the list and the Generator score readiness
+                // without a second fetch per schedule; selecting a schedule still
+                // re-reads templates and wins when they are non-empty.
+                tasks: Array.isArray(pm.templates?.tasks) ? pm.templates.tasks : [],
+                jsa: pm.templates?.jsa || { id: 'jsa-mock', status: 'DRAFT', hazards: [], permits: [], signoffs: [] },
+                labor: Array.isArray(pm.templates?.labor) ? pm.templates.labor : [],
+                inventory: Array.isArray(pm.templates?.inventory) ? pm.templates.inventory : [],
                 createdById: pm.created_by || 'system',
                 createdAt: pm.created_at || new Date().toISOString()
             }));
@@ -1313,6 +1319,7 @@ export const RecurringWork: React.FC = () => {
                                                 <div className="flex items-center gap-1">
                                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${job.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : job.status === 'PAUSED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{job.status}</span>
                                                     <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold uppercase">{job.scheduleType}</span>
+                                                    <PmReadinessChip readiness={assessPmReadiness(job, dbAssets)} />
                                                 </div>
                                             </div>
                                             <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{job.title || job.jobDescription || job.description}</h3>
@@ -1458,6 +1465,11 @@ export const RecurringWork: React.FC = () => {
                                 const desc = isWeibullProse ? raw.split('\n')[0].split('Analysis Parameters:')[0].trim() : raw;
                                 return <p className="text-sm sm:text-base text-slate-500 line-clamp-2 lg:line-clamp-3 pl-8 lg:pl-0">{desc}</p>;
                             })()}
+                            {/* Readiness before an order exists — the same items the work order's
+                                planning gate checks; each missing item links to the tab that fixes it. */}
+                            <div className="pl-8 lg:pl-0 mt-2">
+                                <PmReadinessBadge readiness={assessPmReadiness(selectedJob, dbAssets)} onFix={(t) => setActiveTab(t)} />
+                            </div>
                             {/* 0299: origin provenance — why this PM exists at this interval */}
                             {(() => {
                                 const o = (selectedJob as any).origin as Record<string, any> | undefined;
@@ -1691,6 +1703,7 @@ export const RecurringWork: React.FC = () => {
                                                                 </label>
                                                             </th>
                                                             <th className="p-3 text-left text-xs font-bold text-slate-500 uppercase">PM Code</th>
+                                                            <th className="p-3 text-left text-xs font-bold text-slate-500 uppercase" title="How complete the schedule's plan is — 100% lands as Planned">Plan</th>
                                                             <th className="p-3 text-left text-xs font-bold text-slate-500 uppercase">Asset / Route</th>
                                                             <th className="p-3 text-left text-xs font-bold text-slate-500 uppercase">Description</th>
                                                             {triggerType === 'READING' && <th className="p-3 text-left text-xs font-bold text-slate-500 uppercase">Last Reading</th>}
@@ -1717,6 +1730,9 @@ export const RecurringWork: React.FC = () => {
                                                                         />
                                                                     </td>
                                                                     <td className="p-3 text-sm font-bold text-slate-900">{item.jobCode}</td>
+                                                                    <td className="p-3">
+                                                                        {(() => { const rj = jobs.find(j => j.id === item.pmId); return rj ? <PmReadinessChip readiness={assessPmReadiness(rj, dbAssets)} /> : null; })()}
+                                                                    </td>
                                                                     <td className="p-3 text-sm text-slate-600 font-medium">{item.asset}</td>
                                                                     <td className="p-3 text-sm text-slate-600">{item.desc}</td>
                                                                     {triggerType === 'READING' && (
