@@ -177,7 +177,12 @@ export class DataMapper {
             contactType: record.contact_type_code,
             isLead: record.is_lead || false,
             headcount: Number(record.headcount) || 1,
-            estDuration: Number(record.hours_worked) || 0,
+            // A plan line (no confirmation yet) carries its estimate in
+            // remaining_hours; hours_worked is what has been confirmed. Reading
+            // the estimate from hours_worked showed every generated plan line as 0 h.
+            estDuration: (record.confirmation_no == null && record.remaining_hours != null && !(Number(record.hours_worked) > 0))
+                ? Number(record.remaining_hours) || 0
+                : Number(record.hours_worked) || 0,
             estRate: Number(record.rate_per_hour) || 0,
             actualDuration: Number(record.hours_worked) || 0,
             costCenter: undefined,

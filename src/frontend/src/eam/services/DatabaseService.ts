@@ -5582,6 +5582,31 @@ export class DatabaseService {
             })),
         );
 
+        // 0369: the plan stores people as contacts.id (the Labour tab picks from
+        // contacts); work_order_labor.contact_id references users.id and
+        // work_orders.assigned_to references contacts.id. Resolve both directions
+        // once so each column gets the id space it references — the FK rejection
+        // this replaces was silently stripping every generated order of its crew.
+        const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+        const rawPeople: string[] = Array.from(new Set(((templates.labor || []) as any[]).map(l => l?.contactId).filter(isUuid)));
+        const toUser = new Map<string, string>();
+        const toContact = new Map<string, string>();
+        if (rawPeople.length > 0) {
+            try {
+                const [cRows, uRows, uByContact] = await Promise.all([
+                    supabase.from('contacts').select('id, user_id').in('id', rawPeople),
+                    supabase.from('users').select('id, contact_id').in('id', rawPeople),
+                    supabase.from('users').select('id, contact_id').in('contact_id', rawPeople),
+                ]);
+                for (const c of (cRows.data || []) as any[]) { toContact.set(c.id, c.id); if (c.user_id) toUser.set(c.id, c.user_id); }
+                for (const u of (uRows.data || []) as any[]) { toUser.set(u.id, u.id); if (u.contact_id) toContact.set(u.id, u.contact_id); }
+                for (const u of (uByContact.data || []) as any[]) { if (u.contact_id && !toUser.has(u.contact_id)) toUser.set(u.contact_id, u.id); }
+            } catch (e: any) {
+                console.warn('[generateWOFromPM] identity lookup failed (labour lines will be craft-only):', e?.message);
+            }
+        }
+        const leadRaw = leadLabourContact(pm.templates);
+
         // 2. Create WO with traceability link
         const woId = crypto.randomUUID();
         // DataMapper.toUIWorkOrder prepends 'WO-', so store just the numeric portion
@@ -5610,7 +5635,7 @@ export class DatabaseService {
             // 0365: the plan's lead labour line names the technician — stamp them
             // on the order so it is theirs on My Work even if the labour copy
             // below fails, and so the assignment notification reaches them.
-            assigned_to: leadLabourContact(pm.templates),
+            assigned_to: leadRaw ? (toContact.get(leadRaw) || leadRaw) : null,
             due_date: dueDate,
             date_due_start: dueDate,
             // 0366: the nested occurrences this order satisfies — arming, PM compliance and the History tab read it.
@@ -5656,11 +5681,15 @@ export class DatabaseService {
         // intact: operation number, work centre, control key and planned rate
         // were previously dropped here, which quietly stripped an imported SAP
         // task list back to bare descriptions by the time a technician saw it.
+        // 0369: template step id → new job step id, so plan labour pins to its step
+        const taskIdMap = new Map<string, string>();
         if (merged.tasks.length > 0) {
             const taskRows = merged.tasks.map((task: any, idx: number) => {
                 const seq = task.sequence || (idx + 1) * 10;
+                const newId = crypto.randomUUID();
+                taskIdMap.set(String(task.id ?? `ord-${idx + 1}`), newId);
                 return {
-                    id: crypto.randomUUID(),
+                    id: newId,
                     wo_id: woId,
                     sequence: seq,
                     description: task.description || '',
@@ -5685,11 +5714,14 @@ export class DatabaseService {
         // 4. Copy template JSA → jsa_assessments + jsa_hazards
         if (templates.jsa && templates.jsa.hazards && templates.jsa.hazards.length > 0) {
             const jsaId = crypto.randomUUID();
+            // 0369: created_by is a uuid — the literal 'system' was rejected (22P02)
+            // and every Generator-raised order silently lost its JSA. NULL = system,
+            // the same convention the Autopilot sweep uses.
             const jsaOk = await tryWrite(supabase.from('jsa_assessments').insert({
                 id: jsaId,
                 wo_id: woId,
                 status: 'DRAFT',
-                created_by: 'system',
+                created_by: null,
                 permits: templates.jsa.permits || [],
                 updated_at: new Date().toISOString(),
             }), `JSA for WO ${woId}`);
@@ -5698,8 +5730,14 @@ export class DatabaseService {
                 id: crypto.randomUUID(),
                 jsa_id: jsaId,
                 hazard: h.hazard,
-                risk_score: h.riskScore || 'Medium',
+                risk_score: h.riskScore != null ? String(h.riskScore) : 'Medium',
                 controls: h.controls || '',
+                // 0369: the matrix inputs and controls travel with the hazard, so the
+                // order's JSA reads exactly as the schedule's — not a bare score.
+                consequence: Number(h.consequence) >= 1 && Number(h.consequence) <= 5 ? Number(h.consequence) : null,
+                likelihood: Number(h.likelihood) >= 1 && Number(h.likelihood) <= 5 ? Number(h.likelihood) : null,
+                control_hierarchy: Array.isArray(h.controlHierarchy) ? h.controlHierarchy : [],
+                signoff_required: !!h.signoffRequired || Number(h.riskScore) >= 15,
             }));
             if (jsaOk && hazardRows.length > 0) {
                 if (!await tryWrite(supabase.from('jsa_hazards').insert(hazardRows), `JSA hazards for WO ${woId}`)) {
@@ -5708,12 +5746,16 @@ export class DatabaseService {
             }
         }
 
-        // 5. Copy template labor → work_order_labor
+        // 5. Copy template labor → work_order_labor (0369: same rules as
+        //    pm_copy_plan_labour in SQL — person translated to users.id, planned
+        //    rate and headcount carried, line pinned to its step: an explicit
+        //    jobTaskId on the plan line, else the only step when there is one).
         if (templates.labor && templates.labor.length > 0) {
+            const onlyStep = taskIdMap.size === 1 ? Array.from(taskIdMap.values())[0] : null;
             const laborRows = templates.labor.map((l: any) => ({
                 id: crypto.randomUUID(),
                 wo_id: woId,
-                contact_id: l.contactId || null,
+                contact_id: isUuid(l.contactId) ? (toUser.get(l.contactId) || null) : null,
                 contact_type_code: l.contactType || 'TECHNICIAN',
                 // 0365: a plan line is remaining work, not hours worked — writing
                 // estDuration into hours_worked put planned hours into "worked" reports
@@ -5721,7 +5763,9 @@ export class DatabaseService {
                 hours_worked: 0,
                 remaining_hours: l.estDuration || 0,
                 is_lead: !!l.isLead,
-                rate_per_hour: 0,
+                headcount: Math.max(1, Number(l.headcount) || 1),
+                rate_per_hour: Number(l.estRate) || 0,
+                job_task_id: (l.jobTaskId && taskIdMap.get(String(l.jobTaskId))) || onlyStep,
                 date_worked: new Date().toISOString().split('T')[0],
                 created_at: new Date().toISOString(),
             }));
@@ -5805,6 +5849,24 @@ export class DatabaseService {
             }
         }
 
+        // 0369: a complete copy that meets the planning gate lands as Planned
+        // (one verdict, defined once in SQL); an incomplete copy is written on
+        // the order so the planner sees what to re-plan.
+        if (copyFailures.length === 0) {
+            try {
+                const { data: planned, error: gateErr } = await supabase.rpc('pm_mark_planned', { p_wo: woId });
+                if (gateErr) console.warn('[generateWOFromPM] planning gate unavailable (order stays OPEN):', gateErr.message);
+                else if (planned === true) { (data as any).status = 'PLAN'; (data as any).__planned = true; }
+            } catch (e: any) {
+                console.warn('[generateWOFromPM] planning gate check failed:', e?.message);
+            }
+        } else {
+            try {
+                await supabase.from('work_orders')
+                    .update({ properties: { ...((data as any)?.properties || newWO.properties || {}), plan_copy_failures: copyFailures } })
+                    .eq('id', woId);
+            } catch { /* the console line below still records it */ }
+        }
         if (copyFailures.length > 0) {
             console.error(`[generateWOFromPM] WO ${data?.wo_number ?? woId} generated WITHOUT ${copyFailures.join(', ')}`);
             (data as any).__copyFailures = copyFailures;

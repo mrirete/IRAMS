@@ -3514,6 +3514,25 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
     const contactOptionEls = (roleContacts: Contact[]) => (roleContacts.length > 0 ? roleContacts : contacts).map(c => (
         <option key={c.id} value={c.id}>{c.name || `${(c as any).firstName || ''} ${(c as any).lastName || ''}`}</option>
     ));
+    // 0369: a craft line can be pinned to one step of the template. With a single
+    // step every line lands on it anyway; with several, "whole job" stays at
+    // order level on the generated work order.
+    const steps = job.tasks || [];
+    const stepSelect = (l: JobLabor, cls: string) => steps.length > 1 ? (
+        <select
+            value={l.jobTaskId && steps.some(t => t.id === l.jobTaskId) ? l.jobTaskId : ''}
+            onChange={(e) => updateLabor(l.id, 'jobTaskId', e.target.value || undefined)}
+            className={cls}
+            title="Which step this craft works on the generated order"
+        >
+            <option value="">Whole job</option>
+            {steps.map((t, i) => <option key={t.id} value={t.id}>{i + 1}. {t.description || 'Untitled step'}</option>)}
+        </select>
+    ) : (
+        <span className="text-xs text-slate-400" title={steps.length === 1 ? 'The only step — labour lands on it' : 'Add steps on the Tasks tab to pin crafts to them'}>
+            {steps.length === 1 ? `Step 1` : '—'}
+        </span>
+    );
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
@@ -3595,6 +3614,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                     <option value="">— Unassigned (Planning) —</option>
                                     {contactOptionEls(roleContacts)}
                                 </select>
+                                {steps.length > 1 && stepSelect(l, 'w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-600')}
                                 <div className="grid grid-cols-3 gap-2">
                                     <div>
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Hours</label>
@@ -3634,6 +3654,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             <th className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase w-8">Lead</th>
                             <th className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase">Craft / Role</th>
                             <th className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase">Assigned To</th>
+                            <th className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase w-40">Step</th>
                             <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-20">Hours</th>
                             <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-24">Rate ($/hr)</th>
                             <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-24">Line Total</th>
@@ -3685,6 +3706,9 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                             {contactOptionEls(roleContacts)}
                                         </select>
                                     </td>
+                                    <td className="px-3 py-2">
+                                        {stepSelect(l, 'w-full text-xs border-slate-300 rounded p-1.5 bg-white text-slate-600')}
+                                    </td>
                                     <td className="px-3 py-2 text-right">
                                         <input
                                             type="number"
@@ -3730,7 +3754,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                     {labor.length > 0 && (
                         <tfoot className="bg-slate-50 border-t border-slate-200">
                             <tr>
-                                <td colSpan={3} className="px-3 py-2 text-right text-xs font-bold text-slate-500 uppercase">Totals</td>
+                                <td colSpan={4} className="px-3 py-2 text-right text-xs font-bold text-slate-500 uppercase">Totals</td>
                                 <td className="px-3 py-2 text-right text-sm font-bold text-slate-700">{totalHours.toFixed(1)}</td>
                                 <td className="px-3 py-2 text-right text-xs text-slate-400">—</td>
                                 <td className="px-3 py-2 text-right text-sm font-bold text-blue-700">${totalCost.toFixed(2)}</td>

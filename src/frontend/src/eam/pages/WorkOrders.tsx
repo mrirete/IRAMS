@@ -4330,7 +4330,9 @@ const GateStrip: React.FC<{
     reviewGate?: ActionGate;
     isExpanded?: boolean;
     onToggleExpand?: () => void;
-}> = ({ title, readiness, readyText, incompleteText, scoreTitle, leftBadges, reviewLabel = 'Review with Specialist', onReview, reviewGate, isExpanded, onToggleExpand }) => {
+    /** One line under the strip — e.g. what a generated order arrived without. */
+    footer?: React.ReactNode;
+}> = ({ title, readiness, readyText, incompleteText, scoreTitle, leftBadges, reviewLabel = 'Review with Specialist', onReview, reviewGate, isExpanded, onToggleExpand, footer }) => {
     const { score, requiredMet, items, blockers } = readiness;
     const ring = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
     return (
@@ -4399,6 +4401,7 @@ const GateStrip: React.FC<{
                     </div>
                 )}
             </div>
+            {footer}
         </div>
     );
 };
@@ -4410,10 +4413,19 @@ const WorkReadinessStrip: React.FC<{
     isExpanded?: boolean;
     onToggleExpand?: () => void;
     executed?: boolean;
-}> = ({ readiness, onReview, reviewGate, isExpanded, onToggleExpand , executed }) => {
+    /** 0369: parts of the schedule's plan that did not copy onto this generated order. */
+    planCopyFailures?: string[];
+}> = ({ readiness, onReview, reviewGate, isExpanded, onToggleExpand , executed, planCopyFailures }) => {
     const badge = READINESS_CLASS_BADGE[readiness.classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
+    const failures = (planCopyFailures || []).filter(Boolean);
     return (
         <GateStrip
+            footer={failures.length > 0 ? (
+                <p className="mt-2 pt-2 border-t border-amber-200/70 text-[11px] text-amber-800 flex items-start gap-1.5">
+                    <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                    <span>Generated without {failures.join(', ')} from the schedule — plan those here before scheduling.</span>
+                </p>
+            ) : undefined}
             title="Work Readiness"
             readiness={readiness}
             readyText="Planning essentials in place — ready to schedule."
@@ -4641,6 +4653,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             <div className="lg:col-span-2">
                 <WorkReadinessStrip
                     readiness={readiness}
+                    planCopyFailures={(job as any).properties?.plan_copy_failures}
                     executed={inExecution}
                     onReview={handleReviewPlan}
                     reviewGate={planGate}
