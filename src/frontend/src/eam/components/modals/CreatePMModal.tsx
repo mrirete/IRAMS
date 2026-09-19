@@ -238,7 +238,7 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                     </form>
                 </div>
 
-                <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 modal-actions-sticky">
+                <div className="px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
                     <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-lg">Cancel</button>
                     <button
                         form="pm-form"
