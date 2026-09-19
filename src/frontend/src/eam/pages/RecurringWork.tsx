@@ -1683,7 +1683,7 @@ export const RecurringWork: React.FC = () => {
                             one. Binds only on wide monitors; narrower panes are unchanged. */}
                         <div className="ers-page-record">
                             {activeTab === 'details' && <DetailsTab companyAuto={companyAuto} job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
-                            {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleAssetsUpdate} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
+                            {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleAssetsUpdate} dictionaries={dictionaries} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
                             {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} />}
                             {activeTab === 'jsa' && <JSATab job={selectedJob} onUpdate={handleJobUpdate} />}
                             {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} />}
@@ -2423,7 +2423,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
     );
 };
 
-const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJob>) => void; onNavigateToAsset?: (assetId: string) => void; assets?: Asset[] }> = ({ job, onUpdate, onNavigateToAsset, assets = [] }) => {
+const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJob>) => void; onNavigateToAsset?: (assetId: string) => void; assets?: Asset[]; dictionaries?: { type: string; code: string; description?: string; active?: boolean }[] }> = ({ job, onUpdate, onNavigateToAsset, assets = [], dictionaries = [] }) => {
     // Link assets in bulk: a scope (where it sits, what kind, how critical, or a
     // tag prefix) with a live preview, instead of a rule builder that offered
     // fields nothing in the register carried (cost centre, asset type) and gave
@@ -2431,7 +2431,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
     // record, and each link persists on its own (handleAssetsUpdate).
     const [scopeUnder, setScopeUnder] = React.useState<string>('');
     const [scopeClass, setScopeClass] = React.useState<string>('');
-    const [scopeCrit, setScopeCrit] = React.useState<Set<string>>(new Set());
+    const [scopeCrit, setScopeCrit] = React.useState<string>('');
     const [scopeTag, setScopeTag] = React.useState<string>('');
     const [unticked, setUnticked] = React.useState<Set<string>>(new Set());
     const [showAddManual, setShowAddManual] = React.useState(false);
@@ -2445,20 +2445,27 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
         return assets.filter(a => parents.has(a.id)).sort((x, y) => (x.tag || '').localeCompare(y.tag || ''));
     }, [assets]);
     const classes = React.useMemo(() => Array.from(new Set(assets.map(a => a.assetClass).filter(Boolean) as string[])).sort(), [assets]);
-    const critValues = React.useMemo(() => Array.from(new Set(assets.map(a => a.criticality).filter(Boolean) as string[])).sort(), [assets]);
+    // Every level the dictionary defines (A–E on this tenant), not only the ones
+    // the register happens to use today; falls back to the register's values.
+    const critLevels = React.useMemo(() => {
+        const dict = dictionaries.filter(d => d.type === 'CRITICALITY' && d.active !== false)
+            .map(d => ({ code: String(d.code), label: d.description ? `${d.code} — ${d.description}` : String(d.code) }));
+        if (dict.length > 0) return dict.sort((x, y) => x.code.localeCompare(y.code));
+        return Array.from(new Set(assets.map(a => a.criticality).filter(Boolean) as string[])).sort().map(c => ({ code: c, label: c }));
+    }, [dictionaries, assets]);
     const isUnder = React.useCallback((asset: Asset, rootId: string): boolean => {
         let cur: string | null | undefined = asset.parentId; let hops = 0;
         while (cur && hops < 64) { if (cur === rootId) return true; cur = byId.get(cur)?.parentId; hops += 1; }
         return false;
     }, [byId]);
-    const scopeActive = !!scopeUnder || !!scopeClass || scopeCrit.size > 0 || !!scopeTag.trim();
+    const scopeActive = !!scopeUnder || !!scopeClass || !!scopeCrit || !!scopeTag.trim();
     const matches = React.useMemo(() => {
         if (!scopeActive) return [] as Asset[];
         const tag = scopeTag.trim().toLowerCase();
         return assets.filter(a =>
             (!scopeUnder || isUnder(a, scopeUnder))
             && (!scopeClass || a.assetClass === scopeClass)
-            && (scopeCrit.size === 0 || scopeCrit.has(String(a.criticality || '')))
+            && (!scopeCrit || String(a.criticality || '') === scopeCrit)
             && (!tag || String(a.tag || '').toLowerCase().startsWith(tag))
         ).sort((x, y) => (x.tag || '').localeCompare(y.tag || ''));
     }, [assets, scopeActive, scopeUnder, scopeClass, scopeCrit, scopeTag, isUnder]);
@@ -2468,7 +2475,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
         onUpdate({ assignedAssets: [...job.assignedAssets, ...toLink.map(a => ({ assetId: a.id, lastCompletedDate: undefined, lastReadingValue: undefined }))] });
         setUnticked(new Set());
     };
-    const clearScope = () => { setScopeUnder(''); setScopeClass(''); setScopeCrit(new Set()); setScopeTag(''); setUnticked(new Set()); };
+    const clearScope = () => { setScopeUnder(''); setScopeClass(''); setScopeCrit(''); setScopeTag(''); setUnticked(new Set()); };
 
     const removeAsset = (assetId: string) => {
         if (onUpdate) {
@@ -2506,16 +2513,10 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Criticality</label>
-                        <div className="flex gap-1">
-                            {critValues.map(c => {
-                                const on = scopeCrit.has(c);
-                                return (
-                                    <button key={c} type="button" aria-pressed={on}
-                                        onClick={() => { const next = new Set(scopeCrit); on ? next.delete(c) : next.add(c); setScopeCrit(next); setUnticked(new Set()); }}
-                                        className={`flex-1 text-xs font-bold py-1.5 rounded-lg border transition-colors ${on ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>{c}</button>
-                                );
-                            })}
-                        </div>
+                        <select className="w-full text-xs border border-slate-300 rounded-lg bg-white px-2 py-1.5" value={scopeCrit} onChange={e => { setScopeCrit(e.target.value); setUnticked(new Set()); }}>
+                            <option value="">Any criticality</option>
+                            {critLevels.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                        </select>
                     </div>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
