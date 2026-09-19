@@ -240,7 +240,10 @@ export class DataMapper {
         // Resources drawer's quantity box writes estQty while actualQty still
         // holds the loaded value, so "actualQty ?? estQty" silently discarded
         // every planned-quantity edit (2026-09-19). Issued lines keep actuals.
-        const planned = ui.isPlanned !== false && !ui.dateUsed;
+        // is_planned is the flag of record (generated lines carry a date_used
+        // stamp from the day they were raised, so the date alone says nothing);
+        // a brand-new UI line has no flag yet and is planned unless it was used.
+        const planned = ui.isPlanned === true || (ui.isPlanned == null && !ui.dateUsed);
         const qty = planned ? ui.estQty : (ui.actualQty !== undefined ? ui.actualQty : ui.estQty);
         const uCost = planned
             ? (ui.estUnitCost !== undefined ? ui.estUnitCost : ui.actualUnitCost)
