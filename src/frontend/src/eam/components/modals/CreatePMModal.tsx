@@ -120,8 +120,11 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
 
     if (!isOpen) return null;
 
-    const field = 'w-full text-sm border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500';
-    const label = 'block text-xs font-bold text-slate-500 uppercase mb-1';
+    const field = 'w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500';
+    const label = 'block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5';
+    const seg = (on: boolean) => `px-3 py-1 text-xs font-semibold rounded-md transition-colors ${on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`;
+    const group = 'flex items-stretch border border-slate-300 rounded-lg bg-white focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500 overflow-hidden';
+    const prefix = 'px-3 flex items-center text-sm text-slate-500 bg-slate-50 border-r border-slate-200 select-none whitespace-nowrap';
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
@@ -147,7 +150,7 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                 value={formData.title}
                                 onChange={e => setFormData({ ...formData, title: e.target.value })}
                             />
-                            <p className="text-[11px] text-slate-400 mt-1">Becomes the title of every work order this strategy raises.</p>
+                            <p className="text-[11px] text-slate-400 mt-1">Every work order it raises carries this title.</p>
                         </div>
 
                         <div>
@@ -156,71 +159,79 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                 id="pm-description"
                                 rows={2}
                                 className={`${field} resize-none`}
-                                placeholder="Optional — copied into each work order's description"
+                                placeholder="Optional"
                                 value={formData.description}
                                 onChange={e => setFormData({ ...formData, description: e.target.value })}
                             />
-                            <p className="text-[11px] text-slate-400 mt-1">Steps and instructions go on the Tasks tab once the strategy exists.</p>
+                            <p className="text-[11px] text-slate-400 mt-1">Copied into each work order. Steps go on the Tasks tab.</p>
                         </div>
 
                         <div>
-                            <label className={label}>Repeats</label>
-                            <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)] gap-2">
-                                <select
-                                    className={field}
-                                    aria-label="Schedule type"
-                                    value={formData.scheduleType}
-                                    onChange={e => setFormData({
-                                        ...formData,
-                                        scheduleType: e.target.value,
-                                        frequencyUnit: e.target.value === 'TIME' ? (timeUnits[0]?.code || 'Months') : (meterUnits[0]?.code || 'Hours'),
-                                    })}
-                                >
-                                    <option value="TIME">By calendar</option>
-                                    <option value="READING">By meter</option>
-                                </select>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    aria-label="Every"
-                                    className={`${field} text-right`}
-                                    value={formData.interval}
-                                    onChange={e => setFormData({ ...formData, interval: parseInt(e.target.value) || 1 })}
-                                />
-                                <select
-                                    className={field}
-                                    aria-label="Unit"
-                                    value={formData.frequencyUnit}
-                                    onChange={e => setFormData({ ...formData, frequencyUnit: e.target.value })}
-                                >
-                                    {isTime
-                                        ? (timeUnits.length > 0
-                                            ? timeUnits.map(d => <option key={d.code} value={d.code}>{d.description || d.code}</option>)
-                                            : ['Days', 'Weeks', 'Months', 'Years'].map(u => <option key={u} value={u}>{u}</option>))
-                                        : (meterUnits.length > 0
-                                            ? meterUnits.map(d => <option key={d.code} value={d.code}>{d.description || d.code}</option>)
-                                            : [['Hours', 'Operating hours'], ['Km', 'Kilometres'], ['Cycles', 'Cycles'], ['Starts', 'Starts']].map(([v, t]) => <option key={v} value={v}>{t}</option>))}
-                                </select>
-                            </div>
-                            {isTime ? (
-                                <div className="mt-2 flex items-center gap-2">
-                                    <label className="text-xs text-slate-500 whitespace-nowrap" htmlFor="pm-first-due">First due</label>
-                                    <input
-                                        id="pm-first-due"
-                                        type="date"
-                                        className={`${field} max-w-[11rem]`}
-                                        value={formData.firstDue}
-                                        onChange={e => setFormData({ ...formData, firstDue: e.target.value })}
-                                    />
+                            <div className="flex items-center justify-between mb-1.5">
+                                <span className={label.replace(' mb-1.5', '')}>Repeats</span>
+                                <div className="inline-flex bg-slate-100 rounded-lg p-0.5" role="radiogroup" aria-label="Schedule type">
+                                    {([['TIME', 'By calendar'], ['READING', 'By meter']] as const).map(([v, t]) => (
+                                        <button
+                                            key={v}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={formData.scheduleType === v}
+                                            className={seg(formData.scheduleType === v)}
+                                            onClick={() => setFormData({
+                                                ...formData,
+                                                scheduleType: v,
+                                                frequencyUnit: v === 'TIME' ? (timeUnits[0]?.code || 'Months') : (meterUnits[0]?.code || 'Hours'),
+                                            })}
+                                        >{t}</button>
+                                    ))}
                                 </div>
-                            ) : (
-                                <p className="text-[11px] text-slate-400 mt-1">The meter reading that triggers it is set on the Details tab.</p>
-                            )}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className={group}>
+                                    <span className={prefix}>Every</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        aria-label="Every"
+                                        className="w-16 text-sm text-right px-2 py-2 border-0 focus:ring-0 focus:outline-none tabular-nums"
+                                        value={formData.interval}
+                                        onChange={e => setFormData({ ...formData, interval: parseInt(e.target.value) || 1 })}
+                                    />
+                                    <select
+                                        aria-label="Unit"
+                                        className="flex-1 min-w-0 text-sm border-0 border-l border-slate-200 focus:ring-0 focus:outline-none pl-3 pr-8 py-2 bg-white"
+                                        value={formData.frequencyUnit}
+                                        onChange={e => setFormData({ ...formData, frequencyUnit: e.target.value })}
+                                    >
+                                        {isTime
+                                            ? (timeUnits.length > 0
+                                                ? timeUnits.map(d => <option key={d.code} value={d.code}>{d.description || d.code}</option>)
+                                                : ['Days', 'Weeks', 'Months', 'Years'].map(u => <option key={u} value={u}>{u}</option>))
+                                            : (meterUnits.length > 0
+                                                ? meterUnits.map(d => <option key={d.code} value={d.code}>{d.description || d.code}</option>)
+                                                : [['Hours', 'Operating hours'], ['Km', 'Kilometres'], ['Cycles', 'Cycles'], ['Starts', 'Starts']].map(([v, t]) => <option key={v} value={v}>{t}</option>))}
+                                    </select>
+                                </div>
+                                {isTime ? (
+                                    <div className={group}>
+                                        <label className={prefix} htmlFor="pm-first-due">First due</label>
+                                        <input
+                                            id="pm-first-due"
+                                            type="date"
+                                            className="flex-1 min-w-0 text-sm px-3 py-2 border-0 focus:ring-0 focus:outline-none"
+                                            value={formData.firstDue}
+                                            onChange={e => setFormData({ ...formData, firstDue: e.target.value })}
+                                        />
+                                    </div>
+                                ) : (
+                                    <p className="text-[11px] text-slate-400 self-center">The meter reading that triggers it is set on the Details tab.</p>
+                                )}
+                            </div>
                         </div>
 
                         <p className="text-[11px] text-slate-400 border-t border-slate-100 pt-3">
-                            Assets, work type, priority and Autopilot are set on the strategy's tabs after you create it. Nothing is raised until an asset is linked.
+                            Assets, work type, priority and Autopilot are set on the strategy's tabs next. Nothing is raised until an asset is linked.
                         </p>
                     </form>
                 </div>
