@@ -1,4 +1,4 @@
--- 0377 — a store row that still holds stock cannot be deleted
+-- 0377a — a store row that still holds stock cannot be deleted
 --
 -- WHAT WAS WRONG
 --   inventory_stock is the only record of how much of an item sits in a
@@ -44,7 +44,7 @@ CREATE TRIGGER aa_guard_inventory_stock_delete
     FOR EACH ROW EXECUTE FUNCTION public.guard_inventory_stock_delete();
 
 COMMENT ON FUNCTION public.guard_inventory_stock_delete() IS
-    'Refuses to delete an inventory_stock row while it holds stock or has quantity on order (0377). The client checks first; this makes it a rule.';
+    'Refuses to delete an inventory_stock row while it holds stock or has quantity on order (0377a). The client checks first; this makes it a rule.';
 
 COMMIT;
 
