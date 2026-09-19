@@ -76,6 +76,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { ImportType } from '../services/assetTemplates';
 
 type TabId = 'details' | 'assets' | 'tasks' | 'jsa' | 'labor' | 'inventory' | 'files' | 'history';
+const TAB_IDS: TabId[] = ['details', 'assets', 'tasks', 'jsa', 'labor', 'inventory', 'files', 'history'];
 type StatusFilter = 'ALL' | 'ACTIVE' | 'PAUSED' | 'DRAFT' | 'EXPIRED';
 type GroupBy = 'none' | 'status' | 'jobType' | 'rcmStrategy';
 
@@ -184,9 +185,14 @@ export const RecurringWork: React.FC = () => {
         const match = jobs.find(j => j.id === targetId);
         if (!match) return;
         setSelectedJob(match);
+        // A strategy created a moment ago has no assets yet: land on the tab
+        // that needs filling first (?tab=assets), otherwise Details as before.
+        const tab = urlParams.get('tab');
+        if (tab && TAB_IDS.includes(tab as TabId)) setActiveTab(tab as TabId);
         setUrlParams(prev => {
             const next = new URLSearchParams(prev);
             next.delete('id');
+            next.delete('tab');
             return next;
         }, { replace: true });
     }, [urlParams, jobs, selectedJob, setUrlParams]);
@@ -375,7 +381,20 @@ export const RecurringWork: React.FC = () => {
                 return;
             }
             if (rj.assignedAssets.length === 0) {
-                console.log(`[Generator] SKIP ${rj.code}: no assigned assets`);
+                // 0376: a strategy can exist before its assets are linked. Show it,
+                // blocked, with the reason — hiding it made "where is my PM?" a
+                // support question. Blocked rows cannot be ticked (see Select all).
+                newJobs.push({
+                    pmId: rj.id,
+                    jobCode: rj.code,
+                    asset: 'No asset linked',
+                    desc: rj.title || rj.jobDescription || rj.description,
+                    dueDate: (rj as any).nextDueDate || generateDate,
+                    status: 'Blocked',
+                    triggerType: rj.scheduleType,
+                    blocked: true,
+                    reason: 'No asset linked — link one on its Assets tab',
+                });
                 return;
             }
 
@@ -476,7 +495,7 @@ export const RecurringWork: React.FC = () => {
         let errors = 0;
 
         // Iterate per selected item (each is a PM + asset combination)
-        const selectedItems = generatedPreview.filter((_: any, i: number) => selectedGenItems.has(i));
+        const selectedItems = generatedPreview.filter((it: any, i: number) => selectedGenItems.has(i) && !it.blocked);
 
         // Group items by PM to coordinate date advancement
         const pmGroups: Record<string, typeof selectedItems> = {};
@@ -546,6 +565,29 @@ export const RecurringWork: React.FC = () => {
         setSelectedJob(updatedJob);
         setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
         setSaveStatus('idle');
+    };
+
+    // Linking or unlinking an asset is a fact about the schedule, not a draft:
+    // it is written the moment it happens (asset_id mirrors the first link for
+    // the sweep and the older readers). Since 0376 a strategy is created without
+    // assets and linked here; if this depended on the Save button, a planner who
+    // linked two assets and tapped back would leave a schedule that never runs.
+    // Steps, labour, parts and the header still save on Save, as before.
+    const handleAssetsUpdate = async (updates: Partial<RecurringJob>) => {
+        if (!selectedJob) return;
+        handleJobUpdate(updates);
+        if (updates.assignedAssets === undefined) return;
+        const links = updates.assignedAssets || [];
+        try {
+            await DatabaseService.getInstance().updatePM(selectedJob.id, {
+                asset_id: links[0]?.assetId || null,
+                assigned_assets: links,
+            } as any);
+            showToast(links.length === 0 ? 'Asset links removed.' : `${links.length} asset${links.length === 1 ? '' : 's'} linked.`, 'success');
+        } catch (e: any) {
+            console.error('[RecurringWork] asset link not saved:', e);
+            showToast(`Asset link not saved: ${e?.message || e}. Press Save to retry.`, 'error');
+        }
     };
 
     const handleDuplicate = async () => {
@@ -1628,7 +1670,7 @@ export const RecurringWork: React.FC = () => {
                             one. Binds only on wide monitors; narrower panes are unchanged. */}
                         <div className="ers-page-record">
                             {activeTab === 'details' && <DetailsTab companyAuto={companyAuto} job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
-                            {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleJobUpdate} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
+                            {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleAssetsUpdate} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
                             {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} />}
                             {activeTab === 'jsa' && <JSATab job={selectedJob} onUpdate={handleJobUpdate} />}
                             {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} />}
@@ -1808,7 +1850,12 @@ export const RecurringWork: React.FC = () => {
             <CreatePMModal
                 isOpen={isCreatePMOpen}
                 onClose={() => setIsCreatePMOpen(false)}
-                onSave={() => loadStrategies()}
+                onSave={(newId) => {
+                    // Open the new strategy on its Assets tab once the list has reloaded
+                    // (same path a notification deep link takes: ?id=…&tab=…).
+                    if (newId) setUrlParams(prev => { const next = new URLSearchParams(prev); next.set('id', newId); next.set('tab', 'assets'); return next; });
+                    loadStrategies();
+                }}
                 dictionaries={dictionaries}
             />
             {/* GAP-21: Delete Confirmation Modal */}
@@ -1882,7 +1929,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                     <div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="sm:col-span-2">
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Job Description</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description <span className="normal-case font-normal text-slate-400">— copied to each work order; steps go on the Tasks tab</span></label>
                                 <textarea
                                     value={job.jobDescription || job.description}
                                     onChange={(e) => onUpdate({ jobDescription: e.target.value })}

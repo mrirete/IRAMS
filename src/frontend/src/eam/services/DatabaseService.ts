@@ -5615,6 +5615,12 @@ export class DatabaseService {
         // 1. Fetch PM with templates
         const { data: pm, error: getErr } = await supabase.from('recurring_work').select('*').eq('id', pmId).single();
         if (getErr || !pm) throw new Error('PM Strategy not found');
+        // 0376: a schedule may exist before its assets are linked. A work order
+        // must have an asset (NOT NULL), so refuse here with a plain reason rather
+        // than let the insert fail with a constraint message downstream.
+        if (!assetId && !pm.asset_id) {
+            throw new Error(`${pm.code || 'This strategy'} has no asset linked yet — link one on its Assets tab before generating.`);
+        }
 
         const templates = pm.templates || {};
 
@@ -5697,7 +5703,7 @@ export class DatabaseService {
             description: pm.description || pm.title,
             status: 'OPEN',
             type: pm.job_type || 'PM',
-            priority_code: pm.priority_code || 'MEDIUM',
+            priority_code: pm.priority_code || 'P4', // P4 = Normal; 'MEDIUM' was never a dictionary code
             asset_id: assetId || pm.asset_id,  // Use per-asset ID if provided
             recurring_work_id: pmId,
             cost_frozen: false,

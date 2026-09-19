@@ -2,7 +2,7 @@
  * PM (recurring_work) builder — single source of truth for the maintenance-plan
  * insert shape. Two hand-rolled PM payloads shipped without the NOT-NULL `title`
  * (and risked a null asset_id), so every duplicate/import 400'd at runtime. This
- * builder requires title + assetId at the type level and maps to the canonical
+ * builder requires title at the type level (the asset is linked on the Assets tab since 0376) and maps to the canonical
  * NOT-NULL columns (schedule_type / frequency_interval / frequency_unit /
  * job_type), so the gap can't recur.
  *
@@ -11,13 +11,13 @@
 
 export interface PMStrategyInput {
     title: string;                 // NOT NULL
-    assetId: string;               // NOT NULL (FK)
+    assetId?: string | null;       // nullable since 0376 — linked on the Assets tab; nothing generates without one
     frequencyInterval: number;
     frequencyUnit: string;         // Months / Weeks / Hours / …
     description?: string;          // defaults to title
     scheduleType?: string;         // TIME / READING (defaults TIME)
     jobType?: string;              // defaults PM
-    priorityCode?: string;         // defaults MEDIUM
+    priorityCode?: string;         // defaults P4 (Normal — planned schedule); MEDIUM was never a dictionary code
     workCenterId?: string | null;  // → work_center_id (0178)
     leadTimeDays?: number;
     estDuration?: number;
@@ -67,12 +67,12 @@ export function buildPMStrategy(i: PMStrategyInput): Record<string, unknown> {
         title: i.title,                         // NOT NULL — enforced by the type
         description: i.description ?? i.title,
         status: i.status || 'ACTIVE',
-        asset_id: i.assetId,                    // NOT NULL — enforced by the type
+        asset_id: i.assetId || null,            // nullable since 0376; the generator and the sweep refuse a schedule without one
         schedule_type: i.scheduleType || 'TIME',
         frequency_interval: i.frequencyInterval,
         frequency_unit: i.frequencyUnit,
         job_type: i.jobType || 'PM',
-        priority_code: i.priorityCode || 'MEDIUM',
+        priority_code: i.priorityCode || 'P4',
         lead_time_days: i.leadTimeDays ?? 7,
         est_duration: i.estDuration ?? 0,
         est_downtime: i.estDowntime ?? 0,
