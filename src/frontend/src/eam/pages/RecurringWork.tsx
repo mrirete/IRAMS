@@ -126,6 +126,9 @@ export const RecurringWork: React.FC = () => {
     // is tenant-only for INSERT/UPDATE, so the page is the gate.
     const canCreatePM = permissions?.pm?.create === true;
     const canEditPM = permissions?.pm?.edit === true;
+    // Rates and money follow the same permission the work-order page uses:
+    // without viewCosts the Labour and Inventory tabs show hours and quantities only.
+    const canViewCosts = permissions?.pm?.viewCosts === true || permissions?.workOrders?.viewCosts === true;
     const canDeletePM = permissions?.pm?.delete === true || permissions?.admin?.view === true;
     const denied = (what: string) => showToast(`Your role cannot ${what} (needs Recurring Work · ${what === 'delete strategies' ? 'Delete' : what === 'create strategies' ? 'Create' : 'Edit'}).`, 'error');
     const [jobs, setJobs] = useState<RecurringJob[]>([]);
@@ -138,6 +141,28 @@ export const RecurringWork: React.FC = () => {
     const [inventoryItems, setInventoryItems] = useState<any[]>([]);
     const [dbAssets, setDbAssets] = useState<Asset[]>([]);
     const [saving, setSaving] = useState(false);
+    const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+    const savingRef = useRef(false);
+    const pendingRef = useRef<RecurringJob | null>(null);
+    const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const latestJobRef = useRef<RecurringJob | null>(null);
+    // Autosave: 1.5 s after the last edit (the work-order page's rhythm). The
+    // page used to persist only on Save and had no unsaved-changes guard, so a
+    // planner who wrote five steps and tapped the sidebar lost them.
+    const scheduleAutosave = (job: RecurringJob) => {
+        latestJobRef.current = job;
+        if (!canEditPM) return;
+        if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = setTimeout(() => {
+            autosaveTimer.current = null;
+            if (latestJobRef.current) void handleSave(latestJobRef.current, { silent: true });
+        }, 1500);
+    };
+    // Leaving the page with a save pending: write it now rather than drop it.
+    useEffect(() => () => {
+        if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null; if (latestJobRef.current) void handleSave(latestJobRef.current, { silent: true }); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
     const [isFullscreen, setIsFullscreen] = useState(false);
     // Deep link (e.g. RCM task matrix → /recurring-work?q=RCM-xxxx) seeds the search box
@@ -565,6 +590,7 @@ export const RecurringWork: React.FC = () => {
         setSelectedJob(updatedJob);
         setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
         setSaveStatus('idle');
+        scheduleAutosave(updatedJob);
     };
 
     // Linking or unlinking an asset is a fact about the schedule, not a draft:
@@ -754,6 +780,9 @@ export const RecurringWork: React.FC = () => {
 
     // Load templates from DB when selecting a real (non-mock) job
     const handleSelectJob = async (job: RecurringJob) => {
+        if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null; if (latestJobRef.current && latestJobRef.current.id !== job.id) void handleSave(latestJobRef.current, { silent: true }); }
+        latestJobRef.current = null;
+        setLastSavedAt(null);
         setSelectedJob(job);
         setActiveTab('details');
         setSaveStatus('idle');
@@ -778,81 +807,90 @@ export const RecurringWork: React.FC = () => {
         }
     };
 
-    const handleSave = async () => {
-        if (!selectedJob) return;
-        if (!canEditPM) { denied('edit strategies'); return; }
+    /**
+     * Persist the schedule (header + templates). Called by the Save button and,
+     * since 2026-09-19, by the autosave 1.5 s after the last edit. `jobArg` is
+     * the copy to write (the autosave passes the latest one, so a timer set in
+     * an older render never saves a stale copy); `silent` skips the success
+     * toast — the status pill in the header and the step drawer say "Saved".
+     */
+    const handleSave = async (jobArg?: RecurringJob, opts: { silent?: boolean } = {}): Promise<void> => {
+        const job: RecurringJob | null = (jobArg && typeof jobArg === 'object' && 'id' in jobArg) ? jobArg : selectedJob;
+        if (!job) return;
+        if (!canEditPM) { if (!opts.silent) denied('edit strategies'); return; }
+        if (savingRef.current) { pendingRef.current = job; return; } // one write at a time; the latest copy runs after
+        savingRef.current = true;
         setSaving(true);
         setSaveStatus('idle');
         try {
             const db = DatabaseService.getInstance();
             const headerPayload: any = {
-                description: selectedJob.jobDescription || selectedJob.description,
-                status: selectedJob.status,
-                schedule_type: selectedJob.scheduleType,
-                frequency_interval: selectedJob.frequencyInterval,
-                frequency_unit: selectedJob.frequencyUnit,
-                auto_generate: selectedJob.autoGenerate !== false, // 0304 Autopilot
-                parent_pm_id: selectedJob.parentId || null,       // 0366 nested within
-                nesting_mode: selectedJob.nestingMode === 'COMBINES' ? 'COMBINES' : 'SUPERSEDES',
-                lead_time_days: selectedJob.leadTimeDays,
-                job_type: selectedJob.jobType,
-                priority_code: selectedJob.priority,
-                strategy_id: (selectedJob as any).strategyId || null,
-                strategy_package: (selectedJob as any).strategyPackage || null,
+                description: job.jobDescription || job.description,
+                status: job.status,
+                schedule_type: job.scheduleType,
+                frequency_interval: job.frequencyInterval,
+                frequency_unit: job.frequencyUnit,
+                auto_generate: job.autoGenerate !== false, // 0304 Autopilot
+                parent_pm_id: job.parentId || null,       // 0366 nested within
+                nesting_mode: job.nestingMode === 'COMBINES' ? 'COMBINES' : 'SUPERSEDES',
+                lead_time_days: job.leadTimeDays,
+                job_type: job.jobType,
+                priority_code: job.priority,
+                strategy_id: (job as any).strategyId || null,
+                strategy_package: (job as any).strategyPackage || null,
                 // 0299: provenance survives the whole-row save — never dropped.
-                origin: (selectedJob as any).origin || null,
+                origin: (job as any).origin || null,
                 // Steps with hours own the estimate — the generated order copies est_duration,
                 // so a typed 3 h beside 7 h of steps must not survive the save.
-                est_duration: stepsHours(selectedJob.tasks).total || selectedJob.estDuration || 0,
-                est_downtime: selectedJob.estDowntime || 0,
+                est_duration: stepsHours(job.tasks).total || job.estDuration || 0,
+                est_downtime: job.estDowntime || 0,
                 // Persist the primary asset link
-                asset_id: selectedJob.assignedAssets?.[0]?.assetId || null,
+                asset_id: job.assignedAssets?.[0]?.assetId || null,
                 // Persist full assigned assets array with per-asset dates
-                assigned_assets: selectedJob.assignedAssets || [],
+                assigned_assets: job.assignedAssets || [],
                 // Failure Impact (ISO 14224 §B.2.5)
-                local_impact: selectedJob.localImpact || null,
-                plant_wide_impact: selectedJob.plantWideImpact || null,
+                local_impact: job.localImpact || null,
+                plant_wide_impact: job.plantWideImpact || null,
             };
 
             // Auto-calculate next_due_date from the most recent lastCompletedDate + frequency
-            const completedDates = (selectedJob.assignedAssets || [])
-                .map(a => a.lastCompletedDate)
-                .filter(d => d && d.length > 0)
-                .map(d => new Date(d!).getTime())
-                .filter(t => !isNaN(t));
+            const completedDates: number[] = (job.assignedAssets || [])
+                .map((a: { lastCompletedDate?: string }) => a.lastCompletedDate)
+                .filter((d: string | undefined): d is string => !!d && d.length > 0)
+                .map((d: string) => new Date(d).getTime())
+                .filter((t: number) => !isNaN(t));
 
-            if (completedDates.length > 0 && selectedJob.frequencyInterval) {
-                headerPayload.next_due_date = addCadence(new Date(Math.max(...completedDates)), selectedJob.frequencyInterval, selectedJob.frequencyUnit);
+            if (completedDates.length > 0 && job.frequencyInterval) {
+                headerPayload.next_due_date = addCadence(new Date(Math.max(...completedDates)), job.frequencyInterval, job.frequencyUnit);
             }
             // 0365 — on a calendar schedule: the planner's own next-due date wins; a
             // cadence change on a schedule that has never generated moves the first
             // due date to today (PM-44743 kept a +30-day date after "Months" became
             // "Days"); lead time is clamped below the cadence, as the sweep clamps it.
-            if (String(selectedJob.scheduleType || 'TIME').toUpperCase() === 'TIME') {
+            if (String(job.scheduleType || 'TIME').toUpperCase() === 'TIME') {
                 const dOnly = (v?: string) => (v ? toDateOnly(v) : '');
-                const cadenceNow = `${selectedJob.frequencyInterval}|${selectedJob.frequencyUnit}`;
-                if (dOnly(selectedJob.nextDueDate) !== dOnly(selectedJob.loadedNextDue)) {
-                    headerPayload.next_due_date = dOnly(selectedJob.nextDueDate) || null;
-                } else if (!headerPayload.next_due_date && !selectedJob.lastGeneratedDate
-                    && selectedJob.loadedCadence && selectedJob.loadedCadence !== cadenceNow) {
+                const cadenceNow = `${job.frequencyInterval}|${job.frequencyUnit}`;
+                if (dOnly(job.nextDueDate) !== dOnly(job.loadedNextDue)) {
+                    headerPayload.next_due_date = dOnly(job.nextDueDate) || null;
+                } else if (!headerPayload.next_due_date && !job.lastGeneratedDate
+                    && job.loadedCadence && job.loadedCadence !== cadenceNow) {
                     headerPayload.next_due_date = firstDueDate();
                 }
-                headerPayload.lead_time_days = sensibleLeadTimeDays(selectedJob.leadTimeDays, selectedJob.frequencyInterval, selectedJob.frequencyUnit);
+                headerPayload.lead_time_days = sensibleLeadTimeDays(job.leadTimeDays, job.frequencyInterval, job.frequencyUnit);
             }
             if (headerPayload.next_due_date !== undefined) {
                 // Update local state so the Generator and the Autopilot chip see it immediately
-                const updatedJob = {
-                    ...selectedJob,
+                const patch = {
                     nextDueDate: headerPayload.next_due_date || '',
                     loadedNextDue: headerPayload.next_due_date || '',
-                    loadedCadence: `${selectedJob.frequencyInterval}|${selectedJob.frequencyUnit}`,
+                    loadedCadence: `${job.frequencyInterval}|${job.frequencyUnit}`,
                 };
-                setSelectedJob(updatedJob);
-                setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+                setSelectedJob(prev => (prev && prev.id === job.id) ? { ...prev, ...patch } : prev);
+                setJobs(prev => prev.map(j => j.id === job.id ? { ...j, ...patch } : j));
             }
-            console.log('[handleSave] PM ID:', selectedJob.id, 'Payload:', headerPayload);
+            console.log('[handleSave] PM ID:', job.id, 'Payload:', headerPayload);
             // Save header fields
-            await db.updatePM(selectedJob.id, headerPayload);
+            await db.updatePM(job.id, headerPayload);
             // Save templates (tasks, jsa, labor, inventory). This is the job
             // plan — the steps, hazards, labour and parts. Losing it silently
             // was never "non-critical": the header saved, the user was told the
@@ -860,11 +898,11 @@ export const RecurringWork: React.FC = () => {
             // the next reload.
             let templateError: string | null = null;
             try {
-                await db.savePMTemplates(selectedJob.id, {
-                    tasks: selectedJob.tasks || [],
-                    jsa: selectedJob.jsa || null,
-                    labor: selectedJob.labor || [],
-                    inventory: selectedJob.inventory || [],
+                await db.savePMTemplates(job.id, {
+                    tasks: job.tasks || [],
+                    jsa: job.jsa || null,
+                    labor: job.labor || [],
+                    inventory: job.inventory || [],
                 });
             } catch (templateErr: any) {
                 templateError = templateErr?.message || String(templateErr);
@@ -881,14 +919,17 @@ export const RecurringWork: React.FC = () => {
             }
 
             setSaveStatus('saved');
-            showToast('Strategy saved successfully', 'success');
-            setTimeout(() => setSaveStatus('idle'), 3000);
+            setLastSavedAt(new Date());
+            if (!opts.silent) showToast('Strategy saved', 'success');
         } catch (e: any) {
             console.error('Failed to save PM:', e);
             setSaveStatus('error');
             showToast(`Failed to save: ${e?.message || 'Unknown error'}`, 'error');
         } finally {
+            savingRef.current = false;
             setSaving(false);
+            // An edit arrived while this write was in flight: write the latest copy.
+            if (pendingRef.current) { const next = pendingRef.current; pendingRef.current = null; void handleSave(next, { silent: true }); }
         }
     };
 
@@ -1594,7 +1635,7 @@ export const RecurringWork: React.FC = () => {
                                 const laborCost = (selectedJob.labor || []).reduce((s: number, l: any) => s + ((l.estDuration || 0) * (l.hourlyRate || 0)), 0);
                                 const matCost = (selectedJob.inventory || []).reduce((s: number, i: any) => s + ((i.estQty || 0) * (i.estUnitCost || 0)), 0);
                                 const total = laborCost + matCost;
-                                return total > 0 ? (
+                                return canViewCosts && total > 0 ? (
                                     <div className="text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1">
                                         <span className="font-bold text-slate-700">${total.toFixed(0)}</span> est.
                                     </div>
@@ -1619,10 +1660,10 @@ export const RecurringWork: React.FC = () => {
                                 <span className="hidden xl:inline">Delete</span>
                             </button>
                             <button
-                                onClick={handleSave}
+                                onClick={() => handleSave()}
                                 disabled={saving || !canEditPM}
-                                title={canEditPM ? 'Save' : 'Needs Recurring Work · Edit'}
-                                className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition ${saveStatus === 'saved' ? 'bg-green-600 text-white' :
+                                title={canEditPM ? (saveStatus === 'error' ? 'The last save failed — click to retry' : 'Changes save on their own; click to save now') : 'Needs Recurring Work · Edit'}
+                                className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition ${saveStatus === 'saved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                                     saveStatus === 'error' ? 'bg-red-600 text-white' :
                                         'bg-primary-600 hover:bg-primary-500 text-white'
                                     } disabled:opacity-60`}
@@ -1630,7 +1671,7 @@ export const RecurringWork: React.FC = () => {
                                 {saving ? <Loader2 size={16} className="animate-spin" /> :
                                     saveStatus === 'saved' ? <CheckCircle size={16} /> :
                                         <Save size={16} />}
-                                {saving ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Error' : 'Save'}
+                                {saving ? 'Saving…' : saveStatus === 'saved' ? `Saved${lastSavedAt ? ' ' + lastSavedAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : ''}` : saveStatus === 'error' ? 'Not saved — retry' : 'Save'}
                             </button>
                             <button
                                 onClick={() => setIsFullscreen(f => !f)}
@@ -1684,10 +1725,10 @@ export const RecurringWork: React.FC = () => {
                         <div className="ers-page-record">
                             {activeTab === 'details' && <DetailsTab companyAuto={companyAuto} job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
                             {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleAssetsUpdate} dictionaries={dictionaries} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
-                            {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} />}
+                            {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} saveHint={saving ? 'Saving…' : saveStatus === 'error' ? 'Not saved — use Save to retry' : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : 'Saves on its own a moment after you stop typing'} />}
                             {activeTab === 'jsa' && <JSATab job={selectedJob} onUpdate={handleJobUpdate} />}
-                            {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} />}
-                            {activeTab === 'inventory' && <InventoryTab job={selectedJob} onUpdate={handleJobUpdate} inventoryItems={inventoryItems} dictionaries={dictionaries} />}
+                            {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} showCosts={canViewCosts} />}
+                            {activeTab === 'inventory' && <InventoryTab job={selectedJob} onUpdate={handleJobUpdate} inventoryItems={inventoryItems} dictionaries={dictionaries} showCosts={canViewCosts} />}
                             {activeTab === 'files' && <FilesTab job={selectedJob} onUpdate={handleJobUpdate} />}
                             {activeTab === 'history' && <HistoryTab job={selectedJob} jobs={jobs} onUpdate={handleJobUpdate} />}
                         </div>
@@ -2433,6 +2474,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
     const [scopeClass, setScopeClass] = React.useState<string>('');
     const [scopeCrit, setScopeCrit] = React.useState<string>('');
     const [scopeTag, setScopeTag] = React.useState<string>('');
+    const [withComponents, setWithComponents] = React.useState(false);
     const [unticked, setUnticked] = React.useState<Set<string>>(new Set());
     const [showAddManual, setShowAddManual] = React.useState(false);
     const [assetSearch, setAssetSearch] = React.useState('');
@@ -2461,21 +2503,28 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
     const scopeActive = !!scopeUnder || !!scopeClass || !!scopeCrit || !!scopeTag.trim();
     const matches = React.useMemo(() => {
         if (!scopeActive) return [] as Asset[];
-        const tag = scopeTag.trim().toLowerCase();
+        const q = scopeTag.trim().toLowerCase();
         return assets.filter(a =>
-            (!scopeUnder || isUnder(a, scopeUnder))
+            // A schedule targets equipment or a higher node; components (bearings,
+            // seals, impellers) are the maintainable items inside it and usually
+            // belong in the steps, not as separate targets. Opt in when needed.
+            (withComponents || String(a.hierarchyLevel || '').toUpperCase() !== 'COMPONENT')
+            && (!scopeUnder || isUnder(a, scopeUnder))
             && (!scopeClass || a.assetClass === scopeClass)
             && (!scopeCrit || String(a.criticality || '') === scopeCrit)
-            && (!tag || String(a.tag || '').toLowerCase().startsWith(tag))
+            && (!q || [a.tag, a.name, (a as any).description].some(v => String(v || '').toLowerCase().includes(q)))
         ).sort((x, y) => (x.tag || '').localeCompare(y.tag || ''));
-    }, [assets, scopeActive, scopeUnder, scopeClass, scopeCrit, scopeTag, isUnder]);
+    }, [assets, scopeActive, scopeUnder, scopeClass, scopeCrit, scopeTag, withComponents, isUnder]);
     const toLink = matches.filter(a => !linkedIds.has(a.id) && !unticked.has(a.id));
     const linkMatches = () => {
         if (toLink.length === 0 || !onUpdate) return;
         onUpdate({ assignedAssets: [...job.assignedAssets, ...toLink.map(a => ({ assetId: a.id, lastCompletedDate: undefined, lastReadingValue: undefined }))] });
         setUnticked(new Set());
     };
-    const clearScope = () => { setScopeUnder(''); setScopeClass(''); setScopeCrit(''); setScopeTag(''); setUnticked(new Set()); };
+    const clearScope = () => { setScopeUnder(''); setScopeClass(''); setScopeCrit(''); setScopeTag(''); setWithComponents(false); setUnticked(new Set()); };
+    const linkable = matches.filter(a => !linkedIds.has(a.id));
+    const allTicked = linkable.length > 0 && toLink.length === linkable.length;
+    const toggleAll = () => setUnticked(allTicked ? new Set(linkable.map(a => a.id)) : new Set());
 
     const removeAsset = (assetId: string) => {
         if (onUpdate) {
@@ -2519,17 +2568,29 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                         </select>
                     </div>
                 </div>
-                <div className="mt-2 flex items-center gap-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap" htmlFor="pm-scope-tag">or tag starts with</label>
-                    <input id="pm-scope-tag" className="flex-1 min-w-0 text-xs border border-slate-300 rounded-lg px-2 py-1.5 font-mono" placeholder="e.g. P-1" value={scopeTag} onChange={e => { setScopeTag(e.target.value); setUnticked(new Set()); }} />
+                <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap" htmlFor="pm-scope-tag">Find</label>
+                        <input id="pm-scope-tag" className="flex-1 min-w-0 text-xs border border-slate-300 rounded-lg px-2 py-1.5" placeholder="any part of a tag, name or description" value={scopeTag} onChange={e => { setScopeTag(e.target.value); setUnticked(new Set()); }} />
+                    </div>
+                    <label className="flex items-center gap-1.5 text-[11px] text-slate-500 whitespace-nowrap cursor-pointer select-none">
+                        <input type="checkbox" className="rounded border-slate-300 h-3.5 w-3.5" checked={withComponents} onChange={e => { setWithComponents(e.target.checked); setUnticked(new Set()); }} />
+                        Include components
+                    </label>
                 </div>
 
                 {scopeActive && (
                     <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
                         <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-xs">
-                            <span className="text-slate-600">
-                                <strong className="text-slate-800">{matches.length}</strong> match{matches.length === 1 ? '' : 'es'}
-                                {matches.some(a => linkedIds.has(a.id)) && <> · {matches.filter(a => linkedIds.has(a.id)).length} already linked</>}
+                            <span className="text-slate-600 flex items-center gap-2 min-w-0">
+                                {linkable.length > 0 && (
+                                    <input type="checkbox" className="rounded border-slate-300 h-3.5 w-3.5" checked={allTicked} onChange={toggleAll} title={allTicked ? 'Untick all' : 'Tick all'} aria-label="Tick or untick every match" />
+                                )}
+                                <span className="truncate">
+                                    <strong className="text-slate-800">{matches.length}</strong> match{matches.length === 1 ? '' : 'es'}
+                                    {matches.some(a => linkedIds.has(a.id)) && <> · {matches.filter(a => linkedIds.has(a.id)).length} already linked</>}
+                                    {linkable.length > 0 && toLink.length !== linkable.length && <> · {toLink.length} ticked</>}
+                                </span>
                             </span>
                             <button type="button" onClick={linkMatches} disabled={toLink.length === 0}
                                 className="text-[11px] sm:text-xs bg-primary-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
@@ -2801,7 +2862,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
     );
 };
 
-const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void }> = ({ job, onUpdate }) => {
+const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void; saveHint?: string }> = ({ job, onUpdate, saveHint }) => {
     const confirm = useConfirm();
     const promptModal = usePrompt();
     const { showToast } = useToast();
@@ -3127,17 +3188,30 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                             : 'border-slate-200 bg-white hover:border-slate-300'
                                     }`}
                                 />
-                                <div className="flex items-center gap-1 flex-shrink-0 text-xs">
-                                    <Clock size={12} className="text-slate-400" />
-                                    <input
-                                        type="number"
-                                        value={editingTask.estHours}
-                                        onChange={(e) => updateTask(editingTask.id, { estHours: parseFloat(e.target.value) || 0 })}
-                                        className="w-14 text-sm border border-slate-200 rounded-lg p-2 text-right focus:ring-2 focus:ring-primary-400 focus:border-primary-600 outline-none"
-                                        title="Estimated hours for this step"
-                                    />
-                                    <span className="text-slate-400">hrs</span>
-                                </div>
+                                {(() => {
+                                    // Hours and minutes, stored as decimal hours (2 dp). "0.2 hrs"
+                                    // asked planners to do arithmetic; "12 min" does not.
+                                    const total = Number(editingTask.estHours) || 0;
+                                    const h = Math.floor(total + 1e-9);
+                                    const m = Math.round((total - h) * 60);
+                                    const set = (hh: number, mm: number) => {
+                                        const mins = Math.max(0, Math.min(59, mm));
+                                        updateTask(editingTask.id, { estHours: Math.round((Math.max(0, hh) + mins / 60) * 100) / 100 });
+                                    };
+                                    return (
+                                        <div className="flex items-center gap-1 flex-shrink-0 text-xs" title="Estimated time for this step">
+                                            <Clock size={12} className="text-slate-400" />
+                                            <input type="number" min="0" step="1" value={h} aria-label="Hours"
+                                                onChange={(e) => set(parseInt(e.target.value) || 0, m)}
+                                                className="w-12 text-sm border border-slate-200 rounded-lg p-2 text-right focus:ring-2 focus:ring-primary-400 focus:border-primary-600 outline-none tabular-nums" />
+                                            <span className="text-slate-400">h</span>
+                                            <input type="number" min="0" max="59" step="5" value={m} aria-label="Minutes"
+                                                onChange={(e) => set(h, parseInt(e.target.value) || 0)}
+                                                className="w-12 text-sm border border-slate-200 rounded-lg p-2 text-right focus:ring-2 focus:ring-primary-400 focus:border-primary-600 outline-none tabular-nums" />
+                                            <span className="text-slate-400">min</span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </div>
                         {/* Body — instruction builder */}
@@ -3169,8 +3243,8 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             >
                                 {savingToLibrary ? <Loader2 size={13} className="animate-spin" /> : <BookOpen size={13} />} <span className="hidden sm:inline">Save to </span>Library
                             </button>
-                            <span className="hidden sm:flex items-center gap-1 text-[10px] text-slate-400 ml-1">
-                                <CheckCircle size={11} className="text-emerald-500" /> Changes apply to the template — Save the PM to persist
+                            <span className="flex items-center gap-1 text-[10px] text-slate-400 ml-1" aria-live="polite">
+                                {saveHint?.startsWith('Not saved') ? <AlertTriangle size={11} className="text-red-500" /> : <CheckCircle size={11} className="text-emerald-500" />} {saveHint || ''}
                             </span>
                             <div className="flex-1" />
                             <button
@@ -3554,7 +3628,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
     );
 };
 
-const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void; contacts?: Contact[]; dictionaries?: any[] }> = ({ job, onUpdate, contacts = [], dictionaries = [] }) => {
+const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void; contacts?: Contact[]; dictionaries?: any[]; showCosts?: boolean }> = ({ job, onUpdate, contacts = [], dictionaries = [], showCosts = true }) => {
     const labor = job.labor || [];
     const craftRoles = dictionaries.filter(d => d.type === 'CONTACT_TYPE' && d.active && !d.isManufacturer);
 
@@ -3651,10 +3725,11 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             <p className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-500">Total Hours</p>
                             <p className="text-lg sm:text-2xl font-black text-blue-700 leading-tight">{totalHours.toFixed(1)}<span className="text-xs sm:text-sm font-normal ml-1">hrs</span></p>
                         </div>
-                        <div>
+                        {showCosts && (<div>
                             <p className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-500">Est. Labour Cost</p>
                             <p className="text-lg sm:text-2xl font-black text-blue-700 leading-tight">${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                        </div>
+
+                        </div>)}
                         <div>
                             <p className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-500">Headcount</p>
                             <p className="text-lg sm:text-2xl font-black text-blue-700 leading-tight">{labor.length}</p>
@@ -3727,14 +3802,16 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Hours</label>
                                         <input type="number" value={l.estDuration} onChange={(e) => updateLabor(l.id, 'estDuration', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="0.5" />
                                     </div>
-                                    <div>
+                                    {showCosts && (<div>
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Rate $/hr</label>
                                         <input type="number" value={l.estRate || 0} onChange={(e) => updateLabor(l.id, 'estRate', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="5" />
-                                    </div>
-                                    <div>
+
+                                    </div>)}
+                                    {showCosts && (<div>
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Line total</label>
                                         <div className="min-h-[36px] flex items-center justify-end text-sm font-semibold text-slate-700 tabular-nums px-1">${lineTotal.toFixed(2)}</div>
-                                    </div>
+
+                                    </div>)}
                                 </div>
                             </div>
                         );
@@ -3749,7 +3826,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                     {labor.length > 0 && (
                         <div className="p-3 bg-slate-50 flex items-center justify-between text-xs">
                             <span className="font-bold text-slate-500 uppercase">Totals</span>
-                            <span className="text-slate-700 tabular-nums">{totalHours.toFixed(1)} hrs · <span className="font-bold text-blue-700">${totalCost.toFixed(2)}</span></span>
+                            <span className="text-slate-700 tabular-nums">{totalHours.toFixed(1)} hrs{showCosts && <> · <span className="font-bold text-blue-700">${totalCost.toFixed(2)}</span></>}</span>
                         </div>
                     )}
                 </div>
@@ -3763,8 +3840,8 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             <th className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase">Assigned To</th>
                             <th className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase w-40">Step</th>
                             <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-20">Hours</th>
-                            <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-24">Rate ($/hr)</th>
-                            <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-24">Line Total</th>
+                            {showCosts && <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-24">Rate ($/hr)</th>}
+                            {showCosts && <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-500 uppercase w-24">Line Total</th>}
                             <th className="px-3 py-2.5 w-10"></th>
                         </tr>
                     </thead>
@@ -3825,7 +3902,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                             min="0" step="0.5"
                                         />
                                     </td>
-                                    <td className="px-3 py-2 text-right">
+                                    {showCosts && <td className="px-3 py-2 text-right">
                                         <input
                                             type="number"
                                             value={l.estRate || 0}
@@ -3833,10 +3910,9 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                             className="w-20 text-sm bg-white border border-slate-200 rounded-lg p-1.5 text-right text-slate-700 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 transition-colors"
                                             min="0" step="5"
                                         />
-                                    </td>
-                                    <td className="px-3 py-2 text-right text-sm font-medium text-slate-700">
-                                        ${lineTotal.toFixed(2)}
-                                    </td>
+
+                                    </td>}
+                                    {showCosts && <td className="px-3 py-2 text-right text-sm font-medium text-slate-700">${lineTotal.toFixed(2)}</td>}
                                     <td className="px-3 py-2 text-right">
                                         <button
                                             onClick={() => deleteLabor(l.id)}
@@ -3863,8 +3939,8 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             <tr>
                                 <td colSpan={4} className="px-3 py-2 text-right text-xs font-bold text-slate-500 uppercase">Totals</td>
                                 <td className="px-3 py-2 text-right text-sm font-bold text-slate-700">{totalHours.toFixed(1)}</td>
-                                <td className="px-3 py-2 text-right text-xs text-slate-400">—</td>
-                                <td className="px-3 py-2 text-right text-sm font-bold text-blue-700">${totalCost.toFixed(2)}</td>
+                                {showCosts && <td className="px-3 py-2 text-right text-xs text-slate-400">—</td>}
+                                {showCosts && <td className="px-3 py-2 text-right text-sm font-bold text-blue-700">${totalCost.toFixed(2)}</td>}
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -3884,7 +3960,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
     );
 };
 
-const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void; inventoryItems?: any[]; dictionaries?: any[] }> = ({ job, onUpdate, inventoryItems = [], dictionaries = [] }) => {
+const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void; inventoryItems?: any[]; dictionaries?: any[]; showCosts?: boolean }> = ({ job, onUpdate, inventoryItems = [], dictionaries = [], showCosts = true }) => {
     const inventory = job.inventory || [];
 
     const addItem = () => {
@@ -3955,10 +4031,11 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
                             <p className="text-base sm:text-xl font-black text-slate-800">{inventory.length}</p>
                         </div>
                         <div className="h-8 w-px bg-slate-200" />
-                        <div>
+                        {showCosts && (<div>
                             <p className="text-[9px] sm:text-xs text-slate-500 uppercase font-bold">Est. Material Cost</p>
                             <p className="text-base sm:text-xl font-black text-blue-600">${totalMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        </div>
+
+                        </div>)}
                         {criticalCount > 0 && (
                             <>
                                 <div className="h-8 w-px bg-slate-200" />
@@ -4035,14 +4112,16 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Qty</label>
                                         <input type="number" value={item.estQty} onChange={(e) => updateItem(item.id, 'estQty', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="1" />
                                     </div>
-                                    <div>
+                                    {showCosts && (<div>
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Unit cost</label>
                                         <input type="number" value={item.estUnitCost || 0} onChange={(e) => updateItem(item.id, 'estUnitCost', parseFloat(e.target.value) || 0)} className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 text-right" min="0" step="0.01" />
-                                    </div>
-                                    <div>
+
+                                    </div>)}
+                                    {showCosts && (<div>
                                         <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Total</label>
                                         <div className="min-h-[36px] flex items-center justify-end text-sm font-semibold text-slate-700 tabular-nums px-1">${lineTotal.toFixed(2)}</div>
-                                    </div>
+
+                                    </div>)}
                                 </div>
                                 <label className="flex items-center gap-2 text-[11px] text-slate-600">
                                     <input
@@ -4072,9 +4151,9 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
                             <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Part / Description</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase w-24">UOM</th>
                             <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase w-24">Est Qty</th>
-                            <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase w-28">Est Unit Cost</th>
+                            {showCosts && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase w-28">Est Unit Cost</th>}
                             <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 uppercase w-20">Critical</th>
-                            <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase w-24">Line Total</th>
+                            {showCosts && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase w-24">Line Total</th>}
                             <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase w-16"></th>
                         </tr>
                     </thead>
