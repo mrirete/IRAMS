@@ -309,14 +309,11 @@ export const PurchaseOrders: React.FC = () => {
         // delivery store (F). Advisory — the line itself is the record.
         if (item.inventoryId && selectedPO.deliveryContactId) {
             try {
-                const invItem = inventoryItems.find(i => i.id === item.inventoryId);
-                const stockLoc = invItem?.stockLocations?.find((sl: any) => (sl.storeId || sl.id) === selectedPO.deliveryContactId);
-                const currentOnOrder = stockLoc?.qtyOnOrder || 0;
-                // Only the on-order figure. This used to go through the item
-                // save, which rewrote on-hand from this page's stale copy and
-                // never wrote qty_on_order at all.
-                await DatabaseService.getInstance().setStockOnOrder(
-                    item.inventoryId, selectedPO.deliveryContactId, currentOnOrder + item.qtyOrdered);
+                // Only the on-order figure, as a delta against the database.
+                // This used to go through the item save, which rewrote on-hand
+                // from this page's stale copy and never wrote qty_on_order.
+                await DatabaseService.getInstance().adjustStockOnOrder(
+                    item.inventoryId, selectedPO.deliveryContactId, item.qtyOrdered);
             } catch (e: any) {
                 console.warn('Could not update qty_on_order:', e.message);
             }
@@ -913,16 +910,12 @@ const ItemsTab: React.FC<{
         // Stock planning: what arrived is no longer on order.
         if (targetItem.inventoryId && deliveryLocationId) {
             try {
-                const invItem = inventoryItems.find(i => i.id === targetItem.inventoryId);
-                const stockLoc = invItem?.stockLocations?.find((sl: any) => (sl.storeId || sl.id) === deliveryLocationId);
-                const currentOnOrder = stockLoc?.qtyOnOrder || 0;
-                if (currentOnOrder > 0) {
-                    // On-order only. receivePOLine has already moved on-hand
-                    // and written the movement; the previous item-save call
-                    // here overwrote that on-hand with this page's stale copy
-                    // plus the receipt — wrong after any second receipt.
-                    await db.setStockOnOrder(targetItem.inventoryId, deliveryLocationId, currentOnOrder - qtyReceiving);
-                }
+                // On-order only, as a delta (clamped at zero server-side).
+                // receivePOLine has already moved on-hand and written the
+                // movement; the previous item-save call here overwrote that
+                // on-hand with this page's stale copy plus the receipt —
+                // wrong after any second receipt.
+                await db.adjustStockOnOrder(targetItem.inventoryId, deliveryLocationId, -qtyReceiving);
             } catch (e: any) {
                 // Advisory: the receipt itself is already recorded.
                 console.warn('[po] qty_on_order not decremented:', e.message);

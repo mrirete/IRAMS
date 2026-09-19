@@ -4492,7 +4492,7 @@ export class DatabaseService {
             .select('quantity')
             .eq('item_id', id);
         const onHand = (held || []).reduce((n: number, r: any) => n + (parseFloat(r.quantity) || 0), 0);
-        if (onHand > 0) {
+        if (onHand !== 0) {
             throw new Error(`Cannot delete this item: ${onHand} still on hand across its stores. Adjust the stock to zero first, or deactivate the item.`);
         }
         const { error: stockErr } = await supabase
@@ -4636,15 +4636,26 @@ export class DatabaseService {
     }
 
     /**
-     * On-order at one store — written by purchasing when a line is ordered or
-     * received. The generic item save never wrote qty_on_order, so the column
-     * was read on every Stores tab and written by nothing.
+     * Move on-order at one store by a delta — written by purchasing when a
+     * line is ordered (+) or received (−). The generic item save never wrote
+     * qty_on_order, so the column was read on every Stores tab and written by
+     * nothing. A delta against the CURRENT database value, not a figure
+     * computed from the page's copy: two lines added without a reload used to
+     * produce the second line's quantity alone.
      */
-    public async setStockOnOrder(itemId: string, locationId: string, qtyOnOrder: number): Promise<void> {
+    public async adjustStockOnOrder(itemId: string, locationId: string, delta: number): Promise<void> {
+        const { data: row, error: readErr } = await supabase
+            .from('inventory_stock')
+            .select('qty_on_order')
+            .eq('item_id', itemId)
+            .eq('location_id', locationId)
+            .maybeSingle();
+        if (readErr) throw readErr;
+        const next = Math.max(0, (parseFloat(row?.qty_on_order) || 0) + delta);
         const { error } = await supabase
             .from('inventory_stock')
             .upsert(
-                { item_id: itemId, location_id: locationId, qty_on_order: Math.max(0, qtyOnOrder) },
+                { item_id: itemId, location_id: locationId, qty_on_order: next },
                 { onConflict: 'item_id,location_id' },
             );
         if (error) throw error;

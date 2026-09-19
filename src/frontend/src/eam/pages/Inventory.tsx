@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { StorageImage } from '../components/ui/StorageImage';
 import { isOpenWo } from '../../lib/woState';
 import {
@@ -565,7 +565,13 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
 
         const selectedStoreName = availableStores.find(s => s.id === selectedStoreId)?.name || 'Main Store';
 
+        // Form fields first, explicit blocks after: the form state seeds
+        // `stockLocations: []`, and when it was spread LAST it overwrote the
+        // store/bin/opening-quantity built below — every item created here
+        // arrived with no store row and its initial quantity went nowhere.
+        const { stockLocations: _ignored, ...fields } = formData;
         const newItem: InventoryItem = {
+            ...fields,
             id: `inv-new-${Date.now()}`,
             code: formData.code!,
             description: formData.description!,
@@ -594,7 +600,6 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
             createdById: profile?.username || profile?.fullName || 'Unknown User',
             createdAt: new Date().toISOString().split('T')[0],
             transactions: [],
-            ...formData
         } as InventoryItem;
 
         onSave(newItem);
@@ -1045,8 +1050,10 @@ function StoresTab({ item, stores, onUpdate, onRemoved, canCreate = true, canEdi
     // "Add Location" only offers stores the item is not in yet, and a store
     // already present is edited, never added twice (the save would refuse it).
     const storeOf = (l: InventoryLocation) => l.storeId || l.id;
-    const usedStoreIds = new Set(item.stockLocations.map(storeOf));
-    const freeStores = stores.filter(s => !usedStoreIds.has(s.id));
+    const freeStores = useMemo(() => {
+        const used = new Set(item.stockLocations.map(storeOf));
+        return stores.filter(s => !used.has(s.id));
+    }, [item.stockLocations, stores]);
 
     const handleSaveLocation = (loc: InventoryLocation) => {
         let newLocations;
@@ -1136,8 +1143,8 @@ function StoresTab({ item, stores, onUpdate, onRemoved, canCreate = true, canEdi
                             <td className="px-4 py-3 text-sm font-medium text-slate-900">{loc.storeName}</td>
                             <td className="px-4 py-3 text-sm font-mono bg-blue-50/50">
                                 {loc.binLocation
-                                    ? <button type="button" onClick={() => canEdit && openEdit(loc)} className="text-blue-600 hover:underline" title="Edit bin">{loc.binLocation}</button>
-                                    : <button type="button" onClick={() => canEdit && openEdit(loc)} className="text-slate-400 italic font-sans hover:underline" title="Set a bin">no bin</button>}
+                                    ? <button type="button" disabled={!canEdit} onClick={() => openEdit(loc)} className="text-blue-600 enabled:hover:underline disabled:cursor-default" title={canEdit ? 'Edit bin' : undefined}>{loc.binLocation}</button>
+                                    : <button type="button" disabled={!canEdit} onClick={() => openEdit(loc)} className="text-slate-400 italic font-sans enabled:hover:underline disabled:cursor-default" title={canEdit ? 'Set a bin' : undefined}>no bin</button>}
                             </td>
                             <td className="px-4 py-3 text-sm text-right text-slate-500">{loc.minQty}</td>
                             <td className="px-4 py-3 text-sm text-right text-slate-500">{loc.maxQty}</td>
@@ -1194,15 +1201,19 @@ function LocationModal({ isOpen, onClose, stores, existingLocation, onSave }: {
     const existingStoreId = existingLocation?.storeId || existingLocation?.id;
     const [selectedStoreId, setSelectedStoreId] = useState(existingStoreId || stores[0]?.id || '');
 
-    // Fix: Update state when props change (re-opening modal for different item)
+    // Reset when the modal opens or is pointed at a different row — and only
+    // then. Keying this on the `stores` array would re-run it on every parent
+    // render and wipe whatever was being typed.
+    const firstStoreId = stores[0]?.id || '';
     useEffect(() => {
         if (isOpen) {
-            setSelectedStoreId(existingStoreId || stores[0]?.id || '');
+            setSelectedStoreId(existingStoreId || firstStoreId);
             setFormData(existingLocation || {
                 minQty: 0, maxQty: 0, reorderQty: 0, binLocation: '', qtyOnHand: 0
             });
         }
-    }, [isOpen, existingLocation, existingStoreId, stores]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, existingLocation?.id]);
 
     // Find store object to get bins
     const selectedStore = stores.find(s => s.id === selectedStoreId);
@@ -2219,6 +2230,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
         if (!targetId || selectedItem || inventoryItems.length === 0) return;
         const match = inventoryItems.find(i => i.id === targetId);
         if (!match) return;
+        setHasUnsavedChanges(false);
         setSelectedItem(match);
         setSearchParams(prev => {
             const next = new URLSearchParams(prev);
@@ -2307,10 +2319,20 @@ export function Inventory({ onAnalyze }: InventoryProps) {
         setInventoryItems(prev => prev.map(i => i.id === updated.id ? updated : i));
     };
 
-    const closeDetail = () => {
-        if (hasUnsavedChanges) { setDiscardPrompt(true); return; }
-        setSelectedItem(null);
+    // Any change of selection goes through here so a dirty draft is never
+    // dropped silently: the X, a click on another row, a deep link.
+    const [pendingSelection, setPendingSelection] = useState<InventoryItem | null | undefined>(undefined);
+    const selectItem = (next: InventoryItem | null) => {
+        if (hasUnsavedChanges && next?.id !== selectedItem?.id) {
+            setPendingSelection(next);
+            setDiscardPrompt(true);
+            return false;
+        }
+        setHasUnsavedChanges(false);
+        setSelectedItem(next);
+        return true;
     };
+    const closeDetail = () => { selectItem(null); };
 
     const handleCreateItem = async (newItem: InventoryItem) => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
@@ -2357,9 +2379,13 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                 }
             };
 
-            await DatabaseService.getInstance().addInventoryItem(dbRecord, newItem.stockLocations);
-            loadInventory(); // Refresh list
-            setSelectedItem(newItem); // Optimistic selection? Or wait for reload
+            const saved = await DatabaseService.getInstance().addInventoryItem(dbRecord, newItem.stockLocations);
+            // Select the persisted copy: the draft carries temp store-row ids
+            // and no stockId, which the Stores tab would treat as unsaved rows.
+            const fresh = await loadInventory();
+            const persisted = fresh?.find(i => i.id === saved.id);
+            setHasUnsavedChanges(false);
+            setSelectedItem(persisted || { ...newItem, id: saved.id });
             setActiveTab('details');
             setShowAddModal(false);
         } catch (e: any) {
@@ -2472,7 +2498,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     );
 
     const handleRowClick = (item: InventoryItem) => {
-        setSelectedItem(item);
+        if (!selectItem(item)) return; // dirty draft: asked first
         setActiveTab('details');
         setSelectedIds(new Set()); // Clear bulk selection on detail view
     };
@@ -2975,11 +3001,15 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         onConfirm={async () => {
                             setDiscardPrompt(false);
                             setHasUnsavedChanges(false);
-                            setSelectedItem(null);
-                            await loadInventory(); // drop the draft from the list too
+                            const next = pendingSelection === undefined ? null : pendingSelection;
+                            setPendingSelection(undefined);
+                            const fresh = await loadInventory(); // drop the draft from the list too
+                            // Select the reloaded copy, not the stale one from the click.
+                            setSelectedItem(next ? (fresh?.find(i => i.id === next.id) || next) : null);
+                            if (next) setActiveTab('details');
                         }}
                         title="Discard unsaved changes?"
-                        message="This item has changes that have not been saved. Close without saving?"
+                        message="This item has changes that have not been saved. Continue without saving?"
                         type="warning"
                         confirmText="Discard"
                     />
@@ -2994,7 +3024,11 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                 const newItems = await loadInventory(); // Reload to get fresh stock
                                 if (newItems && selectedItem) {
                                     const refreshed = newItems.find(i => i.id === selectedItem.id);
-                                    if (refreshed) setSelectedItem(refreshed);
+                                    // Bring in the new stock figures only; a dirty draft
+                                    // on the other tabs keeps its unsaved edits.
+                                    if (refreshed) setSelectedItem(prev => prev && hasUnsavedChanges
+                                        ? { ...prev, stockLocations: refreshed.stockLocations, totalQtyOnHand: refreshed.totalQtyOnHand, totalQtyOnOrder: refreshed.totalQtyOnOrder }
+                                        : refreshed);
                                 }
                                 setShowStockModal(false);
                             }}
