@@ -590,10 +590,34 @@ const RecentBatches: React.FC = () => {
                             <button
                                 disabled={rolling === b.id}
                                 onClick={async () => {
-                                    if (!window.confirm('Remove everything this import created?')) return;
+                                    // Ask first, then act. Rolling an import back cascades
+                                    // into work recorded against the imported assets, and
+                                    // the batch can be refused outright — in which case
+                                    // nothing changes and the operator has to be told, not
+                                    // left looking at a button that appeared to work.
                                     setRolling(b.id);
-                                    try { await importService.rollbackBatch(b.id); setBatches(await importService.listBatches()); }
-                                    finally { setRolling(null); }
+                                    try {
+                                        const plan = await importService.rollbackBatch(b.id, { dryRun: true });
+                                        if (!plan.ok) {
+                                            const named = plan.blockers.slice(0, 3).map(x => `${x.tag} (${x.reason})`).join('; ');
+                                            const more = plan.blockers.length > 3 ? `, and ${plan.blockers.length - 3} more` : '';
+                                            window.alert(`This import cannot be rolled back yet — ${plan.blockers.length} asset(s) are in use: ${named}${more}.
+
+Nothing was changed.`);
+                                            return;
+                                        }
+                                        const damage = Object.entries(plan.collateral).map(([t, n]) => `${n} × ${t.replace(/^ers_/, '').replace(/_/g, ' ')}`).join(', ');
+                                        const msg = `Remove ${plan.assetsToDelete} asset(s) and ${plan.workOrdersToDelete} work order(s) created by this import?`
+                                            + (damage ? `
+
+This also permanently deletes work recorded against them: ${damage}.` : '');
+                                        if (!window.confirm(msg)) return;
+                                        const out = await importService.rollbackBatch(b.id);
+                                        setBatches(await importService.listBatches());
+                                        window.alert(`Rolled back — removed ${out.assetsDeleted} asset(s) and ${out.workOrdersDeleted} work order(s).`);
+                                    } catch (e) {
+                                        window.alert(e instanceof Error ? e.message : String(e));
+                                    } finally { setRolling(null); }
                                 }}
                                 className="text-xs text-rose-500 hover:text-rose-700 font-medium disabled:opacity-50">
                                 {rolling === b.id ? 'Rolling back…' : 'Roll back'}

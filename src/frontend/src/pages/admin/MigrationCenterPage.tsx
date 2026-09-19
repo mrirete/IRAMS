@@ -321,28 +321,70 @@ export const MigrationCenterPage: React.FC = () => {
         return res;
     };
 
+    /** "ers_rca_investigations" → "RCA investigations" */
+    const COLLATERAL_LABELS: Record<string, string> = {
+        asset_bom: 'BOM lines', warranties: 'warranties',
+        asset_financials: 'financial records', asset_insurance: 'insurance records',
+        ers_criticality_assessments: 'criticality assessments',
+        ers_rca_investigations: 'RCA investigations',
+        ers_fmea_worksheets: 'FMEA worksheets', ers_smea_worksheets: 'SMEA worksheets',
+        ers_rbi_assessments: 'RBI assessments', ers_ffs_assessments: 'fitness-for-service assessments',
+        ers_inspections: 'inspections', ers_cmls: 'condition monitoring locations',
+        loto_permits: 'isolation permits',
+    };
+
+    /**
+     * Ask the database what would happen, tell the operator, then do it.
+     *
+     * The dry run is not politeness. Rolling an import back cascades into about
+     * thirty tables, so it can delete an RCA investigation or a criticality
+     * assessment somebody spent a week on. Naming those before the click is the
+     * difference between undo and data loss.
+     */
     const rollback = async (id: string, fileName: string) => {
+        let plan;
+        try {
+            plan = await importService.rollbackBatch(id, { dryRun: true });
+        } catch (e: unknown) {
+            showToast(errMessage(e), 'error');
+            return;
+        }
+
+        if (!plan.ok) {
+            const named = plan.blockers.slice(0, 4).map(b => `${b.tag} (${b.reason})`).join('; ');
+            const more = plan.blockers.length > 4 ? `, and ${plan.blockers.length - 4} more` : '';
+            showToast(
+                `"${fileName}" cannot be rolled back yet — ${plan.blockers.length} asset(s) are in use: ${named}${more}. Nothing was changed. Clear those references and try again.`,
+                'warning',
+            );
+            return;
+        }
+
+        const damage = Object.entries(plan.collateral)
+            .map(([t, n]) => `${n} ${COLLATERAL_LABELS[t] ?? t.replace(/^ers_/, '').replace(/_/g, ' ')}`)
+            .join(', ');
+
         const ok = await confirm({
             title: 'Roll this import back?',
-            message: `Everything "${fileName}" created will be removed. Assets that have since gained readings or work orders are kept and named.`,
+            message:
+                `This removes ${plan.assetsToDelete} asset(s) and ${plan.workOrdersToDelete} work order(s) created by "${fileName}".`
+                + (damage
+                    ? `\n\nIt will also permanently delete work recorded against those assets: ${damage}. That cannot be undone.`
+                    : '')
+                + '\n\nEither everything goes or nothing does.',
             variant: 'danger',
-            confirmLabel: 'Roll back',
+            confirmLabel: damage ? 'Delete anyway' : 'Roll back',
         });
         if (!ok) return;
+
         try {
             const out = await importService.rollbackBatch(id);
-            // This used to say "Import rolled back." whatever happened — including
-            // the run where four foreign-key refusals removed nothing at all.
-            const removed = `Removed ${out.workOrdersDeleted} work order${out.workOrdersDeleted === 1 ? '' : 's'} and ${out.assetsDeleted} asset${out.assetsDeleted === 1 ? '' : 's'}.`;
-            if (out.complete) {
-                showToast(`Import rolled back. ${removed}`, 'success');
-            } else {
-                const names = out.kept.slice(0, 3).map(k => `${k.tag} (${k.reason})`).join('; ');
-                const more = out.kept.length > 3 ? ` and ${out.kept.length - 3} more` : '';
-                showToast(`${removed} Kept ${out.assetsKept}: ${names}${more}. Clear those references and roll back again.`, 'warning');
-            }
+            showToast(
+                `Import rolled back. Removed ${out.assetsDeleted} asset(s) and ${out.workOrdersDeleted} work order(s).`,
+                'success',
+            );
         } catch (e: unknown) {
-            showToast(`Rollback failed: ${errMessage(e)}`, 'error');
+            showToast(errMessage(e), 'error');
         }
         void refresh();
     };
