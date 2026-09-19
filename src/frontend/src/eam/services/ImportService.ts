@@ -340,11 +340,24 @@ class ImportService {
     }
 
     /**
-     * Remove everything a batch created. WOs go first (wo_failure_data cascades);
-     * assets created by the batch follow — any that gained other references
-     * since import are left in place and reported.
+     * Remove everything a batch created, and report exactly what happened.
+     *
+     * What this used to do: delete the batch's work orders, then loop over its
+     * assets deleting each one, count any failure as "kept", mark the batch
+     * rolled_back, and let the page toast "Import rolled back." Two things made
+     * that a lie in practice. Assets came back in arbitrary order, so a parent
+     * was tried before its children and refused by its own self-reference; and
+     * any asset that had gained a reading or a work order since import was
+     * refused by that foreign key. Every refusal was swallowed. A four-asset
+     * batch with one reading on the pump rolled back nothing, and said success.
+     *
+     * Now: children go before parents (as many passes as the tree is deep),
+     * each refusal is explained by looking up what still points at the asset,
+     * and the batch is only marked rolled_back when it really is. Otherwise it
+     * stays committed — the Roll back control stays available — and the batch
+     * carries a note naming what blocked it.
      */
-    public async rollbackBatch(batchId: string): Promise<{ workOrdersDeleted: number; assetsDeleted: number; assetsKept: number }> {
+    public async rollbackBatch(batchId: string): Promise<RollbackOutcome> {
         const { data: wos, error: woErr } = await supabase
             .from('work_orders')
             .delete()
@@ -352,22 +365,94 @@ class ImportService {
             .select('id');
         if (woErr) throw new Error(`Rollback (work orders) failed: ${woErr.message}`);
 
-        const { data: batchAssets } = await supabase
-            .from('assets').select('id').eq('import_batch_id', batchId);
+        const { data: batchAssets, error: aErr } = await supabase
+            .from('assets').select('id, tag, parent_id').eq('import_batch_id', batchId);
+        if (aErr) throw new Error(`Rollback (assets) failed: ${aErr.message}`);
+
+        let remaining = (batchAssets ?? []) as { id: string; tag: string | null; parent_id: string | null }[];
         let assetsDeleted = 0;
-        let assetsKept = 0;
-        for (const a of batchAssets ?? []) {
-            const { error } = await supabase.from('assets').delete().eq('id', a.id);
-            if (error) assetsKept += 1; // still referenced elsewhere — keep it
-            else assetsDeleted += 1;
+        /** Postgres foreign_key_violation — the only refusal that means "still referenced". */
+        const FK_VIOLATION = '23503';
+        const refusal = new Map<string, string | undefined>();   // asset id → error code
+
+        // Leaf-first passes. A pass deletes every remaining asset that no other
+        // remaining asset names as its parent; repeat until a pass removes
+        // nothing. Whatever is left is blocked from outside the batch.
+        for (let guard = 0; guard < 32 && remaining.length > 0; guard++) {
+            const parentIds = new Set(remaining.map(a => a.parent_id).filter(Boolean) as string[]);
+            const leafIds = new Set(remaining.filter(a => !parentIds.has(a.id)).map(a => a.id));
+            if (leafIds.size === 0) break;
+            let progressed = false;
+            const still: typeof remaining = [];
+            for (const a of remaining) {
+                if (!leafIds.has(a.id)) { still.push(a); continue; }
+                const { error } = await supabase.from('assets').delete().eq('id', a.id);
+                if (error) {
+                    refusal.set(a.id, (error as { code?: string }).code);
+                    still.push(a);
+                } else {
+                    assetsDeleted += 1;
+                    progressed = true;
+                }
+            }
+            remaining = still;
+            if (!progressed) break;
         }
 
+        // Explain the survivors. Bounded: a wholesale refusal must not turn into
+        // thousands of round-trips, so only the first few are looked up and the
+        // rest are counted.
+        const EXPLAIN_LIMIT = 8;
+        const kept: RollbackOutcome['kept'] = [];
+        for (const a of remaining.slice(0, EXPLAIN_LIMIT)) {
+            const code = refusal.get(a.id);
+            if (code && code !== FK_VIOLATION) {
+                // Not a reference at all — do not invent one.
+                kept.push({ tag: a.tag ?? a.id, reason: `delete refused (${code})` });
+                continue;
+            }
+            const [readings, points, orders, children] = await Promise.all([
+                supabase.from('reading_logs').select('id', { count: 'exact', head: true }).eq('asset_id', a.id),
+                supabase.from('reading_definitions').select('id', { count: 'exact', head: true }).eq('asset_id', a.id),
+                supabase.from('work_orders').select('id', { count: 'exact', head: true }).eq('asset_id', a.id),
+                supabase.from('assets').select('id', { count: 'exact', head: true }).eq('parent_id', a.id),
+            ]);
+            const why: string[] = [];
+            if ((readings.count ?? 0) > 0) why.push(`${readings.count} reading${readings.count === 1 ? '' : 's'}`);
+            if ((points.count ?? 0) > 0) why.push(`${points.count} reading point${points.count === 1 ? '' : 's'}`);
+            if ((orders.count ?? 0) > 0) why.push(`${orders.count} work order${orders.count === 1 ? '' : 's'}`);
+            if ((children.count ?? 0) > 0) why.push(`${children.count} child asset${children.count === 1 ? '' : 's'} still present`);
+            kept.push({ tag: a.tag ?? a.id, reason: why.length ? `has ${why.join(', ')}` : 'refused by a reference outside this batch' });
+        }
+        for (const a of remaining.slice(EXPLAIN_LIMIT)) {
+            kept.push({ tag: a.tag ?? a.id, reason: 'still referenced' });
+        }
+
+        const complete = kept.length === 0;
+        // Capped: the batch note is a record, not a dump. An unbounded join over
+        // every survivor would write hundreds of kilobytes for a large batch.
+        const NOTE_TAGS = 10;
+        const shown = kept.slice(0, NOTE_TAGS).map(k => `${k.tag} (${k.reason})`).join('; ');
+        const note = complete
+            ? null
+            : `Rollback ${new Date().toISOString().slice(0, 16)}: removed ${(wos ?? []).length} work order(s) and ${assetsDeleted} asset(s); kept ${kept.length} — ${shown}${kept.length > NOTE_TAGS ? `; and ${kept.length - NOTE_TAGS} more` : ''}.`;
         await supabase.from('import_batches')
-            .update({ status: 'rolled_back' })
+            .update(complete ? { status: 'rolled_back' } : { notes: note })
             .eq('id', batchId);
 
-        return { workOrdersDeleted: (wos ?? []).length, assetsDeleted, assetsKept };
+        return { workOrdersDeleted: (wos ?? []).length, assetsDeleted, assetsKept: kept.length, kept, complete };
     }
+}
+
+/** What a rollback actually did, for the page to say out loud. */
+export interface RollbackOutcome {
+    workOrdersDeleted: number;
+    assetsDeleted: number;
+    assetsKept: number;
+    /** Each survivor and the reference that protected it. */
+    kept: { tag: string; reason: string }[];
+    /** True only when nothing the batch created remains. */
+    complete: boolean;
 }
 
 export const importService = ImportService.getInstance();

@@ -23,7 +23,7 @@ import { supabase } from '../lib/supabase';
 import {
     getLevelConfig, resolveLevelCode, isValidChild, criticalityRequired,
 } from './hierarchyModel';
-import { parseDateValue } from './assetTemplates';
+import { parseDateValue, normaliseCriticality } from './assetTemplates';
 import {
     emptyResult, tally, errMessage, isUniqueViolation,
     type ImportResult, type RowOutcome,
@@ -159,6 +159,7 @@ async function applyAssetUpdates(
     targets: { draft: AssetDraft; id: string; equipmentNumber: string | null }[],
     ccByCode: Map<string, string>,
     res: ImportResult,
+    onCritDropped: (input: string) => void = () => { },
 ): Promise<void> {
     for (const { draft, id, equipmentNumber } of targets) {
         const d = draft.data;
@@ -168,7 +169,13 @@ async function applyAssetUpdates(
         };
 
         set('name', d['name']);
-        set('criticality', (d['criticality'] || '').toUpperCase() || undefined);
+        {
+            // Sync path: a value the enum will reject is dropped, not sent — a
+            // master-data refresh must never fail a row over one unreadable cell.
+            const c = normaliseCriticality(d['criticality']);
+            if (c.code) set('criticality', c.code);
+            else if (c.input) onCritDropped(c.input);
+        }
         set('status_code', (d['status'] || '').toUpperCase() || undefined);
         // Fill-only: the equipment number is the physical object's identity —
         // immutable once set (0293 enforces this in the DB; changing it is a
@@ -235,9 +242,22 @@ export async function importAssets(
          * integration starts already mapped.
          */
         sourceSystem?: string;
+        /** The uploaded file's name, so the batch list can tell imports apart. */
+        fileName?: string;
     } = {},
 ): Promise<ImportResult> {
     const res = emptyResult();
+    // Criticality translations are counted, not narrated row by row.
+    //
+    // This value decides which assets a plant treats as safety critical, and a
+    // migration that quietly rewrites it has changed a safety claim. One note
+    // per row buried that: a 5,000-row file emitted 5,000 lines into a panel
+    // that renders all of them, which is the same as saying nothing. One line
+    // per distinct translation is short enough to be read and precise enough to
+    // be checked — and it is the place to notice that a HIGH/MEDIUM/LOW export
+    // has produced no safety-critical assets at all.
+    const critMapped = new Map<string, number>();   // "HIGH → B" → count
+    const critDropped = new Map<string, number>();  // unreadable value → count
     if (rows.length === 0) return res;
 
     // ── 1. Resolve levels; reject what the level model doesn't recognise ──
@@ -318,7 +338,7 @@ export async function importAssets(
     // Applied before the sort, and before the "nothing to insert" early return
     // below — a re-run where every row already exists is the NORMAL shape of a
     // master-data sync, and returning early would silently do nothing.
-    await applyAssetUpdates(toUpdate, ccByCode, res);
+    await applyAssetUpdates(toUpdate, ccByCode, res, (input) => critDropped.set(input, (critDropped.get(input) ?? 0) + 1));
 
     // ── 3. Resolve parents; topological sort (Kahn) ──
     const blocked = new Set<AssetDraft>();
@@ -368,7 +388,9 @@ export async function importAssets(
                 .from('import_batches')
                 .insert({
                     source_system: opts.sourceSystem || 'spreadsheet',
-                    file_name: 'Asset register import',
+                    // Every batch used to be called "Asset register import", so a
+                    // history of six looked like one import six times.
+                    file_name: (opts.fileName || '').trim() || 'Asset register import',
                     status: 'draft',
                     created_by: user?.id ?? null,
                 })
@@ -415,8 +437,24 @@ export async function importAssets(
                 continue;
             }
 
-            const crit = (d.data['criticality'] || '').toUpperCase();
-            if (!crit && criticalityRequired({ hierarchyLevel: d.level })) {
+            // Read the cell the way the database will accept it. Before this,
+            // "LOW" went to Postgres as-is, the enum rejected it, the SITE row
+            // failed, and every row beneath it failed with "nowhere to hang".
+            const critNorm = normaliseCriticality(d.data['criticality']);
+            const crit = critNorm.code ?? '';
+            const critRequired = criticalityRequired({ hierarchyLevel: d.level });
+            if (critNorm.input && !crit) {
+                if (critRequired) {
+                    tally(res, { row: d.row, key: d.tag, status: 'failed', reason: `Criticality "${critNorm.input}" is not one of A, B, C, D (or HIGH / LOW / 1–4) — required for ${d.level}` });
+                    continue;
+                }
+                // Optional here: keep the row, lose the value, say so.
+                critDropped.set(critNorm.input, (critDropped.get(critNorm.input) ?? 0) + 1);
+            } else if (critNorm.mapped) {
+                const k = `${critNorm.input.toUpperCase()} → ${crit}`;
+                critMapped.set(k, (critMapped.get(k) ?? 0) + 1);
+            }
+            if (!crit && critRequired) {
                 tally(res, { row: d.row, key: d.tag, status: 'failed', reason: `Criticality is required for ${d.level} assets` });
                 continue;
             }
@@ -551,10 +589,26 @@ export async function importAssets(
         }
     }
 
+    // ── 7b. Say what the criticality column was read as, once per translation ──
+    for (const [pair, n] of [...critMapped.entries()].sort((a, b) => b[1] - a[1])) {
+        res.notes!.push(`Criticality ${pair} on ${n} row${n === 1 ? '' : 's'}.`);
+    }
+    for (const [bad, n] of [...critDropped.entries()].sort((a, b) => b[1] - a[1])) {
+        res.notes!.push(`Criticality "${bad}" could not be read on ${n} row${n === 1 ? '' : 's'} — imported blank.`);
+    }
+    // The consequence worth noticing: a three-level source scale never yields A,
+    // so nothing in the register comes out safety critical.
+    if (critMapped.size > 0 && ![...critMapped.keys()].some(k => k.endsWith('→ A'))) {
+        const anyA = res.inserted > 0 || res.updated > 0;
+        if (anyA) res.notes!.push('No row was read as criticality A — if this plant has safety-critical assets, map them explicitly before relying on this register.');
+    }
+
     // ── 8. Seal the batch ──
     if (batchId) {
         await supabase.from('import_batches').update({
-            status: 'committed',
+            // A batch that inserted nothing is not a committed import with a
+            // Roll back button — it is a failed one, and the list says so.
+            status: (res.inserted === 0 && res.updated === 0 && res.failed > 0) ? 'failed' : 'committed',
             row_counts: { assets: res.inserted, updated: res.updated, skipped: res.skipped + res.failed },
             committed_at: new Date().toISOString(),
         }).eq('id', batchId);

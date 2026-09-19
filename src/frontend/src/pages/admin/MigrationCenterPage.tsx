@@ -24,6 +24,7 @@ import { emptyResult, tally, errMessage, type ImportResult } from '../../eam/ser
 import { downloadUnresolvedCodes, type ImportType } from '../../eam/services/assetTemplates';
 import { phaseTemplatesFor } from './migrationTemplates';
 import { useToast } from '../../eam/contexts/ToastContext';
+import { useConfirm } from '../../eam/contexts/ConfirmContext';
 import { assessmentService } from '../../eam/services/AssessmentService';
 import type { IntakeDimensionKey } from '../../eam/services/IntakeQuickAnalysis';
 
@@ -178,6 +179,7 @@ const MaturityEmphasisHint: React.FC = () => {
 
 export const MigrationCenterPage: React.FC = () => {
     const { showToast } = useToast();
+    const confirm = useConfirm();
     const { state } = useLocation();
     const origin = (state ?? {}) as MigrationOrigin;
     const backTo = origin.to ?? '/specialist';
@@ -310,20 +312,35 @@ export const MigrationCenterPage: React.FC = () => {
         return res;
     };
 
-    const handleImportAssets = async (rows: Record<string, string>[]): Promise<ImportResult> => {
+    const handleImportAssets = async (rows: Record<string, string>[], meta?: { fileName?: string }): Promise<ImportResult> => {
         // withBatch: this route is admin-gated, so provenance always records.
         // sourceSystem: names the batch honestly AND keeps the source system's
         // own record ids for a later ERP integration (0275).
-        const res = await importAssets(rows, { withBatch: true, sourceSystem });
+        const res = await importAssets(rows, { withBatch: true, sourceSystem, fileName: meta?.fileName });
         void refresh();
         return res;
     };
 
     const rollback = async (id: string, fileName: string) => {
-        if (!window.confirm(`Remove everything the import "${fileName}" created?`)) return;
+        const ok = await confirm({
+            title: 'Roll this import back?',
+            message: `Everything "${fileName}" created will be removed. Assets that have since gained readings or work orders are kept and named.`,
+            variant: 'danger',
+            confirmLabel: 'Roll back',
+        });
+        if (!ok) return;
         try {
-            await importService.rollbackBatch(id);
-            showToast('Import rolled back.', 'success');
+            const out = await importService.rollbackBatch(id);
+            // This used to say "Import rolled back." whatever happened — including
+            // the run where four foreign-key refusals removed nothing at all.
+            const removed = `Removed ${out.workOrdersDeleted} work order${out.workOrdersDeleted === 1 ? '' : 's'} and ${out.assetsDeleted} asset${out.assetsDeleted === 1 ? '' : 's'}.`;
+            if (out.complete) {
+                showToast(`Import rolled back. ${removed}`, 'success');
+            } else {
+                const names = out.kept.slice(0, 3).map(k => `${k.tag} (${k.reason})`).join('; ');
+                const more = out.kept.length > 3 ? ` and ${out.kept.length - 3} more` : '';
+                showToast(`${removed} Kept ${out.assetsKept}: ${names}${more}. Clear those references and roll back again.`, 'warning');
+            }
         } catch (e: unknown) {
             showToast(`Rollback failed: ${errMessage(e)}`, 'error');
         }

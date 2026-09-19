@@ -6,7 +6,7 @@
  */
 import * as XLSX from 'xlsx';
 import type { Asset, BomItem } from '../types';
-import { getLevels } from './hierarchyModel';
+import { getLevels, criticalityRequired, resolveLevelCode, isValidChild, getLevelConfig } from './hierarchyModel';
 import { CATEGORIES, CLASSES, TYPES, typesOf, isOtherCode } from '../../lib/iso14224Taxonomy';
 import { CLASS_PARAMETERS, CATEGORY_PARAMETERS } from '../../lib/iso14224Parameters';
 import { OPERATING_MODES, REDUNDANCY_OPTIONS, ENVIRONMENT_OPTIONS } from '../../lib/operatingContext';
@@ -550,6 +550,39 @@ export function downloadReadingsTemplate(): void {
 // The codes a CMMS history refers to. Without them, imported failure codes are
 // free text that resolves to nothing in the semantic layer — the analytics
 // count the record as "coded" while the code itself decodes to blank.
+/**
+ * Criticality as the database stores it: the enum is A, B, C, D and nothing
+ * else. Source systems do not speak that alphabet — SAP's ABC indicator is
+ * A/B/C, Maximo priorities are 1–4, and hand-built sheets say LOW / HIGH.
+ *
+ * Until this existed the importer upper-cased whatever the cell held and sent
+ * it to Postgres, which rejected "LOW" with an enum error. The row failed, and
+ * because it was a site, every system and pump beneath it failed too with
+ * "nowhere to hang". The Validate step had even flagged the value — as an amber
+ * warning beside a green tick, so the file was "3 of 3 valid" right up to the
+ * moment it wasn't.
+ *
+ * Returns the stored code, or null when the value cannot be read as any
+ * criticality. `mapped` says a synonym was translated, so the caller can tell
+ * the user what it read.
+ */
+export type CriticalityCode = 'A' | 'B' | 'C' | 'D';
+const CRITICALITY_SYNONYMS: Record<string, CriticalityCode> = {
+    A: 'A', B: 'B', C: 'C', D: 'D',
+    '1': 'A', '2': 'B', '3': 'C', '4': 'D',
+    CRITICAL: 'A', SAFETY: 'A', 'SAFETY CRITICAL': 'A', 'VERY HIGH': 'A', VITAL: 'A',
+    HIGH: 'B', PRODUCTION: 'B', ESSENTIAL: 'B', IMPORTANT: 'B',
+    MEDIUM: 'C', MED: 'C', GENERAL: 'C', NORMAL: 'C', STANDARD: 'C',
+    LOW: 'D', MINOR: 'D', 'LOW IMPACT': 'D', 'NON-CRITICAL': 'D', NONCRITICAL: 'D', 'NON CRITICAL': 'D',
+};
+export function normaliseCriticality(raw: unknown): { code: CriticalityCode | null; mapped: boolean; input: string } {
+    const input = String(raw ?? '').trim();
+    if (!input) return { code: null, mapped: false, input };
+    const key = input.toUpperCase().replace(/[_\s]+/g, ' ');
+    const code = CRITICALITY_SYNONYMS[key] ?? CRITICALITY_SYNONYMS[key.replace(/\s+/g, '')] ?? null;
+    return { code, mapped: !!code && code !== key, input };
+}
+
 export const CODE_CATEGORIES = [
     'FAILURE_MODE', 'FAILURE_CAUSE', 'FAULT_TYPE', 'REMEDY_CODE', 'WORK_TYPE', 'PRIORITY',
 ];
@@ -1483,6 +1516,22 @@ export function parseImportFile(file: File, forceType?: ImportType, sheetName?: 
                     sapProfile.enrich(prepared.map(p => p.rowData), { sheet: sig => readSapSheet(wb, sig) });
                 }
 
+                // Which level each tag IN THIS FILE lands at, so pass 2 can tell a
+                // row that its parent cannot hold it before the import does. The
+                // engine still owns the check for parents already in the register
+                // (that needs the database), but a whole tree arriving in one file
+                // is the migration case, and "SYSTEM cannot sit under SITE" is a
+                // structural fact the file alone reveals. Until now Validate ticked
+                // such a row green and the import failed it, plus every row below.
+                const levelByFileTag = new Map<string, string>();
+                if (type === 'asset') {
+                    for (const { rowData } of prepared) {
+                        const tag = String(rowData['tag'] || '').toUpperCase();
+                        const lvl = resolveLevelCode({ hierarchyLevel: rowData['hierarchylevel'], assetType: rowData['assettype'] });
+                        if (tag && lvl) levelByFileTag.set(tag, lvl);
+                    }
+                }
+
                 const parsedRows: ParsedRow[] = prepared.map(({ rowData, sheetRow }) => {
                     const errors: string[] = [];
                     const warnings: string[] = sapProfile?.rowWarnings ? sapProfile.rowWarnings(rowData) : [];
@@ -1504,8 +1553,23 @@ export function parseImportFile(file: File, forceType?: ImportType, sheetName?: 
                             const tag = rowData['tag'];
                             if (tag && seenKeys.has(tag.toUpperCase())) errors.push(`Duplicate tag: ${tag}`);
                             if (tag) seenKeys.add(tag.toUpperCase());
-                            const crit = rowData['criticality'];
-                            if (crit && !['A', 'B', 'C', 'D'].includes(crit.toUpperCase())) warnings.push(`Invalid criticality "${crit}"`);
+                            // Same reader the import engine uses, so Validate and Import
+                            // cannot disagree about a value again.
+                            const critNorm = normaliseCriticality(rowData['criticality']);
+                            // Resolve the level the same way the engine does — from
+                            // hierarchyLevel OR assetType — or a row that names its
+                            // level in assetType escapes this check and fails later.
+                            const rowLevel = resolveLevelCode({ hierarchyLevel: rowData['hierarchylevel'], assetType: rowData['assettype'] });
+                            if (critNorm.input && !critNorm.code) {
+                                const lvl = rowLevel ?? '';
+                                if (lvl && criticalityRequired({ hierarchyLevel: lvl })) {
+                                    errors.push(`Criticality "${critNorm.input}" is not one of A, B, C, D (or a synonym such as HIGH / LOW / 1–4) — required for ${lvl}`);
+                                } else {
+                                    warnings.push(`Criticality "${critNorm.input}" is not one of A, B, C, D — it will be left blank`);
+                                }
+                            } else if (critNorm.mapped) {
+                                warnings.push(`Criticality "${critNorm.input}" read as ${critNorm.code}`);
+                            }
                             const status = rowData['status'];
                             if (status && !['ACTIVE', 'OPERATING', 'MAINTENANCE', 'STANDBY', 'DOWN', 'DECOMMISSIONED'].includes(status.toUpperCase())) warnings.push(`Invalid status "${status}"`);
                             // The level must resolve here or the row can't be placed. Deeper
@@ -1516,6 +1580,15 @@ export function parseImportFile(file: File, forceType?: ImportType, sheetName?: 
                             }
                             if (tag && rowData['parenttag'] && rowData['parenttag'].toUpperCase() === tag.toUpperCase()) {
                                 errors.push('parentTag cannot be the row\'s own tag');
+                            }
+                            {
+                                const parentTag = String(rowData['parenttag'] || '').toUpperCase();
+                                const parentLevel = parentTag ? levelByFileTag.get(parentTag) : undefined;
+                                const ownLevel = rowLevel;
+                                if (parentLevel && ownLevel && !isValidChild({ hierarchyLevel: parentLevel }, ownLevel)) {
+                                    const allowed = getLevelConfig(parentLevel)?.allowedChildCodes ?? [];
+                                    errors.push(`${ownLevel} cannot sit under ${parentLevel} "${rowData['parenttag']}" (allowed there: ${allowed.join(', ') || 'none'})`);
+                                }
                             }
                             break;
                         }

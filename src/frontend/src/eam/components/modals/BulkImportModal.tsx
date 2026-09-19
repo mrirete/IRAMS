@@ -72,7 +72,7 @@ interface BulkImportModalProps {
      */
     onImportData: (type: ImportType, rows: Record<string, string>[]) => Promise<ImportResult | void>;
     /** Raw-row asset handler. Hierarchy resolution happens in the handler. */
-    onImportAssets?: (rows: Record<string, string>[]) => Promise<ImportResult | void>;
+    onImportAssets?: (rows: Record<string, string>[], meta?: { fileName?: string }) => Promise<ImportResult | void>;
     /** Raw-row BOM handler — the engine (importBoms) owns resolution and dedup. */
     onImportBOMs?: (rows: Record<string, string>[]) => Promise<ImportResult | void>;
 }
@@ -165,7 +165,7 @@ export default function BulkImportModal({
             // modal no longer pre-flattens them (that path silently dropped
             // parentTag and defaulted every criticality to 'C').
             if (parseResult.type === 'asset' && onImportAssets) {
-                const res = await onImportAssets(validRows);
+                const res = await onImportAssets(validRows, { fileName: lastFile?.name });
                 if (res) setResult(res);
             } else if (parseResult.type === 'bom' && onImportBOMs) {
                 // Raw rows, like assets: the engine resolves codes and reports
@@ -391,17 +391,21 @@ export default function BulkImportModal({
                                     <table className="w-full text-xs">
                                         <thead className="bg-slate-50 sticky top-0">
                                             <tr>
-                                                <th className="px-3 py-2 text-left font-bold text-slate-500">Row</th>
+                                                {/* On a phone the table was five columns wide and the fifth —
+                                                    Issues, the only one that says WHY a row failed — sat off the
+                                                    right edge. The count said "2 errors"; the reasons were invisible.
+                                                    Below sm the issues render under the key instead. */}
+                                                <th className="hidden sm:table-cell px-3 py-2 text-left font-bold text-slate-500">Row</th>
                                                 <th className="px-3 py-2 text-left font-bold text-slate-500">Status</th>
                                                 <th className="px-3 py-2 text-left font-bold text-slate-500">{keyField1 || 'Key'}</th>
-                                                <th className="px-3 py-2 text-left font-bold text-slate-500">{keyField2 || 'Description'}</th>
-                                                <th className="px-3 py-2 text-left font-bold text-slate-500">Issues</th>
+                                                <th className="hidden sm:table-cell px-3 py-2 text-left font-bold text-slate-500">{keyField2 || 'Description'}</th>
+                                                <th className="hidden sm:table-cell px-3 py-2 text-left font-bold text-slate-500">Issues</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {parseResult.rows.map(row => (
                                                 <tr key={row.rowIndex} className={row.isValid ? 'bg-white' : 'bg-red-50/30'}>
-                                                    <td className="px-3 py-2 font-mono text-slate-400">{row.rowIndex}</td>
+                                                    <td className="hidden sm:table-cell px-3 py-2 font-mono text-slate-400">{row.rowIndex}</td>
                                                     <td className="px-3 py-2">
                                                         {row.isValid ? (
                                                             <CheckCircle2 size={14} className="text-emerald-500" />
@@ -409,13 +413,24 @@ export default function BulkImportModal({
                                                             <XCircle size={14} className="text-red-500" />
                                                         )}
                                                     </td>
-                                                    <td className="px-3 py-2 font-semibold text-slate-700">
+                                                    <td className="px-3 py-2 font-semibold text-slate-700 align-top">
+                                                        <span className="sm:hidden text-[10px] font-mono font-normal text-slate-400 mr-1.5">#{row.rowIndex}</span>
                                                         {row.data[keyField1] || '—'}
+                                                        {/* phone: name + issues stacked under the key */}
+                                                        <div className="sm:hidden mt-0.5 space-y-0.5">
+                                                            {row.data[keyField2] && <div className="text-[11px] font-normal text-slate-500 truncate max-w-[220px]">{row.data[keyField2]}</div>}
+                                                            {row.errors.map((e, i) => (
+                                                                <div key={`me${i}`} className="text-[10px] font-normal bg-red-100 text-red-700 px-1.5 py-0.5 rounded leading-snug">{e}</div>
+                                                            ))}
+                                                            {row.warnings.map((w, i) => (
+                                                                <div key={`mw${i}`} className="text-[10px] font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded leading-snug">{w}</div>
+                                                            ))}
+                                                        </div>
                                                     </td>
-                                                    <td className="px-3 py-2 text-slate-600 max-w-[180px] truncate">
+                                                    <td className="hidden sm:table-cell px-3 py-2 text-slate-600 max-w-[180px] truncate">
                                                         {row.data[keyField2] || '—'}
                                                     </td>
-                                                    <td className="px-3 py-2">
+                                                    <td className="hidden sm:table-cell px-3 py-2">
                                                         {row.errors.map((e, i) => (
                                                             <span key={`e${i}`} className="inline-block text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded mr-1 mb-0.5">{e}</span>
                                                         ))}
@@ -490,9 +505,18 @@ export default function BulkImportModal({
                                     {/* Batch-level notes */}
                                     {result?.notes && result.notes.length > 0 && (
                                         <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
-                                            {result.notes.map((n, i) => (
+                                            {/* Capped: notes are per-batch summaries now, but a long
+                                                import can still produce per-row ones (cost centres,
+                                                equipment numbers) and an uncapped list would fill the
+                                                panel with thousands of lines. */}
+                                            {result.notes.slice(0, 25).map((n, i) => (
                                                 <div key={i} className="text-xs text-slate-600">• {n}</div>
                                             ))}
+                                            {result.notes.length > 25 && (
+                                                <div className="text-xs text-slate-400 italic">
+                                                    …and {result.notes.length - 25} more note{result.notes.length - 25 === 1 ? '' : 's'}.
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
