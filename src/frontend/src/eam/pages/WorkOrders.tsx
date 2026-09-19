@@ -1658,7 +1658,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             sysEntries.push({ ...stamp(), entry: `Status changed: ${localJob.status || '—'} → ${updates.status}${updates.status === 'WAIT' && updates.waitReason ? ` — ${updates.waitReason}` : ''}` });
         }
         if (updates.assignedTo !== undefined && updates.assignedTo !== localJob.assignedTo) {
-            sysEntries.push({ ...stamp(), entry: `Assignment changed: ${localJob.assignedTo || 'unassigned'} → ${updates.assignedTo || 'unassigned'}` });
+            // Names, not ids — the journal is read by people (2026-09-19 register #33).
+            const who = (id?: string | null) => { if (!id) return 'unassigned'; const c = (contacts || []).find((x: any) => x.id === id || x.userId === id || x.user_id === id) || (users || []).find((u: any) => u.id === id || u.contact_id === id || u.contactId === id); return c?.name || c?.fullName || c?.full_name || c?.username || id; };
+            sysEntries.push({ ...stamp(), entry: `Assignment changed: ${who(localJob.assignedTo)} → ${who(updates.assignedTo)}` });
         }
         if (sysEntries.length > 0) {
             updates = { ...updates, journals: [...sysEntries, ...(updates.journals || localJob.journals || [])] };

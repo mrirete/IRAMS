@@ -3368,13 +3368,26 @@ export class DatabaseService {
      * (Scheduling drag, Backlog assign) — write the same system journal line the
      * page writes, so the record and My Work can say who assigned it and when.
      */
+    /** People's names for ids in journal text (contacts.id or users.id); unknown ids fall back to the id. */
+    public async personLabels(ids: (string | null | undefined)[]): Promise<Map<string, string>> {
+        const want = [...new Set(ids.filter((x): x is string => !!x && /^[0-9a-f]{8}-/i.test(x)))];
+        const out = new Map<string, string>();
+        if (!want.length) return out;
+        const { data } = await supabase.from('contacts').select('id, user_id, name, code').or(`id.in.(${want.join(',')}),user_id.in.(${want.join(',')})`);
+        for (const c of data || []) { const label = c.name || c.code; if (!label) continue; if (c.id) out.set(c.id, label); if (c.user_id) out.set(c.user_id, label); }
+        return out;
+    }
+
     public async journalAssignment(woId: string, previous: string | null | undefined, next: string | null | undefined, actorName: string): Promise<void> {
         if ((previous || null) === (next || null)) return;
+        // Names, not ids: the journal is read by people (2026-09-19 register #33).
+        const names = await this.personLabels([previous, next]).catch(() => new Map<string, string>());
+        const label = (id: string | null | undefined) => id ? (names.get(id) || id) : 'unassigned';
         const { error } = await supabase.from('journal_entries').insert({
             entity_id: woId,
             entity_type: 'WORK_ORDER',
             entry_type: 'SYSTEM',
-            entry: `Assignment changed: ${previous || 'unassigned'} → ${next || 'unassigned'}`,
+            entry: `Assignment changed: ${label(previous)} → ${label(next)}`,
             is_system: true,
             client_id: (globalThis.crypto?.randomUUID?.() ?? `sys-${Date.now()}`),
             author_name: actorName,
