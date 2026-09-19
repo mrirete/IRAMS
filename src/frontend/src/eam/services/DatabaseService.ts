@@ -3558,10 +3558,15 @@ export class DatabaseService {
             stockLocations: row.inventory_stock
                 ?.filter((stk: any) => stk.location && stk.location.id) // Filter out broken links
                 .map((stk: any) => ({
-                    id: stk.location.id, // Verified existing by filter
+                    // The row is keyed by the STOCK row, not the store. One item can
+                    // only hold one row per store (UNIQUE item_id, location_id), and
+                    // when the id was the store id every row for a single-store item
+                    // collided: edit one, edit all; add a second, the save fails.
+                    id: stk.id,
+                    storeId: stk.location.id, // Verified existing by filter
                     storeName: stk.location.name || 'Unknown',
-                    qtyOnHand: stk.quantity,
-                    binLocation: stk.bin_location,
+                    qtyOnHand: parseFloat(stk.quantity) || 0,
+                    binLocation: stk.bin_location || '',
                     stockId: stk.id,
                     minQty: stk.min_level || 0,
                     maxQty: stk.max_level || 0,
@@ -4421,8 +4426,8 @@ export class DatabaseService {
             const txInserts: any[] = [];
 
             for (const stock of initialStock) {
-                // stock.id should be the location ID based on Inventory.tsx update
-                const locationId = stock.id;
+                // storeId is the inventory_locations uuid; older callers put it in id.
+                const locationId = stock.storeId ?? stock.id;
 
                 // Basic validation for UUID-like ID
                 if (locationId && locationId.length > 10 && !locationId.startsWith('loc-')) {
@@ -4436,15 +4441,18 @@ export class DatabaseService {
                         min_level: stock.min ?? stock.minQty ?? 0,
                         max_level: stock.max ?? stock.maxQty ?? 0,
                         reorder_qty: stock.reorderQty || 0,
-                        bin_location: stock.bin ?? stock.binLocation ?? ''
+                        bin_location: String(stock.bin ?? stock.binLocation ?? '').trim()
                     });
 
                     if (stock.qtyOnHand > 0) {
                         txInserts.push({
                             item_id: data.id,
+                            location_id: locationId,
                             transaction_type: 'ADJUST',
+                            movement_type: '561', // initial stock entry
                             quantity: stock.qtyOnHand,
                             cost_at_time: item.unit_cost || 0,
+                            notes: 'Initial stock on item creation',
                             timestamp: new Date().toISOString()
                         });
                     }
@@ -4473,12 +4481,25 @@ export class DatabaseService {
      * Respects referential integrity by cascading child records first.
      */
     public async deleteInventoryItem(id: string): Promise<void> {
-        // 1. Remove stock location records
+        // 1. Remove stock location records.
+        //
+        // This used to target `inventory_stock_locations`, a table that does
+        // not exist, and swallow the error. The real rows live in
+        // inventory_stock, whose item_id FK is NO ACTION — so every item that
+        // had ever been given a store failed to delete with an FK violation.
+        const { data: held } = await supabase
+            .from('inventory_stock')
+            .select('quantity')
+            .eq('item_id', id);
+        const onHand = (held || []).reduce((n: number, r: any) => n + (parseFloat(r.quantity) || 0), 0);
+        if (onHand > 0) {
+            throw new Error(`Cannot delete this item: ${onHand} still on hand across its stores. Adjust the stock to zero first, or deactivate the item.`);
+        }
         const { error: stockErr } = await supabase
-            .from('inventory_stock_locations')
+            .from('inventory_stock')
             .delete()
-            .eq('inventory_item_id', id);
-        if (stockErr) console.warn('Non-fatal: stock location cleanup:', stockErr.message);
+            .eq('item_id', id);
+        if (stockErr) throw new Error(`Failed to remove the item's store rows: ${stockErr.message}`);
 
         // 2. Movement history is NOT purged.
         //
@@ -4548,30 +4569,110 @@ export class DatabaseService {
             // return { ...updates, id } as any;
         }
 
-        // Handle Stock Updates (Upsert)
+        // Handle Stock Updates — the item's store rows: bin, min, max, reorder.
+        //
+        // Quantity is deliberately NOT written here. It used to be, from the
+        // browser's copy of on-hand, so a PO receipt or another user's
+        // adjustment made between load and Save was silently overwritten with
+        // no movement to explain it. On-hand moves only through
+        // adjustInventoryStock / receivePOLine, which record the movement.
         if (stockUpdates && stockUpdates.length > 0) {
-            const stockUpserts = stockUpdates.map(s => ({
-                item_id: id,
-                location_id: s.id, // Ensure this maps to location_id
-                quantity: s.qtyOnHand || 0,
-                min_level: s.minQty || s.min || 0,
-                max_level: s.maxQty || s.max || 0,
-                reorder_qty: s.reorderQty || 0,
-                bin_location: s.binLocation || s.bin || ''
-            }));
-
-            // Upsert functionality via supabase
-            const { error: stockError } = await supabase
-                .from('inventory_stock')
-                .upsert(stockUpserts, { onConflict: 'item_id,location_id' });
-
-            if (stockError) {
-                console.error("Stock update failed", stockError);
-                throw stockError;
-            }
+            await this.saveStockLocations(id, stockUpdates);
         }
 
         return data;
+    }
+
+    /**
+     * Save an item's store rows (bin / min / max / reorder). One row per store:
+     * two entries for the same store are refused up front, because Postgres
+     * would refuse them anyway ("ON CONFLICT DO UPDATE command cannot affect
+     * row a second time") with a message nobody can act on.
+     *
+     * Omitting `quantity` from the payload means an insert gets the default 0
+     * and a conflict-update leaves it alone. A NEW row with an opening
+     * quantity is then stocked through adjustInventoryStock, so the opening
+     * balance is a movement and not a bare number.
+     */
+    public async saveStockLocations(itemId: string, locs: any[], actor = 'USER'): Promise<void> {
+        const storeOf = (s: any): string | undefined => s.storeId ?? (s.stockId ? undefined : s.id);
+        const seen = new Set<string>();
+        const rows: any[] = [];
+        for (const s of locs) {
+            const locationId = storeOf(s);
+            if (!locationId || locationId.length < 10) continue; // no real store yet
+            if (seen.has(locationId)) {
+                throw new Error(`${s.storeName || 'This store'} appears twice. An item holds one row per store — edit the existing row's bin instead of adding the store again.`);
+            }
+            seen.add(locationId);
+            rows.push({
+                item_id: itemId,
+                location_id: locationId,
+                min_level: Number(s.minQty ?? s.min) || 0,
+                max_level: Number(s.maxQty ?? s.max) || 0,
+                reorder_qty: Number(s.reorderQty) || 0,
+                bin_location: String(s.binLocation ?? s.bin ?? '').trim()
+            });
+        }
+        if (rows.length === 0) return;
+
+        const { error } = await supabase
+            .from('inventory_stock')
+            .upsert(rows, { onConflict: 'item_id,location_id' });
+        if (error) {
+            console.error('Stock location save failed', error);
+            throw error;
+        }
+
+        // Opening balance for rows that did not exist before this save.
+        for (const s of locs) {
+            const locationId = storeOf(s);
+            const opening = Number(s.qtyOnHand) || 0;
+            if (!s.stockId && locationId && opening > 0) {
+                await this.adjustInventoryStock(itemId, locationId, opening, 'STOCKTAKE',
+                    `Opening balance at ${s.storeName || 'new store'}`, actor);
+            }
+        }
+    }
+
+    /**
+     * On-order at one store — written by purchasing when a line is ordered or
+     * received. The generic item save never wrote qty_on_order, so the column
+     * was read on every Stores tab and written by nothing.
+     */
+    public async setStockOnOrder(itemId: string, locationId: string, qtyOnOrder: number): Promise<void> {
+        const { error } = await supabase
+            .from('inventory_stock')
+            .upsert(
+                { item_id: itemId, location_id: locationId, qty_on_order: Math.max(0, qtyOnOrder) },
+                { onConflict: 'item_id,location_id' },
+            );
+        if (error) throw error;
+    }
+
+    /**
+     * Remove one store row from an item. Refused while it still holds stock —
+     * a row with parts in it disappearing is a stock loss with no movement.
+     * Movement history is not keyed by the row, so nothing the ledger relies
+     * on goes with it.
+     */
+    public async deleteStockLocation(stockId: string): Promise<void> {
+        const { data: row, error: readErr } = await supabase
+            .from('inventory_stock')
+            .select('quantity, qty_on_order')
+            .eq('id', stockId)
+            .maybeSingle();
+        if (readErr) throw readErr;
+        if (!row) return; // already gone
+        const qty = parseFloat(row.quantity) || 0;
+        if (qty !== 0) {
+            throw new Error(`This store still holds ${qty} on hand. Adjust it to zero before removing the location.`);
+        }
+        if ((parseFloat(row.qty_on_order) || 0) > 0) {
+            throw new Error(`This store has ${row.qty_on_order} on order. Receive or cancel the order before removing the location.`);
+        }
+        const { error } = await supabase.from('inventory_stock').delete().eq('id', stockId);
+        if (error) throw error;
     }
 
     public async adjustInventoryStock(

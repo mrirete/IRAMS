@@ -50,7 +50,9 @@ function StockAdjustmentModal({ isOpen, onClose, item, onSuccess }: {
     item: InventoryItem;
     onSuccess: () => void;
 }) {
-    const [selectedLocationId, setSelectedLocationId] = useState(item.stockLocations[0]?.id || '');
+    // Store (inventory_locations) id — the row id is the stock row.
+    const storeOf = (l: InventoryLocation) => l.storeId || l.id;
+    const [selectedLocationId, setSelectedLocationId] = useState(storeOf(item.stockLocations[0] || ({} as InventoryLocation)) || '');
     const [adjType, setAdjType] = useState<'STOCKTAKE' | 'ADJUSTMENT'>('STOCKTAKE');
     const [quantity, setQuantity] = useState<string>(''); // string input for ease
     const [reason, setReason] = useState('');
@@ -77,7 +79,7 @@ function StockAdjustmentModal({ isOpen, onClose, item, onSuccess }: {
             // Ah, I implemented it so that `newLocationQty` MUST BE THE TARGET QUANTITY regardless of type.
             // So I need to calculate it here if it's an adjustment.
 
-            const loc = item.stockLocations.find(l => l.id === selectedLocationId);
+            const loc = item.stockLocations.find(l => storeOf(l) === selectedLocationId);
             const currentQty = loc?.qtyOnHand || 0;
 
             let targetQty = qtyNum;
@@ -120,7 +122,7 @@ function StockAdjustmentModal({ isOpen, onClose, item, onSuccess }: {
                         >
                             {item.stockLocations.length === 0 && <option value="">No Store Locations</option>}
                             {item.stockLocations.map(loc => (
-                                <option key={loc.id} value={loc.id}>{loc.storeName} (Current: {loc.qtyOnHand})</option>
+                                <option key={loc.id} value={storeOf(loc)}>{loc.storeName}{loc.binLocation ? ` / ${loc.binLocation}` : ''} (Current: {loc.qtyOnHand})</option>
                             ))}
                         </select>
                     </div>
@@ -575,16 +577,17 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
             totalQtyOnHand: Number(formData.totalQtyOnHand) || 0,
             totalQtyOnOrder: 0,
             suppliers: [],
-            stockLocations: [{
-                id: selectedStoreId, // Use actual Store ID
+            stockLocations: selectedStoreId ? [{
+                id: `new-${selectedStoreId}`,
+                storeId: selectedStoreId,
                 storeName: selectedStoreName,
-                binLocation: selectedBinCode || 'UNASSIGNED',
+                binLocation: selectedBinCode.trim(),
                 qtyOnHand: Number(formData.totalQtyOnHand) || 0,
                 minQty: 0,
                 maxQty: 0,
                 reorderQty: 0,
                 qtyOnOrder: 0
-            }],
+            }] : [],
             minLevel: 0,
             maxLevel: 100,
             costCenterId: formData.costCenterId,
@@ -1028,13 +1031,22 @@ function PreferredSupplierPicker({ value, onChange }: { value: string; onChange:
 
 // --- Enhanced Stores Tab (Add/Edit Support) ---
 
-function StoresTab({ item, stores, onUpdate, canCreate = true, canEdit = true, canDelete = true }: { item: InventoryItem; stores: Store[]; onUpdate: (item: InventoryItem) => void; canCreate?: boolean; canEdit?: boolean; canDelete?: boolean }) {
+function StoresTab({ item, stores, onUpdate, onRemoved, canCreate = true, canEdit = true, canDelete = true }: { item: InventoryItem; stores: Store[]; onUpdate: (item: InventoryItem) => void; onRemoved?: (item: InventoryItem) => void; canCreate?: boolean; canEdit?: boolean; canDelete?: boolean }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingLocId, setEditingLocId] = useState<string | null>(null);
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; locId: string | null }>({
         isOpen: false,
         locId: null
     });
+    const [removing, setRemoving] = useState(false);
+    const { showToast } = useToast();
+
+    // An item holds ONE row per store; the bin is that row's attribute. So
+    // "Add Location" only offers stores the item is not in yet, and a store
+    // already present is edited, never added twice (the save would refuse it).
+    const storeOf = (l: InventoryLocation) => l.storeId || l.id;
+    const usedStoreIds = new Set(item.stockLocations.map(storeOf));
+    const freeStores = stores.filter(s => !usedStoreIds.has(s.id));
 
     const handleSaveLocation = (loc: InventoryLocation) => {
         let newLocations;
@@ -1052,12 +1064,32 @@ function StoresTab({ item, stores, onUpdate, canCreate = true, canEdit = true, c
         setDeleteModal({ isOpen: true, locId });
     };
 
-    const handleConfirmDeleteLocation = () => {
-        if (deleteModal.locId) {
-            onUpdate({ ...item, stockLocations: item.stockLocations.filter(l => l.id !== deleteModal.locId) });
+    // Removing a store row is a real delete, not a draft: the item save only
+    // upserts what remains, so a row dropped from the draft used to come back
+    // on the next reload. The service refuses while the row still holds stock.
+    const handleConfirmDeleteLocation = async () => {
+        const loc = item.stockLocations.find(l => l.id === deleteModal.locId);
+        if (!loc) { setDeleteModal({ isOpen: false, locId: null }); return; }
+        const remaining = item.stockLocations.filter(l => l.id !== loc.id);
+        if (!loc.stockId) {
+            // Never saved — just drop it from the draft.
+            onUpdate({ ...item, stockLocations: remaining });
+            setDeleteModal({ isOpen: false, locId: null });
+            return;
         }
-        setDeleteModal({ isOpen: false, locId: null });
+        setRemoving(true);
+        try {
+            await DatabaseService.getInstance().deleteStockLocation(loc.stockId);
+            (onRemoved || onUpdate)({ ...item, stockLocations: remaining });
+            showToast(`Removed ${loc.storeName}${loc.binLocation ? ` / ${loc.binLocation}` : ''}.`, 'success');
+            setDeleteModal({ isOpen: false, locId: null });
+        } catch (e: any) {
+            showToast(e.message || 'Could not remove the location.', 'error');
+        } finally {
+            setRemoving(false);
+        }
     };
+    const pendingDelete = item.stockLocations.find(l => l.id === deleteModal.locId);
 
     const openEdit = (loc: InventoryLocation) => {
         setEditingLocId(loc.id);
@@ -1075,9 +1107,12 @@ function StoresTab({ item, stores, onUpdate, canCreate = true, canEdit = true, c
                 <h3 className="font-bold text-slate-700">Stock Locations</h3>
                 <button
                     onClick={openAdd}
-                    disabled={!canCreate}
-                    className={`text-xs bg-primary-600 text-white px-3 py-1.5 rounded flex items-center gap-1 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
-                    title={!canCreate ? 'Insufficient permissions' : 'Add Location'}
+                    disabled={!canCreate || freeStores.length === 0}
+                    className={`text-xs bg-primary-600 text-white px-3 py-1.5 rounded flex items-center gap-1 ${(!canCreate || freeStores.length === 0) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
+                    title={!canCreate ? 'Insufficient permissions'
+                        : stores.length === 0 ? 'No stores defined yet — add one under Inventory › Stores'
+                        : freeStores.length === 0 ? 'This item is already in every store. Edit a row to change its bin.'
+                        : 'Add Location'}
                 >
                     <Plus size={14} /> Add Location
                 </button>
@@ -1099,7 +1134,11 @@ function StoresTab({ item, stores, onUpdate, canCreate = true, canEdit = true, c
                     {item.stockLocations.map(loc => (
                         <tr key={loc.id} className="hover:bg-slate-50 group">
                             <td className="px-4 py-3 text-sm font-medium text-slate-900">{loc.storeName}</td>
-                            <td className="px-4 py-3 text-sm font-mono text-blue-600 bg-blue-50/50">{loc.binLocation}</td>
+                            <td className="px-4 py-3 text-sm font-mono bg-blue-50/50">
+                                {loc.binLocation
+                                    ? <button type="button" onClick={() => canEdit && openEdit(loc)} className="text-blue-600 hover:underline" title="Edit bin">{loc.binLocation}</button>
+                                    : <button type="button" onClick={() => canEdit && openEdit(loc)} className="text-slate-400 italic font-sans hover:underline" title="Set a bin">no bin</button>}
+                            </td>
                             <td className="px-4 py-3 text-sm text-right text-slate-500">{loc.minQty}</td>
                             <td className="px-4 py-3 text-sm text-right text-slate-500">{loc.maxQty}</td>
                             <td className="px-4 py-3 text-sm text-right text-slate-500">{loc.reorderQty}</td>
@@ -1125,16 +1164,18 @@ function StoresTab({ item, stores, onUpdate, canCreate = true, canEdit = true, c
                 onClose={() => setDeleteModal({ isOpen: false, locId: null })}
                 onConfirm={handleConfirmDeleteLocation}
                 title="Remove Stock Location?"
-                message="Are you sure you want to remove this store location? This will delete stock history for this specific location."
+                message={pendingDelete && pendingDelete.qtyOnHand !== 0
+                    ? `${pendingDelete.storeName} still holds ${pendingDelete.qtyOnHand} on hand. Adjust it to zero first — the location cannot be removed with stock in it.`
+                    : 'Remove this store from the item? Movement history is kept.'}
                 type="danger"
-                confirmText="Remove Location"
+                confirmText={removing ? 'Removing…' : 'Remove Location'}
             />
             {/* Location Add/Edit Modal */}
             {isModalOpen && (
                 <LocationModal
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
-                    stores={stores}
+                    stores={editingLocId ? stores : freeStores}
                     existingLocation={item.stockLocations.find(l => l.id === editingLocId)}
                     onSave={handleSaveLocation}
                 />
@@ -1150,19 +1191,18 @@ function LocationModal({ isOpen, onClose, stores, existingLocation, onSave }: {
     existingLocation?: InventoryLocation;
     onSave: (loc: InventoryLocation) => void;
 }) {
-    const [selectedStoreId, setSelectedStoreId] = useState(
-        stores.find(s => s.name === existingLocation?.storeName)?.id || stores[0]?.id || ''
-    );
+    const existingStoreId = existingLocation?.storeId || existingLocation?.id;
+    const [selectedStoreId, setSelectedStoreId] = useState(existingStoreId || stores[0]?.id || '');
 
     // Fix: Update state when props change (re-opening modal for different item)
     useEffect(() => {
         if (isOpen) {
-            setSelectedStoreId(existingLocation ? existingLocation.id : (stores[0]?.id || ''));
+            setSelectedStoreId(existingStoreId || stores[0]?.id || '');
             setFormData(existingLocation || {
                 minQty: 0, maxQty: 0, reorderQty: 0, binLocation: '', qtyOnHand: 0
             });
         }
-    }, [isOpen, existingLocation, stores]);
+    }, [isOpen, existingLocation, existingStoreId, stores]);
 
     // Find store object to get bins
     const selectedStore = stores.find(s => s.id === selectedStoreId);
@@ -1174,10 +1214,15 @@ function LocationModal({ isOpen, onClose, stores, existingLocation, onSave }: {
     const handleSubmit = () => {
         if (!selectedStore) return;
         const newLoc: InventoryLocation = {
-            id: selectedStore.id, // Use actual Store/Location ID
+            // Keep the saved row's id; a new row gets a temp id until it is saved.
+            id: existingLocation?.id || `new-${selectedStore.id}`,
+            stockId: existingLocation?.stockId,
+            storeId: selectedStore.id,
             storeName: selectedStore.name,
-            binLocation: formData.binLocation || 'UNASSIGNED',
-            qtyOnHand: formData.qtyOnHand || 0,
+            // Blank stays blank. 'UNASSIGNED' used to be substituted here and
+            // then persisted as if it were a real bin code.
+            binLocation: (formData.binLocation || '').trim(),
+            qtyOnHand: existingLocation ? existingLocation.qtyOnHand : (Number(formData.qtyOnHand) || 0),
             minQty: Number(formData.minQty) || 0,
             maxQty: Number(formData.maxQty) || 0,
             reorderQty: Number(formData.reorderQty) || 0,
@@ -1207,10 +1252,12 @@ function LocationModal({ isOpen, onClose, stores, existingLocation, onSave }: {
                             }}
                             disabled={!!existingLocation} // Lock store on edit to prevent confusion, usually better to delete/add new
                         >
+                            {stores.length === 0 && <option value="">No store available</option>}
                             {stores.map(s => (
                                 <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                         </select>
+                        {existingLocation && <p className="text-[10px] text-slate-400 mt-1">One row per store. To move stock to another store, add that store and adjust the quantities.</p>}
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bin Location</label>
@@ -1218,9 +1265,10 @@ function LocationModal({ isOpen, onClose, stores, existingLocation, onSave }: {
                             <input
                                 list="store-bins"
                                 type="text"
+                                autoComplete="off"
                                 className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
-                                placeholder="Select or Enter Bin Code"
-                                value={formData.binLocation}
+                                placeholder="Type a bin code, or pick one of the store's bins"
+                                value={formData.binLocation || ''}
                                 onChange={(e) => setFormData({ ...formData, binLocation: e.target.value })}
                             />
                             <datalist id="store-bins">
@@ -1276,8 +1324,9 @@ function LocationModal({ isOpen, onClose, stores, existingLocation, onSave }: {
                 </div>
                 <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancel</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500">Save Location</button>
+                    <button onClick={handleSubmit} disabled={!selectedStore} className="px-4 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed">{existingLocation ? 'Apply' : 'Add'}</button>
                 </div>
+                <p className="px-4 pb-3 -mt-2 text-[10px] text-slate-400 bg-slate-50">Applied to the item's draft — press <strong>Save</strong> in the header to write it.</p>
             </div>
         </div>
     );
@@ -2144,6 +2193,11 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+    // Set by every tab that edits the draft; cleared when the draft is written.
+    // Without it the Stores modal's "Apply" looked like a save and the edit
+    // silently vanished on the next reload.
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [discardPrompt, setDiscardPrompt] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [showStockModal, setShowStockModal] = useState(false);
@@ -2242,8 +2296,20 @@ export function Inventory({ onAnalyze }: InventoryProps) {
 
     const handleLocalUpdate = (updated: InventoryItem) => {
         setSelectedItem(updated);
+        setHasUnsavedChanges(true);
         // Update list view purely for "draft" visualization
         setInventoryItems(prev => prev.map(i => i.id === updated.id ? updated : i));
+    };
+
+    // A store row removed on the server: reflect it without marking the draft dirty.
+    const handleServerUpdate = (updated: InventoryItem) => {
+        setSelectedItem(updated);
+        setInventoryItems(prev => prev.map(i => i.id === updated.id ? updated : i));
+    };
+
+    const closeDetail = () => {
+        if (hasUnsavedChanges) { setDiscardPrompt(true); return; }
+        setSelectedItem(null);
     };
 
     const handleCreateItem = async (newItem: InventoryItem) => {
@@ -2356,8 +2422,13 @@ export function Inventory({ onAnalyze }: InventoryProps) {
 
             await DatabaseService.getInstance().updateInventoryItem(updatedItem.id, dbRecord, updatedItem.stockLocations);
 
-            // Confirmed Save
-            setInventoryItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+            // Confirmed Save — reload so new store rows carry their real ids
+            // (and opening balances their movements) instead of draft ones.
+            setHasUnsavedChanges(false);
+            const fresh = await loadInventory();
+            const refreshed = fresh?.find(i => i.id === updatedItem.id);
+            if (refreshed) setSelectedItem(refreshed);
+            else setInventoryItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
 
             // Notification hook-in: Stock Low Check — netted against open-WO
             // reservations (0201), so fully-committed stock alerts before the
@@ -2834,7 +2905,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                             ? <StorageImage value={selectedItem.image} alt="Preview" className="w-full h-full object-cover rounded" />
                             : <Package size={18} />
                         }
-                        onClose={() => setSelectedItem(null)}
+                        onClose={closeDetail}
                         badges={
                             <>
                                 {!selectedItem.isActive && (
@@ -2861,8 +2932,8 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                 <Button variant="secondary" size="sm" onClick={() => setShowStockModal(true)} disabled={!canEdit} leftIcon={<ClipboardCheck size={14} />} title={!canEdit ? 'Insufficient permissions' : 'Adjust stock'}>
                                     Adjust
                                 </Button>
-                                <Button size="sm" onClick={handleSaveItem} disabled={!canEdit} leftIcon={<Save size={14} />} title={!canEdit ? 'Insufficient permissions' : 'Save changes'}>
-                                    Save
+                                <Button size="sm" onClick={handleSaveItem} disabled={!canEdit} leftIcon={<Save size={14} />} title={!canEdit ? 'Insufficient permissions' : hasUnsavedChanges ? 'Unsaved changes' : 'Save changes'}>
+                                    {hasUnsavedChanges ? 'Save •' : 'Save'}
                                 </Button>
                             </>
                         }
@@ -2886,7 +2957,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                             one. Binds only on wide monitors; narrower panes are unchanged. */}
                         <div className="ers-page-record">
                             {activeTab === 'details' && <DetailsTab item={selectedItem} dictionaries={dictionaries} contacts={contacts} vendors={vendors} onUpdate={handleLocalUpdate} />}
-                            {activeTab === 'stores' && <StoresTab item={selectedItem} stores={stores} onUpdate={handleLocalUpdate} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
+                            {activeTab === 'stores' && <StoresTab item={selectedItem} stores={stores} onUpdate={handleLocalUpdate} onRemoved={handleServerUpdate} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
                             {activeTab === 'suppliers' && <SuppliersTab item={selectedItem} onUpdate={handleLocalUpdate} canCreate={canCreate} />}
                             {activeTab === 'bom' && <BOMTab item={selectedItem} {...{canEdit, canDelete} as any} />}
                             {activeTab === 'jobs' && <JobsTab item={selectedItem} />}
@@ -2898,7 +2969,21 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         </div>
                     </div>
 
-                    {/* Stock Adjustment Modal */}
+                    <ConfirmationModal
+                        isOpen={discardPrompt}
+                        onClose={() => setDiscardPrompt(false)}
+                        onConfirm={async () => {
+                            setDiscardPrompt(false);
+                            setHasUnsavedChanges(false);
+                            setSelectedItem(null);
+                            await loadInventory(); // drop the draft from the list too
+                        }}
+                        title="Discard unsaved changes?"
+                        message="This item has changes that have not been saved. Close without saving?"
+                        type="warning"
+                        confirmText="Discard"
+                    />
+
                     {/* Stock Adjustment Modal */}
                     {showStockModal && selectedItem && (
                         <StockAdjustmentModal

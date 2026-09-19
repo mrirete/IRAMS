@@ -310,17 +310,13 @@ export const PurchaseOrders: React.FC = () => {
         if (item.inventoryId && selectedPO.deliveryContactId) {
             try {
                 const invItem = inventoryItems.find(i => i.id === item.inventoryId);
-                const stockLoc = invItem?.stockLocations?.find((sl: any) => sl.id === selectedPO.deliveryContactId);
+                const stockLoc = invItem?.stockLocations?.find((sl: any) => (sl.storeId || sl.id) === selectedPO.deliveryContactId);
                 const currentOnOrder = stockLoc?.qtyOnOrder || 0;
-                await DatabaseService.getInstance().updateInventoryItem(item.inventoryId, {}, [{
-                    id: selectedPO.deliveryContactId,
-                    qtyOnHand: stockLoc?.qtyOnHand || 0,
-                    minQty: stockLoc?.minQty || 0,
-                    maxQty: stockLoc?.maxQty || 0,
-                    reorderQty: stockLoc?.reorderQty || 0,
-                    qtyOnOrder: currentOnOrder + item.qtyOrdered,
-                    binLocation: stockLoc?.binLocation || ''
-                }]);
+                // Only the on-order figure. This used to go through the item
+                // save, which rewrote on-hand from this page's stale copy and
+                // never wrote qty_on_order at all.
+                await DatabaseService.getInstance().setStockOnOrder(
+                    item.inventoryId, selectedPO.deliveryContactId, currentOnOrder + item.qtyOrdered);
             } catch (e: any) {
                 console.warn('Could not update qty_on_order:', e.message);
             }
@@ -918,18 +914,14 @@ const ItemsTab: React.FC<{
         if (targetItem.inventoryId && deliveryLocationId) {
             try {
                 const invItem = inventoryItems.find(i => i.id === targetItem.inventoryId);
-                const stockLoc = invItem?.stockLocations?.find((sl: any) => sl.id === deliveryLocationId);
+                const stockLoc = invItem?.stockLocations?.find((sl: any) => (sl.storeId || sl.id) === deliveryLocationId);
                 const currentOnOrder = stockLoc?.qtyOnOrder || 0;
                 if (currentOnOrder > 0) {
-                    await db.updateInventoryItem(targetItem.inventoryId, {}, [{
-                        id: deliveryLocationId,
-                        qtyOnHand: (stockLoc?.qtyOnHand || 0) + qtyReceiving,
-                        minQty: stockLoc?.minQty || 0,
-                        maxQty: stockLoc?.maxQty || 0,
-                        reorderQty: stockLoc?.reorderQty || 0,
-                        qtyOnOrder: Math.max(0, currentOnOrder - qtyReceiving),
-                        binLocation: stockLoc?.binLocation || ''
-                    }]);
+                    // On-order only. receivePOLine has already moved on-hand
+                    // and written the movement; the previous item-save call
+                    // here overwrote that on-hand with this page's stale copy
+                    // plus the receipt — wrong after any second receipt.
+                    await db.setStockOnOrder(targetItem.inventoryId, deliveryLocationId, currentOnOrder - qtyReceiving);
                 }
             } catch (e: any) {
                 // Advisory: the receipt itself is already recorded.

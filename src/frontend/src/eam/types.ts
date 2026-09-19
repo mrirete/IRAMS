@@ -546,10 +546,13 @@ export interface InventoryItem {
 }
 
 export interface InventoryLocation {
+  /** The inventory_stock row id once saved; a temp `new-<storeId>` id before. Never the store id. */
   id: string;
-  storeId?: string; // FK to Store
+  /** inventory_stock.id — present only for rows that exist in the database. */
+  stockId?: string;
+  storeId?: string; // FK to Store (inventory_locations)
   storeName: string; // 'Main Store', 'Site B'
-  binLocation: string; // 'C2-01-4-2'
+  binLocation: string; // 'C2-01-4-2'; blank when no bin is set
   qtyOnHand: number;
   minQty: number;
   maxQty: number;
