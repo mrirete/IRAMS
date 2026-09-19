@@ -127,7 +127,9 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
     const prefix = 'px-3 flex items-center text-sm text-slate-500 bg-slate-50 border-r border-slate-200 select-none whitespace-nowrap';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+        <>
+        {/* z-[60]: the phone bottom nav is fixed at z-50 and painted after this overlay, so at z-50 it sat on top of Cancel / Create. */}
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
                 <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -249,5 +251,6 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                 </div>
             </div>
         </div>
+        </>
     );
 };
