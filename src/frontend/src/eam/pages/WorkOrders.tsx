@@ -555,7 +555,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     // ═══ GAP-01: Smart Sort (persisted via localStorage) ═══
     type SortField = 'priority' | 'dueDate' | 'status' | 'created';
     const [sortField, setSortField] = useState<SortField>(() => {
-        return (localStorage.getItem('irams_wo_sort_field') as SortField) || 'priority';
+        return (localStorage.getItem('irams_wo_sort_field') as SortField) || 'created';
     });
     const [sortAsc, setSortAsc] = useState(() => {
         return localStorage.getItem('irams_wo_sort_asc') === 'true';
@@ -596,7 +596,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     }, [myContactId, myUserId]);
     type WOView = { id: string; name: string; builtin?: boolean; statusFilter: WorkOrderStatus | 'ALL'; classFilter: 'ALL' | 'PROACTIVE' | 'REACTIVE'; backlogOnly?: boolean; mineOnly?: boolean; sortField: SortField; sortAsc: boolean };
     const BUILTIN_VIEWS: WOView[] = [
-        { id: 'all', name: 'All Work Orders', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: false, sortField: 'priority', sortAsc: false },
+        { id: 'all', name: 'All Work Orders', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: false, sortField: 'created', sortAsc: false },
         ...((myContactId || myUserId) ? [{ id: 'mine', name: 'Assigned to me', builtin: true, statusFilter: 'ALL' as const, classFilter: 'ALL' as const, backlogOnly: false, mineOnly: true, sortField: 'status' as SortField, sortAsc: false }] : []),
         { id: 'backlog', name: 'Backlog · oldest first', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: true, sortField: 'created', sortAsc: true },
         { id: 'reactive-backlog', name: 'Reactive backlog', builtin: true, statusFilter: 'ALL', classFilter: 'REACTIVE', backlogOnly: true, sortField: 'priority', sortAsc: false },
@@ -874,6 +874,27 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         <p className="text-[11px] md:text-xs text-slate-500">Manage maintenance tasks, schedules, and resources.</p>
                     </div>
                     <div className="flex items-center gap-2">
+                        {/* Sort — the column headers sort too, but nobody found them (2026-09-20). */}
+                        <div className="inline-flex items-stretch rounded-lg border border-slate-200 bg-white text-xs overflow-hidden" title="Sort the list">
+                            <select
+                                aria-label="Sort by"
+                                value={sortField}
+                                onChange={(e) => { const f = e.target.value as SortField; setActiveViewId(''); setSortField(f); const asc = f === 'dueDate'; setSortAsc(asc); localStorage.setItem('irams_wo_sort_field', f); localStorage.setItem('irams_wo_sort_asc', String(asc)); }}
+                                className="text-xs font-semibold text-slate-700 bg-transparent border-0 pl-2.5 pr-7 py-1.5 min-h-[36px] md:min-h-0 focus:ring-0"
+                            >
+                                <option value="created">Newest first</option>
+                                <option value="dueDate">Due date</option>
+                                <option value="priority">Priority</option>
+                                <option value="status">Status</option>
+                            </select>
+                            <button
+                                type="button"
+                                onClick={() => { setActiveViewId(''); const asc = !sortAsc; setSortAsc(asc); localStorage.setItem('irams_wo_sort_asc', String(asc)); }}
+                                className="px-2 border-l border-slate-200 text-slate-500 hover:bg-slate-50"
+                                title={sortAsc ? 'Ascending — click for descending' : 'Descending — click for ascending'}
+                                aria-label="Flip sort direction"
+                            >{sortAsc ? '↑' : '↓'}</button>
+                        </div>
                         {/* U-4: Saved Views selector */}
                         <div className="relative" ref={viewsRef}>
                             <button

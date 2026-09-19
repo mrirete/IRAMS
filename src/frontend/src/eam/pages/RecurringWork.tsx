@@ -392,6 +392,7 @@ export const RecurringWork: React.FC = () => {
     const [selectedGenItems, setSelectedGenItems] = useState<Set<number>>(new Set());
     const [generating, setGenerating] = useState(false);
     const [generationResult, setGenerationResult] = useState<string | null>(null);
+    const [createdOrders, setCreatedOrders] = useState<{ id: string; number: string; title: string }[]>([]);
 
     const handleRunGenerator = () => {
         setGenerationResult(null);
@@ -534,6 +535,7 @@ export const RecurringWork: React.FC = () => {
         const hasChildren = (id: string) => jobs.some(j => j.parentId === id);
         const carried: string[] = [];
         const carriedBy = new Map<string, string>();
+        const createdNow: { id: string; number: string; title: string }[] = [];
         const ordered = Object.entries(pmGroups).sort(([a], [b]) => Number(hasChildren(b)) - Number(hasChildren(a)));
         for (const [pmId, items] of ordered) {
             // Skip mock PMs (they start with 'pm-')
@@ -553,6 +555,7 @@ export const RecurringWork: React.FC = () => {
                     // Only advance PM dates on the last asset so all WOs get the same due date
                     const wo = await db.generateWOFromPM(pmId, assetId, !isLastAssetForPM);
                     created++;
+                    createdNow.push({ id: String((wo as any).id), number: String((wo as any).wo_number ?? ''), title: String((wo as any).title ?? '') });
                     for (const cid of ((wo as any)?.__includedScopes as string[] | undefined) || []) {
                         carriedBy.set(cid, `WO-${(wo as any).wo_number ?? ''}`);
                     }
@@ -577,6 +580,7 @@ export const RecurringWork: React.FC = () => {
             resultMsg += ` ${incomplete.length} generated without part of their plan — ${incomplete.join('; ')}.`;
         }
         setGenerationResult(resultMsg);
+        setCreatedOrders(createdNow);
         showToast(resultMsg, errors > 0 || incomplete.length > 0 ? 'warning' : 'success');
         // Reload strategies to reflect updated next_due_date; refresh the open-order
         // roll-up so the chips and the next Generator run see the orders just raised.
@@ -755,6 +759,7 @@ export const RecurringWork: React.FC = () => {
         setGeneratedPreview([]);
         setSelectedGenItems(new Set());
         setGenerationResult(null);
+        setCreatedOrders([]);
     };
     useEffect(() => {
         if (!showGenerator || generationResult) return;
@@ -1867,11 +1872,20 @@ export const RecurringWork: React.FC = () => {
                         </div>
 
                         <div className="p-4 border-t border-slate-200 bg-white rounded-b-2xl flex justify-between items-center">
-                            <div>
+                            <div className="min-w-0">
                                 {generationResult && (
                                     <span className="text-sm font-medium text-green-700 flex items-center gap-2">
                                         <CheckCircle size={16} /> {generationResult}
                                     </span>
+                                )}
+                                {createdOrders.length > 0 && (
+                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                        {createdOrders.map(o => (
+                                            <Link key={o.id} to={`/work-orders/${o.id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-primary-700 bg-primary-50 border border-primary-200 rounded-lg px-2 py-1 hover:bg-primary-100" title={o.title}>
+                                                Open WO-{o.number} <ChevronRight size={12} />
+                                            </Link>
+                                        ))}
+                                    </div>
                                 )}
                             </div>
                             <div className="flex gap-3">
@@ -2253,17 +2267,37 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                 </select>
                             </div>
                             {/* 0292: Strategy package — same-day absorption by longer packages */}
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Maintenance Strategy</label>
-                                <select
-                                    value={(job as any).strategyId || ''}
-                                    onChange={(e) => onUpdate({ strategyId: e.target.value || undefined, strategyPackage: undefined } as any)}
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500"
-                                >
-                                    <option value="">— None (standalone PM) —</option>
-                                    {strategies.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </select>
-                            </div>
+                            {(() => {
+                                // A strategy here is a set of RCM-derived packages for one asset
+                                // (e.g. "RCM — K-601"). Offering every strategy on every schedule put
+                                // the K-601 compressor's packages on a P-102 filter inspection. Only
+                                // strategies already used by schedules on this schedule's assets apply,
+                                // plus whatever is set today.
+                                const linked = new Set((job.assignedAssets || []).map(a => a.assetId));
+                                const applicable = strategies.filter((st: any) =>
+                                    st.id === (job as any).strategyId
+                                    || jobs.some(o => o.id !== job.id && (o as any).strategyId === st.id && (o.assignedAssets || []).some(a => linked.has(a.assetId))));
+                                return (
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">RCM strategy</label>
+                                        {applicable.length === 0 ? (
+                                            <p className="text-xs text-slate-400 p-2 border border-dashed border-slate-200 rounded-lg">
+                                                None for the linked assets — a standalone schedule. Strategies come from an RCM study on the asset.
+                                            </p>
+                                        ) : (
+                                            <select
+                                                value={(job as any).strategyId || ''}
+                                                onChange={(e) => onUpdate({ strategyId: e.target.value || undefined, strategyPackage: undefined } as any)}
+                                                className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500"
+                                            >
+                                                <option value="">— None (standalone) —</option>
+                                                {applicable.map((st: any) => <option key={st.id} value={st.id}>{st.name}</option>)}
+                                            </select>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                            {selectedStrategy && (
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Strategy Package</label>
                                 <select
@@ -2283,6 +2317,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                     </p>
                                 )}
                             </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Center</label>
                                 <select value={job.costCenter || ''} onChange={(e) => onUpdate({ costCenter: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500">
@@ -3453,9 +3488,14 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                 <span>Permit to Work (PTW) creation happens on the generated Work Order. Define hazards and risk controls here. Items scoring ≥ 15 require mandatory sign-off before WO generation.</span>
             </div>
 
-            {/* 5×5 Risk Matrix Reference */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Risk Matrix Reference (Consequence × Likelihood)</h4>
+            {/* 5×5 Risk Matrix Reference — a lookup table, so closed by default (it took a screen on its own) */}
+            <details className="bg-white border border-slate-200 rounded-lg group">
+                <summary className="cursor-pointer list-none px-4 py-2.5 flex items-center justify-between text-xs font-bold text-slate-500 uppercase select-none">
+                    <span>Risk matrix reference (consequence × likelihood)</span>
+                    <span className="text-[10px] font-medium normal-case text-slate-400 group-open:hidden">show</span>
+                    <span className="text-[10px] font-medium normal-case text-slate-400 hidden group-open:inline">hide</span>
+                </summary>
+                <div className="px-4 pb-4">
                 <div className="overflow-x-auto">
                     <table className="text-[10px] w-full max-w-lg">
                         <thead>
@@ -3483,7 +3523,8 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                         </tbody>
                     </table>
                 </div>
-            </div>
+                </div>
+            </details>
 
             {/* Hazard Cards */}
             <div className="space-y-4">
@@ -3544,7 +3585,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
 
                                     {/* Hierarchy of Controls (ISO 45001) */}
                                     <div>
-                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block">Hierarchy of Controls (ISO 45001)</label>
+                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block">Controls applied <span className="normal-case font-normal text-slate-400">— tick every layer used (ISO 45001 hierarchy)</span></label>
                                         <div className="flex flex-wrap gap-1.5">
                                             {CONTROL_HIERARCHY.map((ctrl, i) => {
                                                 const active = (h.controlHierarchy || []).includes(ctrl);
@@ -3562,12 +3603,12 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                                         className={`px-2 py-1 rounded-md text-[11px] font-bold border transition-all ${active ? colors[i] + ' shadow-sm ring-2 ring-offset-1 ring-current/20' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
                                                             }`}
                                                     >
-                                                        {i + 1}. {ctrl}
+                                                        {active ? '✓ ' : ''}{i + 1}. {ctrl}
                                                     </button>
                                                 );
                                             })}
                                         </div>
-                                        <p className="text-[10px] text-slate-400 mt-1">Most effective (1. Elimination) → Least effective (5. PPE)</p>
+
                                     </div>
 
                                     {/* Controls Description */}
@@ -3576,8 +3617,8 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                         <textarea
                                             value={h.controls}
                                             onChange={(e) => updateHazard(h.id, 'controls', e.target.value)}
-                                            placeholder="Describe the specific control measures, procedures, PPE requirements..."
-                                            className="w-full px-2.5 py-1.5 border border-slate-300 rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-primary-500"
+                                            placeholder="One control per line — isolation, permit, PPE…"
+                                            className="w-full px-2.5 py-1.5 border border-slate-300 rounded-md text-sm h-14 resize-y focus:ring-2 focus:ring-primary-500"
                                         />
                                     </div>
 
