@@ -908,8 +908,13 @@ export const RecurringWork: React.FC = () => {
     const activeTabIndex = TABS.findIndex(t => t.id === activeTab);
     const tabStripRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        tabStripRef.current?.querySelector<HTMLElement>('[data-tab-active]')
-            ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+        // Only when the strip actually overflows: on a wide screen every tab is
+        // already visible, and centring the active one just scrolled the first
+        // tab (Details) out of sight (seen when Create opens on Assets).
+        const strip = tabStripRef.current;
+        if (!strip || strip.scrollWidth <= strip.clientWidth + 2) return;
+        strip.querySelector<HTMLElement>('[data-tab-active]')
+            ?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
     }, [activeTab]);
 
     /**
@@ -1519,7 +1524,15 @@ export const RecurringWork: React.FC = () => {
                                 const raw = String(selectedJob.jobDescription || selectedJob.description || '');
                                 const isWeibullProse = (selectedJob as any).origin?.source === 'weibull_analysis' || raw.includes('Analysis Parameters:');
                                 const desc = isWeibullProse ? raw.split('\n')[0].split('Analysis Parameters:')[0].trim() : raw;
-                                return <p className="text-sm sm:text-base text-slate-500 line-clamp-2 lg:line-clamp-3 pl-8 lg:pl-0">{desc}</p>;
+                                // The title is what every order will be called; the description sits
+                                // under it, and only when it says something the title does not.
+                                const title = String(selectedJob.title || '').trim();
+                                return (
+                                    <div className="pl-8 lg:pl-0">
+                                        {title && <p className="text-sm sm:text-base font-semibold text-slate-800 line-clamp-2">{title}</p>}
+                                        {desc && desc !== title && <p className={`text-slate-500 line-clamp-2 ${title ? 'text-xs sm:text-sm mt-0.5' : 'text-sm sm:text-base'}`}>{desc}</p>}
+                                    </div>
+                                );
                             })()}
                             {/* Readiness before an order exists — the same items the work order's
                                 planning gate checks; each missing item links to the tab that fixes it. */}
