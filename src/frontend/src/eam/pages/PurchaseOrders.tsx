@@ -23,6 +23,16 @@ import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { Badge, Button, DetailRail, RailRow, RAIL_INPUT, RAIL_INPUT_LOCKED, type Tone } from '../components/ui';
 import { fmtMoney } from '../lib/money';
+import { OpenDemandPanel } from '../components/purchasing/OpenDemandPanel';
+import { PoPrintSheet } from '../components/purchasing/PoPrintSheet';
+
+/** Options for a persisted write. `label: null` = no toast; `headerOnly` skips the line sync. */
+type CommitOpts = { label?: string | null; headerOnly?: boolean };
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+/** Lines can be edited inline until the order is authorised or closed. */
+const linesEditable = (po: PurchaseOrder) =>
+    !po.authorizedById && (po.status === POStatus.DRAFT || po.status === POStatus.OPEN);
 
 // PO status → design-system tone (parallels getStatusColor for the new Badge primitive)
 const poStatusTone = (status: string): Tone => {
@@ -41,7 +51,7 @@ import { useToast } from '../contexts/ToastContext';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 
 export const PurchaseOrders: React.FC = () => {
-    const { user, profile, permissions } = useAuth();
+    const { user, profile, permissions, role } = useAuth();
     // ═══ RBAC Permission Extraction (ISO 27001 / NIST CSF) ═══
     const canCreate = permissions?.purchasing?.create === true;
     const canEdit = permissions?.purchasing?.edit === true;
@@ -62,10 +72,24 @@ export const PurchaseOrders: React.FC = () => {
     // Confirmation modal state
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+    // Persist-on-action (assurance run 2026-09-19): a line add, a line edit,
+    // Complete and a receipt used to live only in React state until the header
+    // Save was pressed, so a buyer who navigated away lost the first line of a
+    // fresh order. Every such action now writes immediately; Save remains for
+    // header-field edits. One write at a time — a second request while one is
+    // in flight is queued and flushed with the latest state, never run twice.
+    const savingRef = useRef(false);
+    const queuedRef = useRef<{ po: PurchaseOrder; headerOnly: boolean } | null>(null);
+    const [saveState, setSaveState] = useState<SaveState>('idle');
+    const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+    const [dataLoaded, setDataLoaded] = useState(false);
+    const prefillHandled = useRef(false);
 
     useEffect(() => {
         loadData();
     }, []);
+
+    useEffect(() => { setSaveState('idle'); setLastSavedAt(null); }, [selectedPO?.id]);
 
     // Deep link from a notification: /purchase-orders?id=<po_id> (notificationNav).
     // This page read no query params at all, so every PO approval alert landed
@@ -105,6 +129,8 @@ export const PurchaseOrders: React.FC = () => {
             setWorkOrders(dbWorkOrders);
         } catch (e) {
             console.error('Failed to load PO data:', e);
+        } finally {
+            setDataLoaded(true);
         }
     };
 
@@ -125,6 +151,36 @@ export const PurchaseOrders: React.FC = () => {
         });
     }, [orders, searchTerm, contacts, vendors]);
 
+    const buildNewPO = (overrides: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
+        id: crypto.randomUUID(),
+        poCode: `PO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        status: POStatus.DRAFT,
+        supplierId: '',
+        dateCreated: new Date().toISOString().split('T')[0],
+        dateRequired: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        taxInclusive: false,
+        currency: 'USD',
+        createdById: profile?.username || profile?.fullName || 'Unknown User',
+        items: [],
+        ...overrides,
+    });
+
+    const createPO = async (newPO: PurchaseOrder, tab: TabId = 'details') => {
+        try {
+            await DatabaseService.getInstance().createPurchaseOrder(newPO);
+            setOrders(prev => [newPO, ...prev]);
+            setSelectedPO(newPO);
+            setActiveTab(tab);
+
+            // Notification hook-in: PO Created
+            NotificationService.checkRules('purchasing', 'PO_CREATED', newPO, { currentUserId: user?.id || 'SYSTEM' });
+            return true;
+        } catch (e: any) {
+            showToast('Error creating PO: ' + e.message, 'error');
+            return false;
+        }
+    };
+
     const handleCreatePO = async () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
@@ -132,31 +188,54 @@ export const PurchaseOrders: React.FC = () => {
             showToast('Access Denied: You do not have permission to create purchase orders.', 'error');
             return;
         }
-        const newPO: PurchaseOrder = {
-            id: crypto.randomUUID(),
-            poCode: `PO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-            status: POStatus.DRAFT,
-            supplierId: '',
-            dateCreated: new Date().toISOString().split('T')[0],
-            dateRequired: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-            taxInclusive: false,
-            currency: 'USD',
-            createdById: profile?.username || profile?.fullName || 'Unknown User',
-            items: []
-        };
-
-        try {
-            await DatabaseService.getInstance().createPurchaseOrder(newPO);
-            setOrders([newPO, ...orders]);
-            setSelectedPO(newPO);
-            setActiveTab('details');
-
-            // Notification hook-in: PO Created
-            NotificationService.checkRules('purchasing', 'PO_CREATED', newPO, { currentUserId: user?.id || 'SYSTEM' });
-        } catch (e: any) {
-            showToast('Error creating PO: ' + e.message, 'error');
-        }
+        await createPO(buildNewPO());
     };
+
+    // Prefill from a work order: /purchase-orders?new=1&item=<inventory_item_id>&qty=<n>&wo=<work_order_id>
+    // raises a DRAFT order with that MATERIAL line (Job Link = the work order)
+    // and the item's preferred vendor as supplier when it has one.
+    useEffect(() => {
+        if (prefillHandled.current || !dataLoaded) return;
+        if (searchParams.get('new') !== '1') return;
+        prefillHandled.current = true;
+        const itemId = searchParams.get('item') || '';
+        const qtyParam = parseFloat(searchParams.get('qty') || '');
+        const woId = searchParams.get('wo') || '';
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            ['new', 'item', 'qty', 'wo'].forEach(k => next.delete(k));
+            return next;
+        }, { replace: true });
+
+        if (!canCreate) {
+            showToast('Access Denied: You do not have permission to create purchase orders.', 'error');
+            return;
+        }
+        const inv = itemId ? inventoryItems.find(i => i.id === itemId) : undefined;
+        if (itemId && !inv) showToast('The requested stock item was not found — a blank order was raised instead.', 'warning');
+        const vendor = inv?.preferredSupplierId ? vendors.find(v => v.id === inv.preferredSupplierId) : undefined;
+        const qty = qtyParam > 0 ? qtyParam : 1;
+        const unitCost = Number(inv?.itemCost) || 0;
+        const items: PurchaseOrderItem[] = inv ? [{
+            id: crypto.randomUUID(),
+            inventoryId: inv.id,
+            description: inv.description || inv.code,
+            uom: inv.uom || 'EA',
+            qtyOrdered: qty,
+            qtyReceivedTotal: 0,
+            unitCost,
+            taxAmount: 0,
+            lineTotal: Math.round(qty * unitCost * 100) / 100,
+            jobId: woId || undefined,
+            invoiceMatched: false,
+        }] : [];
+        void createPO(buildNewPO({
+            supplierId: vendor?.id || '',
+            ...(vendor?.currency ? { currency: vendor.currency } : {}),
+            items,
+        }), 'items');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dataLoaded, searchParams]);
 
     const handleUpdatePO = async (updates: Partial<PurchaseOrder>) => {
         if (!selectedPO) return;
@@ -165,20 +244,96 @@ export const PurchaseOrders: React.FC = () => {
         setSelectedPO(updated);
     };
 
-    const handleSavePO = async () => {
+    /**
+     * Write one order through DatabaseService.updatePurchaseOrder (header +
+     * line sync). Serialised: while a write is in flight the newest state is
+     * parked and written once the current one lands.
+     */
+    const persistPO = async (po: PurchaseOrder, opts: CommitOpts = {}): Promise<boolean> => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: purchasing.edit attempt by unauthorized user', profile?.username);
-            showToast('Access Denied: You do not have permission to edit purchase orders.', 'error');
-            return;
+            // Silent commits follow a server-side act that needed no edit right
+            // (receipt → derived status, authorise → OPEN); the record already
+            // moved on the server, so no error is shown — the in-memory state
+            // stands and the next editor's Save carries the header.
+            if (opts.label !== null) showToast('Access Denied: You do not have permission to edit purchase orders.', 'error');
+            return false;
         }
-        if (!selectedPO) return;
+        if (savingRef.current) {
+            const prior = queuedRef.current;
+            queuedRef.current = { po, headerOnly: !!opts.headerOnly && (prior ? prior.headerOnly : true) };
+            return true;
+        }
+        savingRef.current = true;
+        let next: { po: PurchaseOrder; headerOnly: boolean; label: string | null | undefined } | null =
+            { po, headerOnly: !!opts.headerOnly, label: opts.label };
+        let ok = true;
         try {
-            await DatabaseService.getInstance().updatePurchaseOrder(selectedPO.id, selectedPO);
-            showToast('Purchase Order saved successfully!', 'success');
-        } catch (e: any) {
-            showToast('Failed to save: ' + e.message, 'error');
+            while (next) {
+                setSaveState('saving');
+                try {
+                    const payload = next.headerOnly ? { ...next.po, items: undefined } : next.po;
+                    await DatabaseService.getInstance().updatePurchaseOrder(next.po.id, payload);
+                    setSaveState('saved');
+                    setLastSavedAt(new Date());
+                    if (next.label !== null) showToast(next.label || 'Saved', 'success');
+                } catch (e: any) {
+                    ok = false;
+                    setSaveState('error');
+                    showToast('Failed to save: ' + (e?.message || 'unknown error'), 'error');
+                }
+                const q = queuedRef.current;
+                queuedRef.current = null;
+                next = q ? { po: q.po, headerOnly: q.headerOnly, label: null } : null;
+            }
+        } finally {
+            savingRef.current = false;
         }
+        return ok;
+    };
+
+    /** Apply `updates` to the selected order in memory and persist at once. */
+    const commitPO = async (updates: Partial<PurchaseOrder>, opts: CommitOpts = {}): Promise<boolean> => {
+        if (!selectedPO) return false;
+        const updated = { ...selectedPO, ...updates };
+        setOrders(prev => prev.map(o => o.id === selectedPO.id ? updated : o));
+        setSelectedPO(updated);
+        return persistPO(updated, opts);
+    };
+
+    /** Append a line and persist it immediately. */
+    const appendLine = async (item: PurchaseOrderItem, label = 'Line added') => {
+        if (!selectedPO) return false;
+        // Stock planning: a linked material line is quantity on order at the
+        // delivery store (F). Advisory — the line itself is the record.
+        if (item.inventoryId && selectedPO.deliveryContactId) {
+            try {
+                const invItem = inventoryItems.find(i => i.id === item.inventoryId);
+                const stockLoc = invItem?.stockLocations?.find((sl: any) => sl.id === selectedPO.deliveryContactId);
+                const currentOnOrder = stockLoc?.qtyOnOrder || 0;
+                await DatabaseService.getInstance().updateInventoryItem(item.inventoryId, {}, [{
+                    id: selectedPO.deliveryContactId,
+                    qtyOnHand: stockLoc?.qtyOnHand || 0,
+                    minQty: stockLoc?.minQty || 0,
+                    maxQty: stockLoc?.maxQty || 0,
+                    reorderQty: stockLoc?.reorderQty || 0,
+                    qtyOnOrder: currentOnOrder + item.qtyOrdered,
+                    binLocation: stockLoc?.binLocation || ''
+                }]);
+            } catch (e: any) {
+                console.warn('Could not update qty_on_order:', e.message);
+            }
+        }
+        return commitPO({
+            items: [...selectedPO.items, item],
+            status: selectedPO.status === POStatus.DRAFT ? POStatus.OPEN : selectedPO.status,
+        }, { label });
+    };
+
+    const handleSavePO = async () => {
+        if (!selectedPO) return;
+        await persistPO(selectedPO, { label: 'Purchase Order saved successfully!' });
     };
 
     const handleDeletePO = async () => {
@@ -253,15 +408,17 @@ export const PurchaseOrders: React.FC = () => {
         setShowCompleteConfirm(true);
     };
 
-    const confirmCompletePO = () => {
+    const confirmCompletePO = async () => {
         if (!selectedPO) return;
         setShowCompleteConfirm(false);
-        handleUpdatePO({
+        // Persisted at once — the confirm used to change React state only.
+        await commitPO({
             status: POStatus.COMPLETED,
             dateFinished: new Date().toISOString().split('T')[0]
-        });
-        showToast('Purchase Order marked as COMPLETED.', 'success');
+        }, { label: 'Purchase Order marked as COMPLETED.' });
     };
+
+    const handlePrint = () => window.print();
 
     const getStatusColor = (status: POStatus) => {
         switch (status) {
@@ -278,10 +435,25 @@ export const PurchaseOrders: React.FC = () => {
     // Calculate Totals
     const totalAmount = selectedPO?.items.reduce((sum, item) => sum + item.lineTotal, 0) || 0;
 
+    const locationName = (id?: string) => inventoryLocations.find(l => l.id === id)?.name || '';
+    const costCenterLabel = (id?: string) => {
+        const cc = costCenters.find(c => c.id === id);
+        return cc ? `${cc.code} · ${cc.name}` : '';
+    };
+    const workOrderNumber = (jobId?: string) => {
+        if (!jobId) return '';
+        const wo = workOrders.find((w: any) => w.id === jobId);
+        return wo ? String(wo.wo_number || wo.woNumber || wo.id) : jobId;
+    };
+    const saveLabel = saveState === 'saving' ? 'Saving…'
+        : saveState === 'saved' && lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        : saveState === 'error' ? 'Not saved — press Save to retry'
+        : '';
+
     return (
         <div className="flex h-[calc(100vh-6rem)] gap-6">
             {/* List Sidebar */}
-            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedPO ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
+            <div className={`po-no-print flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedPO ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-900">Purchase Orders</h2>
                     <Button
@@ -341,7 +513,19 @@ export const PurchaseOrders: React.FC = () => {
 
             {/* Detail View */}
             {selectedPO && (
-                <div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden">
+                <div className="po-print-root flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden">
+                    {/* Print: the tabbed screen view is hidden and PoPrintSheet
+                        (below) is the only thing on the page. */}
+                    <PoPrintSheet
+                        po={selectedPO}
+                        supplierName={getSupplierName(selectedPO.supplierId)}
+                        shipToName={locationName(selectedPO.deliveryContactId)}
+                        invoiceToName={locationName(selectedPO.invoiceContactId)}
+                        costCenterLabel={costCenterLabel(selectedPO.costCenterId)}
+                        workOrderNumber={workOrderNumber}
+                        totalAmount={totalAmount}
+                    />
+                    <div className="po-screen flex-1 flex flex-col min-h-0">
                     {/* Mobile Back Button */}
                     <button
                         onClick={() => setSelectedPO(null)}
@@ -358,9 +542,9 @@ export const PurchaseOrders: React.FC = () => {
                         icon={<ShoppingCart size={20} className="text-blue-500" />}
                         onClose={() => setSelectedPO(null)}
                         actions={[
-                            { label: 'Save', icon: <Save size={14} />, onClick: handleSavePO, variant: 'primary' as const },
+                            { label: saveState === 'saving' ? 'Saving…' : 'Save', icon: <Save size={14} />, onClick: handleSavePO, variant: 'primary' as const, disabled: saveState === 'saving' || !canEdit, tooltip: !canEdit ? 'purchasing.edit required' : 'Save header fields (lines, receipts and Complete save on their own)' },
                             { label: 'Duplicate', icon: <Copy size={14} />, onClick: handleDuplicatePO, variant: 'ghost' as const },
-                            { label: 'Print', icon: <Printer size={14} />, onClick: () => {}, variant: 'ghost' as const },
+                            { label: 'Print', icon: <Printer size={14} />, onClick: handlePrint, variant: 'ghost' as const },
                             ...(selectedPO.status !== POStatus.COMPLETED ? [{ label: 'Complete', icon: <CheckCircle size={14} />, onClick: handleCompletePO, variant: 'secondary' as const }] : []),
                             { label: 'Delete', icon: <Trash2 size={14} />, onClick: handleDeletePO, variant: 'danger' as const },
                         ]}
@@ -380,16 +564,31 @@ export const PurchaseOrders: React.FC = () => {
 
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
-                        {activeTab === 'details' && <DetailsTab po={selectedPO} onUpdate={handleUpdatePO} contacts={contacts} locations={inventoryLocations} vendors={vendors} costCenters={costCenters} />}
-                        {activeTab === 'items' && <ItemsTab po={selectedPO} onUpdate={handleUpdatePO} inventoryItems={inventoryItems} workOrders={workOrders} />}
+                        {activeTab === 'details' && (
+                            <DetailsTab po={selectedPO} onUpdate={handleUpdatePO} contacts={contacts} locations={inventoryLocations} vendors={vendors} costCenters={costCenters}
+                                demand={selectedPO.status === POStatus.DRAFT
+                                    ? <OpenDemandPanel inventoryItems={inventoryItems} po={selectedPO} canEdit={canEdit} onAddLine={(line) => appendLine(line)} />
+                                    : undefined}
+                            />
+                        )}
+                        {activeTab === 'items' && <ItemsTab po={selectedPO} onUpdate={handleUpdatePO} onCommit={commitPO} onAppendLine={appendLine} canEdit={canEdit} inventoryItems={inventoryItems} workOrders={workOrders} />}
                         {activeTab === 'properties' && <PropertiesTab po={selectedPO} onUpdate={handleUpdatePO} />}
-                        {activeTab === 'authorise' && <AuthoriseTab po={selectedPO} onAuthorized={handleUpdatePO} totalAmount={totalAmount} canApprove={canApprove} currentUserId={user?.id || 'SYSTEM'} />}
+                        {activeTab === 'authorise' && (
+                            <AuthoriseTab po={selectedPO} totalAmount={totalAmount} canApprove={canApprove} currentUserId={user?.id || 'SYSTEM'}
+                                isAdmin={role === 'SYS_ADMIN' || role === 'SUPER_ADMIN'}
+                                onAuthorized={(u) => { void commitPO(u, { label: null, headerOnly: true }); }} />
+                        )}
                     </div>
 
                     {/* Footer Totals */}
                     <div className="p-4 border-t border-slate-200 bg-white flex flex-wrap justify-between items-center gap-4 text-sm mobile-footer-totals">
-                        <div className="text-slate-500">
-                            {selectedPO.items.length} Items
+                        <div className="text-slate-500 flex items-center gap-2 flex-wrap">
+                            <span>{selectedPO.items.length} Items</span>
+                            {saveLabel && (
+                                <span className={`text-[11px] ${saveState === 'error' ? 'text-red-600' : saveState === 'saving' ? 'text-slate-400' : 'text-emerald-600'}`} aria-live="polite">
+                                    {saveState === 'saving' && <Loader2 size={11} className="inline animate-spin mr-1 -mt-0.5" />}{saveLabel}
+                                </span>
+                            )}
                         </div>
                         <div className="flex gap-6 items-center mobile-footer-totals">
                             {/* No invented tax: IREAMS carries net amounts; tax is
@@ -406,6 +605,7 @@ export const PurchaseOrders: React.FC = () => {
                                 )}
                             </div>
                         </div>
+                    </div>
                     </div>
                 </div>
             )}
@@ -448,7 +648,7 @@ export const PurchaseOrders: React.FC = () => {
 
 // --- Sub-Components ---
 
-const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, contacts: Contact[], locations: Store[], vendors: Vendor[], costCenters: CostCenter[] }> = ({ po, onUpdate, contacts, locations, vendors, costCenters }) => {
+const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, contacts: Contact[], locations: Store[], vendors: Vendor[], costCenters: CostCenter[], demand?: React.ReactNode }> = ({ po, onUpdate, contacts, locations, vendors, costCenters, demand }) => {
     // Filter Vendors: Unified separate Vendors table and Contacts with Vendor flag
     const supplierOptions = useMemo(() => {
         const contactVendors = contacts.filter(c =>
@@ -468,6 +668,9 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
             dates and the tax switch are glance-and-go, so they do not get half the
             page. The PO header already shows status — no chip duplicated here. */}
         <div className="ers-page-record grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
+            {/* Open demand (DRAFT only): what planned work needs beyond stock on
+                hand, so the buyer sees the shortfall before choosing a supplier. */}
+            {demand && <div className="lg:col-span-2 min-w-0">{demand}</div>}
             {/* Supplier & Delivery */}
             <div className="bg-white p-4 md:p-5 lg:p-6 rounded-lg border border-slate-200 shadow-sm space-y-4 min-w-0">
                 <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
@@ -581,9 +784,25 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
     );
 };
 
-const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, inventoryItems: InventoryItem[], workOrders: any[] }> = ({ po, onUpdate, inventoryItems, workOrders }) => {
+const ItemsTab: React.FC<{
+    po: PurchaseOrder;
+    onUpdate: (u: Partial<PurchaseOrder>) => void;
+    /** Apply + persist at once (line edits, deletes, receipt status). */
+    onCommit: (u: Partial<PurchaseOrder>, opts?: CommitOpts) => Promise<boolean>;
+    /** Append a line and persist it at once. */
+    onAppendLine: (item: PurchaseOrderItem, label?: string) => Promise<boolean>;
+    canEdit: boolean;
+    inventoryItems: InventoryItem[];
+    workOrders: any[];
+}> = ({ po, onUpdate, onCommit, onAppendLine, canEdit, inventoryItems, workOrders }) => {
     const { user, profile } = useAuth();
     const { showToast } = useToast();
+    const editable = linesEditable(po);
+    // Open demand shows itself on a draft or empty order; otherwise it is one
+    // click away in the toolbar so a buyer can top up an order in progress.
+    const autoDemand = po.status === POStatus.DRAFT || po.items.length === 0;
+    const [demandOpen, setDemandOpen] = useState(false);
+    const showDemand = autoDemand || demandOpen;
     // Local state for the "Add Item" row
     const [newItem, setNewItem] = useState<Partial<PurchaseOrderItem>>({ qtyOrdered: 1, unitCost: 0 });
     const [importOpen, setImportOpen] = useState(false);
@@ -645,31 +864,11 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
             invoiceMatched: false
         };
 
-        // F: Update qty_on_order on inventory_stock when adding PO line with linked inventory item
-        if (item.inventoryId && po.deliveryContactId) {
-            try {
-                const db = DatabaseService.getInstance();
-                const invItem = inventoryItems.find(i => i.id === item.inventoryId);
-                const stockLoc = invItem?.stockLocations?.find((sl: any) => sl.id === po.deliveryContactId);
-                const currentOnOrder = stockLoc?.qtyOnOrder || 0;
-                // Increment qty_on_order via direct stock update
-                await db.updateInventoryItem(item.inventoryId, {}, [{
-                    id: po.deliveryContactId,
-                    qtyOnHand: stockLoc?.qtyOnHand || 0,
-                    minQty: stockLoc?.minQty || 0,
-                    maxQty: stockLoc?.maxQty || 0,
-                    reorderQty: stockLoc?.reorderQty || 0,
-                    qtyOnOrder: currentOnOrder + item.qtyOrdered,
-                    binLocation: stockLoc?.binLocation || ''
-                }]);
-            } catch (e: any) {
-                console.warn('Could not update qty_on_order:', e.message);
-            }
-        }
-
-        const updatedItems = [...po.items, item];
-        onUpdate({ items: updatedItems, status: po.status === POStatus.DRAFT ? POStatus.OPEN : po.status });
-        setNewItem({ qtyOrdered: 1, unitCost: 0, description: '', uom: 'EA' });
+        // Written now (qty_on_order bump + line row) — see appendLine in the
+        // page component. The first line of a fresh order used to vanish when
+        // the buyer left the page before pressing Save.
+        const ok = await onAppendLine(item);
+        if (ok) setNewItem({ qtyOrdered: 1, unitCost: 0, description: '', uom: 'EA' });
     };
 
     const handleReceiveItem = async (itemId: string) => {
@@ -699,6 +898,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         // Save afterwards — so an abandoned tab left stores holding parts the
         // order still showed as outstanding.
         let grnNumber: string | undefined;
+        let serverTotal: number | undefined;
         try {
             const result = await db.receivePOLine({
                 poId: po.id,
@@ -708,6 +908,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                 actor: profile?.username || profile?.fullName || 'Unknown User',
             });
             grnNumber = result.grnNumber;
+            serverTotal = result.qtyReceivedTotal;
         } catch (e: any) {
             showToast('Receipt failed: ' + e.message, 'error');
             return;
@@ -745,18 +946,19 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
             if (i.id === itemId) {
                 return {
                     ...i,
-                    qtyReceivedTotal: i.qtyReceivedTotal + qtyReceiving,
+                    qtyReceivedTotal: serverTotal ?? (i.qtyReceivedTotal + qtyReceiving),
                     qtyReceivedNow: 0 // Reset "Receive Now" input
                 };
             }
             return i;
         });
 
+        // The line already moved server-side in receivePOLine; the derived
+        // header status (PART_RECEIVED / ALL_RECEIVED) is persisted here so it
+        // no longer waits for a manual Save. Header only — an unsaved CSV
+        // import must not ride along on a receipt.
         const newStatus = calculateStatus(updatedItems);
-        onUpdate({
-            items: updatedItems,
-            status: newStatus
-        });
+        void onCommit({ items: updatedItems, status: newStatus }, { label: null, headerOnly: true });
         // The GRN just created must be findable, not just toasted.
         DatabaseService.getInstance().getGoodsReceipts(po.id).then(setReceipts).catch(() => { /* list refresh only */ });
 
@@ -770,9 +972,43 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         }, { currentUserId: user?.id || 'SYSTEM' });
     };
 
+    /** In-memory line edit; qty / cost keep the line total in step. */
+    const applyItemChange = (id: string, field: keyof PurchaseOrderItem, value: any): PurchaseOrderItem[] =>
+        po.items.map(i => {
+            if (i.id !== id) return i;
+            const next = { ...i, [field]: value } as PurchaseOrderItem;
+            if (field === 'qtyOrdered' || field === 'unitCost') {
+                next.lineTotal = Math.round((Number(next.qtyOrdered) || 0) * (Number(next.unitCost) || 0) * 100) / 100;
+            }
+            return next;
+        });
+
     const handleItemChange = (id: string, field: keyof PurchaseOrderItem, value: any) => {
-        const updatedItems = po.items.map(i => i.id === id ? { ...i, [field]: value } : i);
-        onUpdate({ items: updatedItems });
+        onUpdate({ items: applyItemChange(id, field, value) });
+    };
+
+    /** Select-type edits (Job Link) persist on change. */
+    const commitItemChange = (id: string, field: keyof PurchaseOrderItem, value: any) => {
+        void onCommit({ items: applyItemChange(id, field, value) }, { label: 'Line saved' });
+    };
+
+    /** Typed edits (description / qty / cost) persist when the field is left. */
+    const commitLineOnBlur = (item: PurchaseOrderItem) => {
+        const fixed: Partial<PurchaseOrderItem> = {};
+        if (!(Number(item.qtyOrdered) > 0)) fixed.qtyOrdered = Math.max(1, item.qtyReceivedTotal || 0);
+        if ((item.qtyReceivedTotal || 0) > (Number(item.qtyOrdered) || 0)) {
+            fixed.qtyOrdered = item.qtyReceivedTotal;
+            showToast(`${item.qtyReceivedTotal} already received on this line — order quantity kept at that.`, 'warning');
+        }
+        if (!(Number(item.unitCost) >= 0)) fixed.unitCost = 0;
+        let items = po.items;
+        for (const [k, v] of Object.entries(fixed)) items = items.map(i => i.id === item.id ? { ...i, [k]: v } : i);
+        if (Object.keys(fixed).length > 0) {
+            items = items.map(i => i.id === item.id
+                ? { ...i, lineTotal: Math.round((Number(i.qtyOrdered) || 0) * (Number(i.unitCost) || 0) * 100) / 100 }
+                : i);
+        }
+        void onCommit({ items }, { label: 'Line saved' });
     };
 
     /**
@@ -866,7 +1102,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
 
     const confirmDeleteItem = () => {
         if (deleteItemId) {
-            onUpdate({ items: po.items.filter(i => i.id !== deleteItemId) });
+            void onCommit({ items: po.items.filter(i => i.id !== deleteItemId) }, { label: 'Line removed' });
             setDeleteItemId(null);
         }
     };
@@ -942,6 +1178,15 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
             <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <div className="text-sm font-bold text-slate-700">Line Items ({po.items.length})</div>
                 <div className="flex gap-2">
+                    {!autoDemand && (
+                        <button
+                            onClick={() => setDemandOpen(o => !o)}
+                            className={`px-3 py-1.5 border text-xs font-bold rounded flex items-center gap-2 ${demandOpen ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                            title="Stock items reserved by open work orders beyond what is on hand"
+                        >
+                            <AlertTriangle size={14} /> Needed for open work
+                        </button>
+                    )}
                     <button
                         onClick={handleInvoiceMatch}
                         disabled={receivedValue <= 0}
@@ -1045,6 +1290,17 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                 </div>
             )}
 
+            {/* Open demand — what planned work has reserved beyond stock on hand. */}
+            {showDemand && (
+                <OpenDemandPanel
+                    inventoryItems={inventoryItems}
+                    po={po}
+                    canEdit={canEdit}
+                    onAddLine={(line) => onAppendLine(line)}
+                    onClose={autoDemand ? undefined : () => setDemandOpen(false)}
+                />
+            )}
+
             {/* Grid */}
             <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 flex flex-col">
                 <div className="overflow-auto flex-1 table-responsive">
@@ -1067,11 +1323,12 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                                 <tr key={item.id} className="hover:bg-slate-50 group">
                                     <td className="px-4 py-3 text-xs text-slate-500">{idx + 1}</td>
                                     <td className="px-4 py-3">
-                                        {po.status === POStatus.DRAFT ? (
+                                        {editable && canEdit ? (
                                             <input
                                                 type="text"
                                                 value={item.description}
                                                 onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                                                onBlur={() => commitLineOnBlur(item)}
                                                 className="w-full text-sm border-none bg-transparent focus:ring-0 p-0"
                                             />
                                         ) : (
@@ -1083,15 +1340,38 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                                     <td className="px-4 py-3 hidden md:table-cell">
                                         <select
                                             value={item.jobId || ''}
-                                            onChange={(e) => handleItemChange(item.id, 'jobId', e.target.value)}
-                                            className="w-full text-xs border border-slate-200 rounded bg-white p-1"
+                                            onChange={(e) => commitItemChange(item.id, 'jobId', e.target.value || undefined)}
+                                            disabled={!canEdit || !editable}
+                                            className="w-full text-xs border border-slate-200 rounded bg-white p-1 disabled:bg-slate-50 disabled:text-slate-500"
                                         >
                                             <option value="">None</option>
                                             {workOrders.map(wo => <option key={wo.id} value={wo.id}>{wo.wo_number || wo.id}</option>)}
                                         </select>
                                     </td>
-                                    <td className="px-4 py-3 text-right text-sm">{item.qtyOrdered}</td>
-                                    <td className="px-4 py-3 text-right text-sm">{fmtMoney(item.unitCost, po.currency)}</td>
+                                    {/* Qty and cost edit in place until the order is authorised;
+                                        the edit is written when the field is left. */}
+                                    <td className="px-4 py-3 text-right text-sm">
+                                        {editable && canEdit ? (
+                                            <input
+                                                type="number" min={item.qtyReceivedTotal || 0} step="any"
+                                                value={item.qtyOrdered}
+                                                onChange={(e) => handleItemChange(item.id, 'qtyOrdered', parseFloat(e.target.value))}
+                                                onBlur={() => commitLineOnBlur(item)}
+                                                className="w-20 text-right text-sm border border-slate-200 rounded px-1 py-0.5 focus:ring-1 focus:ring-primary-500"
+                                            />
+                                        ) : item.qtyOrdered}
+                                    </td>
+                                    <td className="px-4 py-3 text-right text-sm">
+                                        {editable && canEdit ? (
+                                            <input
+                                                type="number" min={0} step="any"
+                                                value={item.unitCost}
+                                                onChange={(e) => handleItemChange(item.id, 'unitCost', parseFloat(e.target.value))}
+                                                onBlur={() => commitLineOnBlur(item)}
+                                                className="w-20 text-right text-sm border border-slate-200 rounded px-1 py-0.5 focus:ring-1 focus:ring-primary-500"
+                                            />
+                                        ) : fmtMoney(item.unitCost, po.currency)}
+                                    </td>
 
                                     {/* Receiving Input Column */}
                                     <td className="px-4 py-3 bg-blue-50 border-l border-blue-100">
@@ -1393,19 +1673,36 @@ const CHECK_LABEL: Record<string, string> = {
  * approver saw.
  */
 const AuthoriseTab: React.FC<{
-    po: PurchaseOrder; totalAmount: number; canApprove: boolean; currentUserId: string;
+    po: PurchaseOrder; totalAmount: number; canApprove: boolean; currentUserId: string; isAdmin: boolean;
     onAuthorized: (u: Partial<PurchaseOrder>) => void;
-}> = ({ po, totalAmount, canApprove, currentUserId, onAuthorized }) => {
+}> = ({ po, totalAmount, canApprove, currentUserId, isAdmin, onAuthorized }) => {
     const { showToast } = useToast();
+    const { user, profile } = useAuth();
     const isAuthorized = !!po.authorizedById;
+    // Readiness (assurance run 2026-09-19): the budget check ran on an order
+    // with no persisted lines and no receiver and came back "Within budget",
+    // then authorisation locked the cost centre. There is nothing to check
+    // until at least one line exists and something can receive the cost — the
+    // header cost centre, a line cost centre, or a work order on a line.
+    const hasLines = po.items.length > 0;
+    const hasReceiver = !!po.costCenterId || po.items.some(i => !!i.costCenterId || !!i.jobId);
+    const ready = hasLines && hasReceiver;
+    // Segregation of duties: the person who raised the order does not authorise
+    // it (SYS_ADMIN / SUPER_ADMIN excepted). created_by holds whatever this page
+    // stamped at creation — username, display name or user id — so all three
+    // are compared. The server enforces the same rule.
+    const creatorKeys = [profile?.username, profile?.fullName, profile?.id, user?.id].filter(Boolean) as string[];
+    const createdByMe = !!po.createdById && creatorKeys.includes(po.createdById);
+    const sodBlocked = createdByMe && !isAdmin;
     const [check, setCheck] = useState<PoBudgetCheck | null>(po.budgetCheck ?? null);
-    const [loading, setLoading] = useState(!isAuthorized);
+    const [loading, setLoading] = useState(!isAuthorized && ready);
     const [reason, setReason] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(() => {
         if (isAuthorized && po.budgetCheck) { setCheck(po.budgetCheck); setLoading(false); return; }
+        if (!ready) { setCheck(null); setLoading(false); return; }
         let live = true;
         setLoading(true);
         DatabaseService.getInstance().checkPurchaseOrderBudget(po.id)
@@ -1418,14 +1715,46 @@ const AuthoriseTab: React.FC<{
             })
             .finally(() => { if (live) setLoading(false); });
         return () => { live = false; };
-    }, [po.id, isAuthorized, po.items.length, po.costCenterId]);
+    }, [po.id, isAuthorized, ready, po.items.length, po.costCenterId]);
 
     const needsReason = check?.requires_override === true;
     const blocked = check?.blocked === true;
-    const unsaved = po.status === POStatus.DRAFT && po.items.length === 0;
+
+    /**
+     * Informational notice to the person who raised the order. The rule-driven
+     * PO_APPROVED emission below is typed APPROVAL_REQUIRED by
+     * NotificationService.mapEventToType (shared file); this direct notice is
+     * the informational one — STATUS_CHANGE, nothing to action.
+     */
+    const notifyCreator = async (authorisedBy: string) => {
+        if (!po.createdById) return;
+        try {
+            const users = await DatabaseService.getInstance().getUsers();
+            const creator = users.find((u: any) => u.id === po.createdById || u.username === po.createdById || u.email === po.createdById);
+            if (!creator || creator.id === currentUserId) return;
+            await NotificationService.notify({
+                recipientId: creator.id,
+                title: 'Purchase order authorised',
+                message: `${po.poCode} (${fmtMoney(totalAmount, po.currency)}) was authorised by ${authorisedBy}. No action needed.`,
+                severity: 'SUCCESS',
+                notificationType: 'STATUS_CHANGE',
+                module: 'purchasing',
+                entityId: po.id,
+                entityType: 'PURCHASE_ORDER',
+                entityNumber: po.poCode,
+                actionLink: `/purchase-orders?id=${po.id}`,
+                actionRequired: false,
+                createdBy: currentUserId,
+            });
+        } catch (e: any) {
+            console.warn('[po] creator notice skipped:', e?.message);
+        }
+    };
 
     const authorise = async () => {
         if (!canApprove) { showToast('Access Denied: purchasing.approve is required to authorise.', 'error'); return; }
+        if (!ready) { setError('Add at least one line and choose a cost centre before authorising.'); return; }
+        if (sodBlocked) { setError('You raised this order — another approver must authorise it.'); return; }
         if (needsReason && !reason.trim()) { setError('Give the reason for authorising over budget - it is recorded on the order.'); return; }
         setBusy(true); setError('');
         try {
@@ -1441,6 +1770,7 @@ const AuthoriseTab: React.FC<{
             const entity = { ...po, ...stamped, totalAmount };
             NotificationService.checkRules('purchasing', 'PO_APPROVED', entity, { currentUserId });
             if (res.overall === 'EXCEEDED') NotificationService.checkRules('purchasing', 'PO_BUDGET_EXCEEDED', entity, { currentUserId });
+            void notifyCreator(profile?.fullName || profile?.username || res.authorized_by || 'an approver');
         } catch (e: any) {
             const msg: string = e?.message || 'Authorisation failed.';
             setError(msg.replace(/^BUDGET_[A-Z]+:\s*/, ''));
@@ -1448,6 +1778,10 @@ const AuthoriseTab: React.FC<{
     };
 
     const money = (v: number, cur?: string | null) => fmtMoney(v, cur || po.currency);
+    const authoriseDisabledReason = !canApprove ? 'purchasing.approve is required'
+        : sodBlocked ? 'Segregation of duties: you raised this order, so another approver must authorise it'
+        : blocked ? 'A hard budget block applies'
+        : '';
 
     return (
         <div className="animate-in fade-in ers-page-record space-y-4">
@@ -1469,6 +1803,16 @@ const AuthoriseTab: React.FC<{
                 {check && <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${CHECK_TONE[check.overall] || CHECK_TONE.NO_BUDGET}`}>{CHECK_LABEL[check.overall] || check.overall}</span>}
             </div>
 
+            {!isAuthorized && !ready ? (
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+                    <p className="text-sm font-medium text-slate-800">Add at least one line and choose a cost centre before authorising.</p>
+                    <ul className="mt-2 text-sm text-slate-600 list-disc pl-5 space-y-1">
+                        <li className={hasLines ? 'text-emerald-700' : ''}>{hasLines ? `${po.items.length} line${po.items.length === 1 ? '' : 's'} on the order.` : 'No lines yet — add them on the Items & Receiving tab.'}</li>
+                        <li className={hasReceiver ? 'text-emerald-700' : ''}>{hasReceiver ? 'A cost receiver is set.' : 'Nothing can receive the cost — set the Cost Centre on the Details rail, or link each line to a work order.'}</li>
+                    </ul>
+                    <p className="mt-3 text-[11px] text-slate-400">The budget check runs once both are in place; authorising then locks the cost centre.</p>
+                </div>
+            ) : (
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                     <h4 className="font-bold text-slate-800 text-sm">Budget check by cost centre</h4>
@@ -1477,7 +1821,7 @@ const AuthoriseTab: React.FC<{
                 {loading ? (
                     <div className="p-6 text-sm text-slate-500">Checking budgets...</div>
                 ) : !check || check.lines.length === 0 ? (
-                    <div className="p-6 text-sm text-slate-500">{unsaved ? 'Add and save lines first - there is nothing to check yet.' : 'No lines carry a cost centre. Set one on the Details rail, or link lines to work orders.'}</div>
+                    <div className="p-6 text-sm text-slate-500">No lines carry a cost centre. Set one on the Details rail, or link lines to work orders.</div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1509,9 +1853,17 @@ const AuthoriseTab: React.FC<{
                     </div>
                 )}
             </div>
+            )}
 
-            {!isAuthorized && (
+            {!isAuthorized && ready && (
                 <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 space-y-3">
+                    <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
+                        <Users size={12} className="mt-0.5 flex-shrink-0 text-slate-400" />
+                        <span>
+                            <span className="font-semibold text-slate-600">Segregation of duties:</span> the person who raised an order cannot authorise it; a system administrator may.
+                            {createdByMe && <span className={isAdmin ? ' text-slate-500' : ' text-amber-700 font-medium'}> You raised this order{isAdmin ? ' — authorising as administrator.' : '.'}</span>}
+                        </span>
+                    </p>
                     {blocked && <p className="text-sm text-red-700 font-medium">A hard budget block applies. Raise the budget or remove the block in Financial Ops before authorising.</p>}
                     {needsReason && !blocked && (
                         <div>
@@ -1525,10 +1877,13 @@ const AuthoriseTab: React.FC<{
                     {error && <p className="text-sm text-red-600">{error}</p>}
                     <div className="flex items-center justify-between gap-3">
                         <p className="text-[11px] text-slate-400">{canApprove ? 'You hold purchasing.approve.' : 'You do not hold purchasing.approve - ask a manager or finance to authorise.'}</p>
-                        <button onClick={authorise} disabled={busy || loading || blocked || !canApprove || unsaved}
-                            className="px-5 py-2.5 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-500 shadow-md disabled:opacity-50 disabled:cursor-not-allowed">
-                            {busy ? 'Authorising...' : needsReason ? 'Authorise with override' : 'Authorise'}
-                        </button>
+                        <span title={authoriseDisabledReason || undefined} className="inline-block">
+                            <button onClick={authorise} disabled={busy || loading || blocked || !canApprove || sodBlocked}
+                                title={authoriseDisabledReason || undefined}
+                                className="px-5 py-2.5 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-500 shadow-md disabled:opacity-50 disabled:cursor-not-allowed">
+                                {busy ? 'Authorising...' : needsReason ? 'Authorise with override' : 'Authorise'}
+                            </button>
+                        </span>
                     </div>
                 </div>
             )}

@@ -95,6 +95,18 @@ const fmtLocalDate = (v?: string | null): string => {
     return isNaN(d.getTime()) ? v : d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
+/** Estimated hours carried by the template's steps. When any step carries hours this is
+ *  the schedule's duration estimate (Details shows it read-only and the save writes it
+ *  into est_duration) so the generated order and the planner's figure never disagree. */
+const stepsHours = (tasks?: JobTask[] | null): { total: number; count: number } => {
+    let total = 0, count = 0;
+    for (const t of tasks || []) {
+        const h = Number(t?.estHours) || 0;
+        if (h > 0) { total += h; count += 1; }
+    }
+    return { total: Math.round(total * 100) / 100, count };
+};
+
 const RISK_COLORS: Record<string, string> = {
     Critical: 'border-red-500 bg-red-50',
     High: 'border-orange-400 bg-orange-50',
@@ -747,7 +759,9 @@ export const RecurringWork: React.FC = () => {
                 strategy_package: (selectedJob as any).strategyPackage || null,
                 // 0299: provenance survives the whole-row save — never dropped.
                 origin: (selectedJob as any).origin || null,
-                est_duration: selectedJob.estDuration || 0,
+                // Steps with hours own the estimate — the generated order copies est_duration,
+                // so a typed 3 h beside 7 h of steps must not survive the save.
+                est_duration: stepsHours(selectedJob.tasks).total || selectedJob.estDuration || 0,
                 est_downtime: selectedJob.estDowntime || 0,
                 // Persist the primary asset link
                 asset_id: selectedJob.assignedAssets?.[0]?.assetId || null,
@@ -1818,6 +1832,13 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
         DatabaseService.getInstance().getStrategies().then(setStrategies).catch(() => setStrategies([]));
     }, []);
     const selectedStrategy = strategies.find((s: any) => s.id === (job as any).strategyId);
+    // Steps with hours own the duration estimate; keep estDuration aligned so the
+    // generated order (which copies est_duration) shows the same figure as this tab.
+    const fromSteps = stepsHours(job.tasks);
+    useEffect(() => {
+        if (fromSteps.count > 0 && (Number(job.estDuration) || 0) !== fromSteps.total) onUpdate({ estDuration: fromSteps.total });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fromSteps.total, fromSteps.count, job.estDuration]);
     // Dictionary lookups
     const readingTypes = dictionaries.filter(d => d.type === 'READING_TYPE' && d.active);
     const timePeriods = dictionaries.filter(d => d.type === 'TIME_PERIOD' && d.active);
@@ -2173,7 +2194,14 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Est. Duration (Hrs)</label>
-                                <input type="number" value={job.estDuration} onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+                                {fromSteps.count > 0 ? (
+                                    <>
+                                        <div className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-800 tabular-nums" title="Derived from the steps on the Tasks tab">{fromSteps.total}</div>
+                                        <p className="text-[10px] text-slate-400 mt-1">from {fromSteps.count} step{fromSteps.count === 1 ? '' : 's'}</p>
+                                    </>
+                                ) : (
+                                    <input type="number" value={job.estDuration} onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Est. Downtime (Hrs)</label>
@@ -2733,7 +2761,9 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
 
     const updateTasks = (newTasks: JobTask[]) => {
         setTasks(newTasks);
-        onUpdate({ tasks: newTasks });
+        // Steps with hours own the schedule's duration estimate (Details shows it read-only).
+        const hrs = stepsHours(newTasks);
+        onUpdate(hrs.count > 0 ? { tasks: newTasks, estDuration: hrs.total } : { tasks: newTasks });
     };
 
     const addTask = () => {
@@ -2805,6 +2835,9 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
             status: 'PENDING',
             instructions: (libTask.instructions || []).map((inst, i) => ({
                 ...inst,
+                // Library blocks saved from a work order kept their text in description;
+                // everything downstream renders label (0371 repaired stored rows).
+                label: (inst as any).label || (inst as any).description || '',
                 id: `lib-inst-${Date.now()}-${i}`,
                 sequence: i + 1,
             })),
@@ -3823,7 +3856,9 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
         description: `${inv.code ? `[${inv.code}] ` : ''}${inv.description || inv.name}`,
     }));
 
-    // Choosing a catalogue part fills description / UOM / unit cost from the item
+    // Choosing a catalogue part fills description / UOM / unit cost from the item.
+    // Shared by the phone rows and the table. DatabaseService.getInventory maps
+    // unit_cost → itemCost; the older unitCost/unit_cost names are kept as fallbacks.
     const pickPart = (itemId: string, code: string) => {
         const selected = inventoryItems.find((inv: any) => inv.id === code);
         const updates = inventory.map(i => i.id === itemId ? {
@@ -3831,7 +3866,7 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
             inventoryId: code,
             description: selected?.description || selected?.name || '',
             uom: selected?.uom || 'EA',
-            estUnitCost: selected?.unitCost || selected?.unit_cost || 0,
+            estUnitCost: Number(selected?.itemCost ?? selected?.unitCost ?? selected?.unit_cost) || 0,
         } : i);
         onUpdate({ inventory: updates });
     };
@@ -4331,16 +4366,51 @@ const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[]; onUpdate?
     const totalCompleted = history.filter(h => h.type === 'compliance').length;
     const complianceRate = totalGenerated > 0 ? Math.round((totalCompleted / totalGenerated) * 100) : 0;
 
-    // ISO 55000 on-time compliance (job.complianceData, fed by pm_compliance_log) and the
-    // per-job colour thresholds — moved here from Details, where they crowded the setup form.
-    const compliance = job.complianceData || { scheduledCount: 0, executedCount: 0, compliancePct: 0 };
-    const greenThreshold = compliance.greenThreshold ?? 95;
-    const yellowThreshold = compliance.yellowThreshold ?? 85;
+    // ISO 55000 on-time compliance. job.complianceData is never written back after an
+    // order completes, so the strip read "Never" beside a closed order. Derive it from
+    // the schedule's real work orders loaded above (own orders by due_date; longer-interval
+    // orders that satisfied an occurrence by that occurrence's due date, 0366) and fall
+    // back to complianceData only when the schedule has no orders at all. The colour
+    // thresholds still live in complianceData.
+    const stored = job.complianceData || { scheduledCount: 0, executedCount: 0, compliancePct: 0 };
+    const derived = useMemo(() => {
+        const DONE = ['COMP', 'TECO', 'CLOSED'];
+        const completions: { doneAt: string; due: string | null; num: string }[] = [];
+        for (const w of orders) {
+            const doneAt = w.completed_at || w.closed_at;
+            if (!DONE.includes(String(w.status || '').toUpperCase()) || !doneAt) continue;
+            completions.push({ doneAt: String(doneAt), due: w.due_date ? toDateOnly(String(w.due_date)) : null, num: w.wo_number ? `WO-${w.wo_number}` : String(w.id) });
+        }
+        for (const w of satisfiedBy) {
+            const doneAt = w.completed_at || w.closed_at;
+            if (!DONE.includes(String(w.status || '').toUpperCase()) || !doneAt) continue;
+            const scope = (w.properties?.included_scopes || []).find((x: any) => x?.pmId === job.id);
+            completions.push({ doneAt: String(doneAt), due: scope?.dueDate ? String(scope.dueDate) : null, num: w.wo_number ? `WO-${w.wo_number}` : String(w.id) });
+        }
+        completions.sort((a, b) => new Date(b.doneAt).getTime() - new Date(a.doneAt).getTime());
+        const last = completions[0] || null;
+        const since = Date.now() - 365 * 24 * 60 * 60 * 1000;
+        const window = completions.filter(c => new Date(c.doneAt).getTime() >= since);
+        const onTime = window.filter(c => !c.due || toDateOnly(c.doneAt) <= c.due).length;
+        return {
+            hasOrders: orders.length > 0 || satisfiedBy.length > 0,
+            lastCompletedDate: last?.doneAt || null,
+            lastWOId: last?.num || null,
+            scheduledCount: window.length,
+            executedCount: onTime,
+            compliancePct: window.length > 0 ? (onTime / window.length) * 100 : 0,
+        };
+    }, [orders, satisfiedBy, job.id]);
+    const compliance = derived.hasOrders
+        ? derived
+        : { ...derived, lastCompletedDate: stored.lastCompletedDate || null, lastWOId: stored.lastWOId || null, scheduledCount: stored.scheduledCount || 0, executedCount: stored.executedCount || 0, compliancePct: stored.compliancePct || 0 };
+    const greenThreshold = stored.greenThreshold ?? 95;
+    const yellowThreshold = stored.yellowThreshold ?? 85;
     const complianceTone = compliance.compliancePct >= greenThreshold ? 'text-green-600' : compliance.compliancePct >= yellowThreshold ? 'text-amber-500' : 'text-red-600';
     const setThreshold = (key: 'greenThreshold' | 'yellowThreshold', raw: string) => {
         if (!onUpdate) return;
         const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
-        onUpdate({ complianceData: { ...compliance, [key]: val } });
+        onUpdate({ complianceData: { ...stored, [key]: val } });
     };
 
     return (

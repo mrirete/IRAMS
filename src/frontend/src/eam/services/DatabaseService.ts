@@ -3014,8 +3014,8 @@ export class DatabaseService {
         }
 
         // Separate generic updates from Relational Updates
-        const { tasks, labor, inventory, jsa, failureData, ...coreUpdates } = updates as any;
-        console.log(`[updateWorkOrder] ${id} - Recv: Tasks=${tasks?.length}, Labor=${labor?.length}, Inv=${inventory?.length}`);
+        const { tasks, labor, inventory, jsa, failureData, removedTaskIds, ...coreUpdates } = updates as any;
+        console.log(`[updateWorkOrder] ${id} - Recv: Tasks=${tasks?.length}, Labor=${labor?.length}, Inv=${inventory?.length}, Removed=${removedTaskIds?.length || 0}`);
 
         // Governance Rules (Freezing) are handled by DB Trigger 'enforce_cost_freezing'
 
@@ -3197,8 +3197,19 @@ export class DatabaseService {
         if (tasks) {
             const synced = await this.updateJobTasks(id, tasks);
             taskSemaphores = synced.idMap;
-            staleTaskIds = synced.staleIds;
+            // A step is deleted only when the user deleted it (removedTaskIds
+            // from the Delete step button). A client copy that merely lacks a
+            // step — My Work's list row, a tab opened before a planner added
+            // the step — must not delete it: on 2026-09-19 a technician's first
+            // status save wiped a planned step with its labour (P0). Steps the
+            // DB holds and the client did not send are left alone and logged.
+            const explicit = new Set<string>((removedTaskIds || []).map(String));
+            staleTaskIds = synced.staleIds.filter(sid => explicit.has(sid));
+            const kept = synced.staleIds.filter(sid => !explicit.has(sid));
+            if (kept.length > 0) console.warn('[updateWorkOrder] client copy lacked steps the DB holds — kept, not deleted:', kept);
             console.log('[updateWorkOrder] Task Semaphores:', taskSemaphores);
+        } else if (removedTaskIds && removedTaskIds.length > 0) {
+            staleTaskIds = removedTaskIds.map(String);
         }
 
         if (labor) {
@@ -3238,10 +3249,18 @@ export class DatabaseService {
         // is detached rather than lost. Deleting first failed on the FK from
         // work_order_labor and left the old rows behind (P0-A, 2026-09-08).
         if (staleTaskIds.length > 0) {
+            // Planned lines are detached; posted confirmations keep their step
+            // (0371 trigger) and then the delete is refused with STEP_HAS_HISTORY,
+            // which is the right outcome — the user is told, nothing is lost.
             await supabase.from('work_order_labor').update({ job_task_id: null }).in('job_task_id', staleTaskIds);
             await supabase.from('work_order_parts').update({ job_task_id: null }).in('job_task_id', staleTaskIds);
             const { error: delErr } = await supabase.from('job_tasks').delete().in('id', staleTaskIds);
-            if (delErr) console.error('[updateWorkOrder] Could not delete removed steps:', delErr.message);
+            if (delErr) {
+                console.error('[updateWorkOrder] Could not delete removed steps:', delErr.message);
+                if (/STEP_HAS_HISTORY/.test(delErr.message || '')) {
+                    throw new Error(delErr.message.replace(/^.*STEP_HAS_HISTORY:\s*/, ''));
+                }
+            }
         }
 
         if (jsa) {
@@ -3362,6 +3381,26 @@ export class DatabaseService {
             created_at: new Date().toISOString(),
         });
         if (error) console.warn('[journalAssignment] not written:', error.message);
+    }
+
+    /**
+     * Status change written from a page that saves directly (Scheduling's
+     * Assign & schedule, 0371): same shape as journalAssignment so the
+     * WoStatusTimeline rail (is_system = true) shows it.
+     */
+    public async journalStatusChange(woId: string, previous: string | null | undefined, next: string | null | undefined, actorName: string, note?: string): Promise<void> {
+        if ((previous || null) === (next || null)) return;
+        const { error } = await supabase.from('journal_entries').insert({
+            entity_id: woId,
+            entity_type: 'WORK_ORDER',
+            entry_type: 'SYSTEM',
+            entry: `Status changed: ${previous || '—'} → ${next || '—'}${note ? ` — ${note}` : ''}`,
+            is_system: true,
+            client_id: (globalThis.crypto?.randomUUID?.() ?? `sys-${Date.now()}`),
+            author_name: actorName,
+            created_at: new Date().toISOString(),
+        });
+        if (error) console.warn('[journalStatusChange] not written:', error.message);
     }
 
     // --- REQUEST LOGIC ---
@@ -4157,10 +4196,16 @@ export class DatabaseService {
                 ))
             );
 
-            // 2. Apply site scope filter
-            if (siteIds && siteIds.length > 0) {
+            // 2. Apply site scope filter. AuthContext's global scope is ['*'];
+            // fed in verbatim it matched nobody and emptied the Multi-Resource
+            // view ("No labor resources found", 2026-09-19). Wildcard = everyone;
+            // a real site list keeps people in those units and people with no
+            // unit at all (they belong to no site, so no site excludes them).
+            const realSites = (siteIds || []).filter(id => id && id !== '*');
+            if (realSites.length > 0) {
                 laborContacts = laborContacts.filter((c: any) =>
-                    c.organizationUnitIds?.some((id: string) => siteIds.includes(id))
+                    !c.organizationUnitIds || c.organizationUnitIds.length === 0
+                    || c.organizationUnitIds.some((id: string) => realSites.includes(id))
                 );
             }
 
@@ -4635,6 +4680,8 @@ export class DatabaseService {
         quantity: number; costAtTime: number; value: number | null;
         timestamp: string; notes: string | null; performedBy: string | null;
         woId: string | null; poId: string | null; locationName: string | null;
+        /** Document references for the History tab: the receipt's order, the issue's work order. */
+        poCode?: string; woNumber?: string;
     }[]> {
         const [{ data, error }, { data: locs }] = await Promise.all([
             supabase.from('inventory_transactions')
@@ -4646,7 +4693,19 @@ export class DatabaseService {
         ]);
         if (error) { console.warn('Supabase Error (getItemTransactions):', error.message); return []; }
         const locName = new Map((locs ?? []).map((l: any) => [l.id, l.name]));
+        // A movement row without its document is a number with no story:
+        // resolve the PO code and the work-order number in two small lookups.
+        const poIds = [...new Set((data ?? []).map((t: any) => t.po_id).filter(Boolean))];
+        const woIds = [...new Set((data ?? []).map((t: any) => t.wo_id).filter(Boolean))];
+        const [poRows, woRows] = await Promise.all([
+            poIds.length ? supabase.from('purchase_orders').select('id, po_code').in('id', poIds).then(r => r.data ?? []) : Promise.resolve([] as any[]),
+            woIds.length ? supabase.from('work_orders').select('id, wo_number').in('id', woIds).then(r => r.data ?? []) : Promise.resolve([] as any[]),
+        ]);
+        const poCode = new Map(poRows.map((p: any) => [p.id, p.po_code]));
+        const woNumber = new Map(woRows.map((w: any) => [w.id, w.wo_number]));
         return (data ?? []).map((t: any) => ({
+            poCode: t.po_id ? poCode.get(t.po_id) || undefined : undefined,
+            woNumber: t.wo_id ? woNumber.get(t.wo_id) || undefined : undefined,
             id: t.id,
             movementType: t.movement_type ?? null,
             transactionType: t.transaction_type,
@@ -5771,6 +5830,23 @@ export class DatabaseService {
             }));
             if (!await tryWrite(supabase.from('work_order_labor').insert(laborRows), `planned labour for WO ${woId}`)) {
                 copyFailures.push(`${laborRows.length} planned labour line(s)`);
+            } else {
+                // The named person is on the step, not only on the labour line:
+                // the crew drawer ("0 of 1 filled"), My Work and the step-assignment
+                // notices read job_tasks.assigned_user_ids (0371; the sweep does the
+                // same in pm_copy_plan_labour). Best effort per step — a caller
+                // without Assign loses only the seating, never the plan.
+                const seats = new Map<string, Set<string>>();
+                for (const r of laborRows) {
+                    if (!r.job_task_id || !r.contact_id) continue;
+                    if (!seats.has(r.job_task_id)) seats.set(r.job_task_id, new Set());
+                    seats.get(r.job_task_id)!.add(r.contact_id);
+                }
+                for (const [taskId, users] of seats) {
+                    const { error: seatErr } = await supabase.from('job_tasks')
+                        .update({ assigned_user_ids: Array.from(users) }).eq('id', taskId);
+                    if (seatErr) console.warn('[generateWOFromPM] step seating skipped:', seatErr.message);
+                }
             }
         }
 

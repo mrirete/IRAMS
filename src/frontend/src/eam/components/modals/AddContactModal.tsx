@@ -16,6 +16,12 @@ import { ROLE_PERMISSION_TEMPLATES } from '../../constants/rolePermissions';
  */
 const ASSIGNABLE_ROLES = Object.keys(ROLE_PERMISSION_TEMPLATES).filter(r => r !== 'SUPER_ADMIN');
 const DEFAULT_ROLE = 'TECHNICIAN';
+/** Roles whose holders are, by default, people a planner can put on a job (flags.isLabour). */
+const LABOUR_ROLES = new Set(['TECHNICIAN', 'ELECTRICIAN', 'MECHANIC', 'INSTRUMENT', 'OPERATOR', 'SUPERVISOR']);
+/** CONTACT_TYPE rows that are business-partner kinds, not crafts a person can hold. */
+const NON_CRAFT_CODES = new Set(['VENDOR', 'MANUFACTURER', 'SUPPLIER']);
+const FALLBACK_RATE = 85;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface AddContactModalProps {
     onClose: () => void;
@@ -39,6 +45,25 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
     const isMfr = initialType === 'MANUFACTURER' || formData.type === 'MANUFACTURER' || formData.type === 'VENDOR';
     const [userCreds, setUserCreds] = useState({ username: '', password: '', confirmPassword: '' });
     const [createUser, setCreateUser] = useState(true);
+
+    // Labour attributes. Rate and the schedulable flag follow the chosen role
+    // until the admin edits them by hand; craft is an explicit choice.
+    const roleRate = (role: string): number => {
+        const r = Number(contactTypes.find(t => t.code === role && t.active !== false)?.hourlyRate);
+        return Number.isFinite(r) && r > 0 ? r : FALLBACK_RATE;
+    };
+    const [hourlyRate, setHourlyRate] = useState<string>(String(roleRate(DEFAULT_ROLE)));
+    const [rateTouched, setRateTouched] = useState(false);
+    const [craft, setCraft] = useState<string>('');
+    const [isLabour, setIsLabour] = useState<boolean>(LABOUR_ROLES.has(DEFAULT_ROLE));
+    const [labourTouched, setLabourTouched] = useState(false);
+    const craftOptions = contactTypes.filter(t => t.active !== false && !t.isManufacturer && !NON_CRAFT_CODES.has(t.code));
+
+    useEffect(() => {
+        if (!rateTouched) setHourlyRate(String(roleRate(formData.role)));
+        if (!labourTouched) setIsLabour(LABOUR_ROLES.has(formData.role));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [formData.role, contactTypes]);
     const [createLoading, setCreateLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [orgUnits, setOrgUnits] = useState<OrganizationUnit[]>([]);
@@ -108,8 +133,17 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 return;
             }
 
+            const email = formData.email.trim().toLowerCase();
+            if (email && !EMAIL_RE.test(email)) {
+                throw new Error('Enter a valid e-mail address (name@company.com).');
+            }
             if (createUser && (!formData.code || !userCreds.password)) {
                 throw new Error("Username and Password are required for System Access.");
+            }
+            if (createUser && !email) {
+                // Launch rule: people sign in with their company e-mail. The
+                // login is registered under this address, so it must be real.
+                throw new Error('An e-mail address is required to create a login — it is what this person signs in with.');
             }
             if (createUser && userCreds.password !== userCreds.confirmPassword) {
                 throw new Error("Passwords do not match. Please re-enter your password.");
@@ -117,10 +151,14 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
             if (createUser && userCreds.password.length < 6) {
                 throw new Error("Password must be at least 6 characters long.");
             }
+            const rate = Number(hourlyRate);
+            if (!Number.isFinite(rate) || rate < 0) {
+                throw new Error('Hourly rate must be a number of zero or more.');
+            }
 
             const db = DatabaseService.getInstance();
 
-            // Check if username already exists
+            // Check if username / login e-mail already exists
             if (createUser && formData.code) {
                 const existingUsers = await db.getUsers();
                 const usernameExists = existingUsers.some(u =>
@@ -129,7 +167,16 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 if (usernameExists) {
                     throw new Error(`Username "${formData.code}" is already taken. Please choose a different username.`);
                 }
+                const emailExists = existingUsers.some(u => (u.email || '').toLowerCase() === email);
+                if (emailExists) {
+                    throw new Error(`A login already exists for ${email}. Link this person to that account instead.`);
+                }
             }
+
+            // The role is the person's system role (permission template) and
+            // always leads contacts.roles; the craft is what a labour picker
+            // filters on and rides alongside it. Same code twice is one entry.
+            const types = craft && craft !== formData.role ? [formData.role, craft] : [formData.role];
 
             // Use standard UUID to satisfy Postgres requirements
             const contactId = self.crypto.randomUUID();
@@ -142,19 +189,19 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 lastName: '',
                 title: formData.title,
                 code: formData.code,
-                email: '',
+                email,
                 phone: '', mobile: '', active: true,
                 // The person's ROLE is what contacts.roles / users.roles carry
                 // (Admin → Access Control syncs the two). INTERNAL is an entity
                 // type, not a role — writing it here is what gave new
                 // technicians a view-only login.
-                types: [formData.role], defaultType: formData.role,
+                types, defaultType: formData.role,
                 organizationUnitId: null,
                 costCenterId: undefined,
-                hourlyRate: 85, currency: 'USD',
-                address: { street: '', city: '', state: '', zip: '', country: 'USA' },
+                hourlyRate: rate, currency: 'USD',
+                address: { street: '', city: '', state: '', zip: '', country: '' },
                 flags: {
-                    isLabour: true,
+                    isLabour,
                     hasQualifications: false,
                     isVendor: false
                 }
@@ -173,14 +220,11 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 // Let's generate a UUID for strict typing, though Edge Function might override it.
                 const userId = self.crypto.randomUUID();
 
-                // The auth-login email MUST match the virtual-email convention the Login
-                // screen derives from the username (see Login.tsx → loginWithUsername):
-                //   `${username.toLowerCase()}@cainergy.com`
-                // Using the contact's personal email (or a noemail.local placeholder) here
-                // registers the Supabase Auth account under an address the login flow never
-                // tries, so the new user can never sign in. The contact's real email is still
-                // stored separately on the contact record below.
-                const userEmail = `${formData.code.toLowerCase()}@cainergy.com`;
+                // Launch rule (company-e-mail sign-in): the auth account is
+                // registered under the person's real e-mail, which the Login
+                // screen accepts directly. The old `<username>@cainergy.com`
+                // derivation minted addresses nobody owned.
+                const userEmail = email;
 
                 console.log('[AddContactModal] Creating user with:', { username: formData.code, email: userEmail });
 
@@ -211,7 +255,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
             const accountMsg = existingUser
                 ? `Linked to existing account @${existingUser.username}.`
                 : createUser
-                    ? `Person "${formData.code}" created with a login account.`
+                    ? `Person "${formData.code}" created — signs in as ${email}.`
                     : `Person "${formData.code}" created.`;
             showToast(accountMsg, 'success');
             onSave(newContact);
@@ -331,7 +375,75 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         <p className="text-[11px] text-slate-400 mt-1">Sets what this person can see and do. Fine-tune per person later in Admin → Access Control.</p>
                     </div>
 
-                    {/* Fields moved to details page: First Name, Last Name, Email, Cost Center */}
+                    {/* E-mail — the login identity when an account is created */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                            E-mail {createUser && !existingUser && <span className="text-red-500">*</span>}
+                        </label>
+                        <input
+                            type="email"
+                            required={createUser && !existingUser}
+                            autoComplete="off"
+                            name="new-person-email"
+                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500"
+                            value={formData.email}
+                            onChange={e => setFormData({ ...formData, email: e.target.value })}
+                            placeholder="name@company.com"
+                            readOnly={!!existingUser}
+                        />
+                        <p className="text-[11px] text-slate-400 mt-1">
+                            {existingUser ? 'The e-mail of the linked login.' : createUser ? 'This person signs in with this address.' : 'Optional without a login.'}
+                        </p>
+                    </div>
+
+                    {/* Craft + rate — what labour pickers and cost rules read */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Craft</label>
+                            <select
+                                className="w-full text-sm border-slate-300 rounded-md p-2 bg-white"
+                                value={craft}
+                                onChange={e => setCraft(e.target.value)}
+                            >
+                                <option value="">— none —</option>
+                                {craftOptions.map(t => (
+                                    <option key={t.code} value={t.code}>{t.description || t.code}</option>
+                                ))}
+                            </select>
+                            <p className="text-[11px] text-slate-400 mt-1">Trade a planner picks by.</p>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Hourly rate</label>
+                            <div className="flex items-center gap-1">
+                                <span className="text-sm text-slate-400">$</span>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    inputMode="decimal"
+                                    className="w-full text-sm border-slate-300 rounded-md p-2"
+                                    value={hourlyRate}
+                                    onChange={e => { setRateTouched(true); setHourlyRate(e.target.value); }}
+                                />
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-1">
+                                {rateTouched ? 'Person-specific rate.' : `Standard rate for ${formData.role.replace(/_/g, ' ').toLowerCase()}.`}
+                            </p>
+                        </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="rounded text-blue-600 focus:ring-primary-500"
+                            checked={isLabour}
+                            onChange={e => { setLabourTouched(true); setIsLabour(e.target.checked); }}
+                        />
+                        <span className="text-sm text-slate-700">Schedulable labour</span>
+                        <span className="text-[11px] text-slate-400">— can be put on work orders and the schedule</span>
+                    </label>
+
+                    {/* Fields moved to details page: First Name, Last Name, Cost Center */}
 
                     {/* Organization Unit removed - assign via Admin module instead */}
 

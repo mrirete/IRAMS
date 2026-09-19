@@ -1,11 +1,16 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { UserPlus, Search, X, User, Award, DollarSign } from 'lucide-react';
+import { UserPlus, Search, X, User, Award, DollarSign, CalendarDays } from 'lucide-react';
 import type { Contact } from '../../types';
 
 interface AssignmentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAssign: (contactId: string, contactName: string) => void;
+    /**
+     * Assigning from the Backlog is also scheduling: the caller receives the
+     * person AND the date so it can write assigned_to + date_due_start +
+     * due_date + status together (parity with the Resources-grid drop path).
+     */
+    onAssign: (contactId: string, contactName: string, date: string) => void;
     contacts: Contact[];
     woTitle: string;
     woNumber: string;
@@ -16,6 +21,23 @@ interface AssignmentModalProps {
      * are blocked from assignment unless the supervisor explicitly overrides.
      */
     requiredQualifications?: string[];
+    /** Pre-filled "Schedule for" date (yyyy-mm-dd) — the order's due date; falls back to today. */
+    defaultDate?: string;
+}
+
+/** Local calendar date as yyyy-mm-dd (no UTC shift). */
+function todayKey(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Normalise an ISO/date string to yyyy-mm-dd for the date input; empty when unparseable. */
+function toDateKey(value?: string): string {
+    if (!value) return '';
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+    if (m) return m[1];
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** PO-1: evaluate a technician's required-competency status for this WO. */
@@ -51,10 +73,12 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
     woNumber,
     selectedIds,
     requiredQualifications = [],
+    defaultDate,
 }) => {
     const [filter, setFilter] = useState('');
     const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
     const [override, setOverride] = useState(false);
+    const [scheduleDate, setScheduleDate] = useState<string>('');
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     // Reset state when modal opens/closes
@@ -63,9 +87,10 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
             setFilter('');
             setSelectedContactId(null);
             setOverride(false);
+            setScheduleDate(toDateKey(defaultDate) || todayKey());
             setTimeout(() => searchInputRef.current?.focus(), 100);
         }
-    }, [isOpen]);
+    }, [isOpen, defaultDate]);
 
     const gatingOn = requiredQualifications.length > 0;
 
@@ -98,9 +123,11 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
 
     if (!isOpen) return null;
 
+    const canConfirm = !!selectedContact && !selectionBlocked && !!scheduleDate;
+
     const handleConfirm = () => {
-        if (!selectedContact || selectionBlocked) return;
-        onAssign(selectedContact.id, selectedContact.name);
+        if (!selectedContact || selectionBlocked || !scheduleDate) return;
+        onAssign(selectedContact.id, selectedContact.name, scheduleDate);
         onClose();
     };
 
@@ -153,6 +180,24 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                     <div className="mt-1.5 text-[10px] text-slate-400 font-medium">
                         {filteredContacts.length} technician{filteredContacts.length !== 1 ? 's' : ''}
                         {filter && ` matching "${filter}"`}
+                    </div>
+
+                    {/* ── Schedule for (assigning = scheduling) ── */}
+                    <div className="mt-3 flex items-center gap-3">
+                        <label htmlFor="assignment-schedule-date" className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 shrink-0">
+                            <CalendarDays size={14} className="text-slate-400" />
+                            Schedule for
+                        </label>
+                        <input
+                            id="assignment-schedule-date"
+                            type="date"
+                            value={scheduleDate}
+                            onChange={(e) => setScheduleDate(e.target.value)}
+                            className="text-sm px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-white transition"
+                        />
+                        {isBulk && (
+                            <span className="text-[10px] text-slate-400">applies to all {selectedIds.size} orders</span>
+                        )}
                     </div>
                 </div>
 
@@ -308,9 +353,9 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
 
                 {/* ── Footer ── */}
                 <div className="bg-slate-50 px-6 py-4 flex items-center justify-between border-t border-slate-100">
-                    <div className="text-xs text-slate-400 truncate max-w-[200px]">
+                    <div className="text-xs text-slate-400 truncate max-w-[220px]">
                         {selectedContact
-                            ? `Selected: ${selectedContact.name}`
+                            ? (scheduleDate ? `${selectedContact.name} · ${scheduleDate}` : 'Pick a date')
                             : 'Select a technician above'}
                     </div>
                     <div className="flex gap-3">
@@ -322,17 +367,17 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                         </button>
                         <button
                             onClick={handleConfirm}
-                            disabled={!selectedContact || selectionBlocked}
+                            disabled={!canConfirm}
                             className={`px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2 ${
-                                selectedContact && !selectionBlocked
+                                canConfirm
                                     ? 'bg-primary-600 hover:bg-primary-500 text-white'
                                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                         >
                             <UserPlus size={14} />
                             {selectedContact
-                                ? `Assign to ${selectedContact.name.split(' ')[0]}`
-                                : 'Assign'}
+                                ? `Assign & schedule · ${selectedContact.name.split(' ')[0]}`
+                                : 'Assign & schedule'}
                         </button>
                     </div>
                 </div>

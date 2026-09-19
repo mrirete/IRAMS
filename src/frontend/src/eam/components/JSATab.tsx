@@ -23,7 +23,37 @@ export const isRealJsaId = (id?: string): id is string =>
 const JSA_SIGNOFF_ROLES = ['Worker', 'Supervisor', 'HSE Officer'] as const;
 
 export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void; dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
-    const { user, permissions: safetyPerms } = useAuth();
+    const { user, permissions: safetyPerms, role: myRole, profile } = useAuth();
+
+    // Who may sign which pad. Sign-offs used to record the user id but nothing
+    // bound a pad to a role, so one supervisor signed all three and the JSA
+    // authorised itself (2026-09-19). Worker = someone doing the work (on a
+    // labour line, on a step, or the responsible person); Supervisor = a
+    // supervisory role; HSE Officer = a safety role or a safety approver. An
+    // administrator may sign any pad. One person signs one pad.
+    const roleCode = String(myRole || '').toUpperCase();
+    const isAdminRole = ['SUPER_ADMIN', 'SYS_ADMIN'].includes(roleCode);
+    const myContactId = (profile as any)?.contactId as string | undefined;
+    const iDoTheWork = !!user?.id && (
+        (job.labor || []).some(l => l.contactId === user.id)
+        || (job.tasks || []).some(t => (t.assignedUserIds || []).includes(user.id))
+        || (!!myContactId && job.assignedTo === myContactId)
+        || ['TECHNICIAN', 'OPERATOR'].includes(roleCode)
+    );
+    const padEligibility = (padRole: string): { ok: boolean; why?: string } => {
+        if (!user?.id) return { ok: false, why: 'Sign in to sign' };
+        const mine = (job.jsa?.signoffs || []).find(s => s.status === 'Signed' && s.userId === user.id);
+        if (mine && mine.role !== padRole) return { ok: false, why: `You already signed as ${mine.role} — a different person signs here` };
+        if (isAdminRole) return { ok: true };
+        if (padRole === 'Worker') return iDoTheWork ? { ok: true } : { ok: false, why: 'Signed by a person doing the work' };
+        if (padRole === 'Supervisor') {
+            return ['SUPERVISOR', 'MANAGER', 'ASSET_MANAGER'].includes(roleCode) || canApproveSafety
+                ? { ok: true } : { ok: false, why: 'Signed by the supervisor' };
+        }
+        // HSE Officer
+        return /HSE|SAFETY/.test(roleCode) || canApproveSafety
+            ? { ok: true } : { ok: false, why: 'Signed by the HSE officer (safety approver)' };
+    };
     // Permit to work follows the safety row of the matrix (0347/0348): raise
     // needs create; approve / issue / suspend / close need approve and a
     // different person from the one who raised it (four-eyes); accept and
@@ -342,6 +372,11 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
 
     // --- Digital Signature ---
     const handleSignoff = async (role: string, signatureDataUrl: string) => {
+        const gate = padEligibility(role);
+        if (!gate.ok && signatureDataUrl) {
+            showToast(`This pad is not yours to sign: ${gate.why}.`, 'error');
+            return;
+        }
         // Signatures go to storage; the JSONB keeps only the URL. If the upload
         // fails (offline plant floor), fall back to the inline data URL so the
         // sign-off is never lost.
@@ -1389,8 +1424,9 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                         {JSA_SIGNOFF_ROLES.map(role => {
                             const signoff = (job.jsa!.signoffs || []).find(s => s.role === role);
                             const isSigned = signoff?.status === 'Signed' && signoff?.signatureDataUrl;
+                            const gate = padEligibility(role);
                             return (
-                                <div key={role} className={`rounded-lg border-2 p-4 transition ${isSigned ? 'border-green-300 bg-green-50/30' : 'border-slate-200'}`}>
+                                <div key={role} className={`rounded-lg border-2 p-4 transition ${isSigned ? 'border-green-300 bg-green-50/30' : gate.ok ? 'border-slate-200' : 'border-slate-100 bg-slate-50/60'}`}>
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-xs font-bold text-slate-700">{role}</span>
                                         {isSigned && (
@@ -1400,10 +1436,14 @@ export const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>
                                         )}
                                     </div>
                                     <SignaturePad
-                                        label={isSigned ? undefined : `Sign as ${role}`}
+                                        label={isSigned ? undefined : gate.ok ? `Sign as ${role}` : gate.why}
                                         existingSignature={isSigned ? signoff?.signatureDataUrl : undefined}
+                                        disabled={!isSigned && !gate.ok}
                                         onCapture={(dataUrl) => handleSignoff(role, dataUrl)}
                                     />
+                                    {!isSigned && !gate.ok && (
+                                        <p className="text-[10px] text-slate-400 mt-1">{gate.why}</p>
+                                    )}
                                     {isSigned && signoff?.signedAt && (
                                         <p className="text-[10px] text-slate-400 mt-1">{new Date(signoff.signedAt).toLocaleString()}</p>
                                     )}

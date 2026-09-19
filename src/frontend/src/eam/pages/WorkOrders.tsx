@@ -1409,6 +1409,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 labor: ensureIds(updates.labor !== undefined ? updates.labor : updatedJob.labor),
                 inventory: ensureIds(updates.inventory !== undefined ? updates.inventory : updatedJob.inventory),
                 jsa: updates.jsa !== undefined ? updates.jsa : updatedJob.jsa,
+                // Steps deleted with the Delete step button — the only ones the
+                // service may delete (a copy that lacks a step never deletes it).
+                removedTaskIds: (updates as any).removedTaskIds || [],
                 failureData: updatedJob.failureData,
                 // Persist journals into properties JSONB
                 properties: {
@@ -1598,6 +1601,14 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 showToast("⛔ Material Staging Required: Staging must be confirmed prior to executing work.", "error");
                 return;
             }
+            // On a criticality A/B asset the JSA is the permission to start, not
+            // paperwork for later: all three sign-offs before WIP (2026-09-19 run:
+            // work started on a crit-B asset with the JSA still in DRAFT).
+            const critAB = ['A', 'B'].includes(String(assetCriticality || '').toUpperCase());
+            if (critAB && String(localJob.jsa?.status || '').toUpperCase() !== 'AUTHORIZED') {
+                showToast("JSA not authorised: on a criticality A/B asset the Worker, Supervisor and HSE sign-offs are needed before work starts. Open the Safety tab.", "error");
+                return;
+            }
         }
 
         // Waiting needs a reason (0349): the card, the rail and the schedule read it.
@@ -1658,8 +1669,15 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         const updated = { ...localJob, ...updates };
         setLocalJob(updated);
 
-        // 2. Accumulate pending updates
+        // 2. Accumulate pending updates. Step deletions are a union across the
+        // debounce window — two deletes in quick succession must both reach
+        // the database (a second list would have replaced the first).
+        const prevRemoved: string[] = (pendingUpdatesRef.current as any).removedTaskIds || [];
+        const nextRemoved: string[] = (updates as any).removedTaskIds || [];
         pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
+        if (prevRemoved.length || nextRemoved.length) {
+            (pendingUpdatesRef.current as any).removedTaskIds = [...new Set([...prevRemoved, ...nextRemoved])];
+        }
 
         // 3. Clear any existing debounce timer
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -2209,7 +2227,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             });
                             if (name) {
                                 try {
-                                    const mappedInstructions = localJob.tasks?.map(t => ({ id: 'new', stepNumber: t.sequence, description: t.description, type: 'TEXT', required: false })) || [];
+                                    // Instruction text lives in block.label — that is what the PM import,
+                                    // the step drawer and Do-work render. Writing it only to description
+                                    // gave imported steps five blank blocks (2026-09-19).
+                                    const mappedInstructions = localJob.tasks?.map(t => ({ id: 'new', stepNumber: t.sequence, label: t.description, description: t.description, type: 'TEXT', required: false })) || [];
                                     const mappedInventory = (localJob.inventory || []).map(i => ({ inventoryItemId: i.inventoryId || i.id, quantity: i.estQty, notes: i.description }));
                                     const mappedRoles = (localJob.labor || []).map(l => ({ roleCode: l.contactType, quantity: 1, estimatedHours: l.estDuration }));
                                     const libraryTask: any = {
@@ -2314,7 +2335,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     {activeTab === 'tasks' && (
                         <TasksTab
                             job={localJob}
-                            onUpdate={(updatedTasks) => updateJob({ tasks: updatedTasks })}
+                            onUpdate={(updatedTasks, removedTaskIds) => updateJob({ tasks: updatedTasks, ...(removedTaskIds?.length ? { removedTaskIds } : {}) } as any)}
                             availableOrgUnits={orgUnits}
                             availableUsers={users}
                             contacts={contacts}
@@ -3258,6 +3279,31 @@ const SearchableSelect: React.FC<{
 
 const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string, bomItems?: any[], registeredSubunits?: { id: string; code: string; description: string }[], journalPreset?: { type: string; nonce: number } | null }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode, bomItems = [], registeredSubunits = [], journalPreset = null }) => {
     const { profile } = useAuth();
+    // Journal authors are stamped by whoever wrote the line — a username from
+    // the page, a user id from the database and the Autopilot. A raw uuid in
+    // the timeline is nobody's name: resolve it through the directory once.
+    const [journalPeople, setJournalPeople] = useState<Map<string, string>>(new Map());
+    useEffect(() => {
+        let alive = true;
+        DatabaseService.getInstance().getContacts().then((rows: any[]) => {
+            if (!alive) return;
+            const m = new Map<string, string>();
+            for (const c of rows || []) {
+                const label = c.name || c.code || '';
+                if (!label) continue;
+                if (c.id) m.set(String(c.id), label);
+                if (c.userId) m.set(String(c.userId), label);
+                if (c.user_id) m.set(String(c.user_id), label);
+            }
+            setJournalPeople(m);
+        }).catch(() => { /* names stay as stamped */ });
+        return () => { alive = false; };
+    }, []);
+    const journalAuthor = (by?: string) => {
+        if (!by) return 'System';
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(by)) return journalPeople.get(by) || 'Team member';
+        return by;
+    };
     // Dropdown Data — all failure modes (unfiltered, for duplicate validation)
     const allFailureModes = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active), [dictionaries]);
     // Context-filtered: General (no categoryRef) + matched asset class
@@ -4091,7 +4137,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                             )}
                                         </span>
                                     </div>
-                                    <div className="text-[11px] font-semibold text-slate-600 mb-0.5">{j.createdBy}</div>
+                                    <div className="text-[11px] font-semibold text-slate-600 mb-0.5">{journalAuthor(j.createdBy)}</div>
                                     {editingId === j.id ? (
                                         <div className="space-y-1.5">
                                             <textarea
@@ -4468,6 +4514,33 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
         return u?.fullName || u?.full_name || u?.username || u?.email || `${id.slice(0, 8)}…`;
     };
     const stepEstimate = (job.tasks || []).reduce((sum, t) => sum + (Number(t.estHours) || 0), 0);
+    // Stock behind the planned parts: a line reserved beyond what is on hand
+    // is a shortage the planner should see here, with the purchase one click
+    // away (the PO page pre-fills from the query string).
+    const navigate = useNavigate();
+    const [stock, setStock] = useState<Record<string, { onHand: number; reserved: number }>>({});
+    const partItemKey = (job.inventory || []).map(p => p.inventoryId).filter(Boolean).sort().join(',');
+    useEffect(() => {
+        const ids = partItemKey ? partItemKey.split(',') : [];
+        if (ids.length === 0) { setStock({}); return; }
+        let alive = true;
+        supabase.from('inventory_items').select('id, stock_on_hand, stock_reserved').in('id', ids)
+            .then(({ data }) => {
+                if (!alive) return;
+                const next: Record<string, { onHand: number; reserved: number }> = {};
+                for (const r of data || []) next[r.id] = { onHand: Number(r.stock_on_hand) || 0, reserved: Number(r.stock_reserved) || 0 };
+                setStock(next);
+            });
+        return () => { alive = false; };
+    }, [partItemKey]);
+    const shortBy = (p: JobInventory): number => {
+        if (!p.inventoryId || !stock[p.inventoryId]) return 0;
+        const s = stock[p.inventoryId];
+        // Other orders' reservations count against on-hand too; this line's own
+        // reservation is already inside stock_reserved once saved.
+        const othersReserved = Math.max(0, s.reserved - (Number(p.estQty) || 0));
+        return Math.max(0, (Number(p.estQty) || 0) - Math.max(0, s.onHand - othersReserved));
+    };
     const postedLines = (job.labor || []).filter(l => (l as { confirmationNo?: number }).confirmationNo != null);
     const postedTotal = postedLines.reduce((sum, l) => sum + (Number(l.actualDuration) || 0), 0);
     const inExecution = ['WIP', 'WAIT', 'TECO', 'CLOSED'].includes(String(job.status));
@@ -4929,17 +5002,30 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             <div className="bg-white rounded-lg border border-slate-100 p-3 space-y-2">
                                 <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Required Materials Checklist</span>
                                 <div className="divide-y divide-slate-100 max-h-36 overflow-y-auto pr-1">
-                                    {job.inventory.map(part => (
-                                        <div key={part.id} className="py-2 flex justify-between items-center text-xs">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                                <span className="font-medium text-slate-700">{part.description || 'Unnamed Material'}</span>
+                                    {job.inventory.map(part => {
+                                        const short = shortBy(part);
+                                        return (
+                                            <div key={part.id} className="py-2 flex justify-between items-center gap-2 text-xs">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${short > 0 ? 'bg-amber-500' : 'bg-blue-500'}`} />
+                                                    <span className="font-medium text-slate-700 truncate">{part.description || 'Unnamed Material'}</span>
+                                                    {short > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => navigate(`/purchase-orders?new=1&item=${encodeURIComponent(part.inventoryId || '')}&qty=${short}&wo=${encodeURIComponent(job.id)}`)}
+                                                            className="flex-shrink-0 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 hover:bg-amber-100"
+                                                            title="Stores cannot cover this line — raise a purchase order for the shortfall"
+                                                        >
+                                                            Short by {short} · Raise PO
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <span className="font-bold text-slate-600 px-2 py-0.5 bg-slate-50 rounded border border-slate-100 flex-shrink-0">
+                                                    Qty: {part.estQty} {part.uom || 'EA'}
+                                                </span>
                                             </div>
-                                            <span className="font-bold text-slate-600 px-2 py-0.5 bg-slate-50 rounded border border-slate-100">
-                                                Qty: {part.estQty} {part.uom || 'EA'}
-                                            </span>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
 
@@ -5151,6 +5237,9 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                 className={RAIL_INPUT}
                                 title="When the work must be done — set from priority at creation"
                             />
+                            {job.requiredBy && job.dueDate && formatDateForInput(job.requiredBy) > formatDateForInput(job.dueDate) && (
+                                <span className="block text-[10px] text-amber-600 mt-0.5">Later than the due date — one of the two is wrong.</span>
+                            )}
                         </RailRow>
                         <RailRow label="Due Date">
                             <input
@@ -5927,7 +6016,8 @@ const CostTab: React.FC<{
 
 const TasksTab: React.FC<{
     job: WorkOrder;
-    onUpdate: (tasks: JobTask[]) => void;
+    /** removedTaskIds: steps the user deleted with the Delete step button — the only ones the save may delete. */
+    onUpdate: (tasks: JobTask[], removedTaskIds?: string[]) => void;
     availableOrgUnits: OrganizationUnit[];
     availableUsers: User[];
     contacts: any[];
@@ -5995,7 +6085,9 @@ const TasksTab: React.FC<{
         });
         if (!ok) return;
         const filtered = tasks.filter(t => t.id !== id);
-        onUpdate(filtered);
+        // The id travels with the save: only steps named here are deleted in
+        // the database (a client copy that merely lacks a step never is).
+        onUpdate(filtered, id.startsWith('new-') ? [] : [id]);
         if (expandedTaskId === id) setExpandedTaskId(null); // close the drawer with its task
     };
 
@@ -6514,7 +6606,7 @@ const TaskEditor: React.FC<{
     // 1. Must have a valid Contact record (Fixes "Ghost Users" / Username mismatch)
     // 2. Must match selected Team (if any selected)
     const filteredUsers = useMemo(() => {
-        // Enrich users with Contact data � keep ALL users, even without a contact
+        // Enrich users with Contact data — keep ALL users, even without a contact
         const enrichedUsers = availableUsers.map(user => {
             const contact = contacts.find(c => c.id === user.contactId);
             return { user, contact };
@@ -6525,7 +6617,7 @@ const TaskEditor: React.FC<{
             return enrichedUsers;
         }
 
-        // Strict Team Filter � only show members of selected teams
+        // Strict Team Filter — only show members of selected teams
         return enrichedUsers.filter(({ contact }) => {
             if (!contact) return false; // Exclude contactless users when teams are selected
             const contactOrgIds = contact.organizationUnitIds || (contact.organizationUnitId ? [contact.organizationUnitId] : []);
@@ -7124,7 +7216,7 @@ const TaskEditor: React.FC<{
                             >
                                 <option value="">(None)</option>
                                 {(jobContext.tasks || []).filter(t => t.id !== task.id).map(t => (
-                                    <option key={t.id} value={t.id}>#{t.sequence} � {t.description}</option>
+                                    <option key={t.id} value={t.id}>#{t.sequence} · {t.description}</option>
                                 ))}
                             </select>
                         </div>
@@ -7446,7 +7538,7 @@ const TaskEditor: React.FC<{
                 </div>
 
                 {/* ----------------------------------------------------------- */}
-                {/* CARD 2 � ?? PARTS & MATERIALS                             */}
+                {/* CARD 2 — PARTS & MATERIALS                             */}
                 {/* ----------------------------------------------------------- */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                     <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
@@ -7523,7 +7615,7 @@ const TaskEditor: React.FC<{
                         {/* Cost Summary Footer */}
                         {taskParts.length > 0 && (
                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                                <span className="text-slate-500 font-medium">{taskParts.length} item{taskParts.length !== 1 ? 's' : ''} � {taskParts.reduce((sum, p) => sum + p.estQty, 0).toFixed(1)} total qty</span>
+                                <span className="text-slate-500 font-medium">{taskParts.length} item{taskParts.length !== 1 ? 's' : ''} · {taskParts.reduce((sum, p) => sum + p.estQty, 0).toFixed(1)} total qty</span>
                                 <span className="font-bold text-blue-700">
                                     Est. Total: ${taskParts.reduce((sum, p) => sum + (p.estQty * (p.estUnitCost || 0)), 0).toFixed(0)}
                                 </span>
@@ -7580,7 +7672,7 @@ const TaskEditor: React.FC<{
                                                     <div className="text-xs text-slate-400 mt-0.5">
                                                         {lt.category && <span className="bg-slate-100 px-1.5 py-0.5 rounded mr-2">{lt.category}</span>}
                                                         {lt.instructions?.length || 0} steps
-                                                        {lt.estimatedDuration ? ` � ${lt.estimatedDuration}h` : ''}
+                                                        {lt.estimatedDuration ? ` · ${lt.estimatedDuration}h` : ''}
                                                     </div>
                                                     {lt.description && <div className="text-xs text-slate-500 mt-1 line-clamp-2">{lt.description}</div>}
                                                 </div>

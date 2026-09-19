@@ -1927,9 +1927,23 @@ function HistoryTab({ item }: { item: InventoryItem }) {
                                     <span className="text-xs text-slate-600">{mtName || tx.transactionType}</span>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-slate-600">{tx.locationName || '—'}</td>
-                                <td className="px-4 py-3 text-sm text-slate-600 max-w-[220px] truncate" title={tx.notes || undefined}>
-                                    {tx.woId ? <span className="text-blue-600 font-mono text-xs mr-1">WO</span> : tx.poId ? <span className="text-blue-600 font-mono text-xs mr-1">PO</span> : null}
-                                    {tx.notes || (tx.woId || tx.poId ? '' : '—')}
+                                <td className="px-4 py-3 text-sm text-slate-600 max-w-[240px]" title={tx.notes || undefined}>
+                                    {(() => {
+                                        // Document reference — the service may return poCode / woNumber
+                                        // per row; render defensively (either may be undefined).
+                                        const ref = tx as typeof tx & { poCode?: string; woNumber?: string };
+                                        const label = ref.poCode
+                                            ? `GRN via PO ${ref.poCode}`
+                                            : ref.woNumber
+                                                ? `WO ${ref.woNumber}`
+                                                : tx.poId ? 'GRN via PO' : tx.woId ? 'WO' : null;
+                                        return (
+                                            <>
+                                                <div className={`truncate ${label ? 'font-mono text-xs text-blue-700' : 'text-slate-400'}`}>{label || '—'}</div>
+                                                {tx.notes && <div className="truncate text-[11px] text-slate-400">{tx.notes}</div>}
+                                            </>
+                                        );
+                                    })()}
                                 </td>
                                 <td className={`px-4 py-3 text-sm text-right font-medium ${qty < 0 ? 'text-red-600' : 'text-green-600'}`}>
                                     {qty > 0 ? '+' : ''}{qty}

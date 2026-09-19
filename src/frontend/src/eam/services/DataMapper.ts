@@ -236,8 +236,15 @@ export class DataMapper {
             console.error(`[DataMapper] Attempting to save inventory with temp jobTaskId: ${ui.jobTaskId}. This implies ID mapping failed in DatabaseService.`);
         }
 
-        const qty = ui.actualQty !== undefined ? ui.actualQty : ui.estQty;
-        const uCost = ui.actualUnitCost !== undefined ? ui.actualUnitCost : ui.estUnitCost;
+        // A planned line (not yet issued) is edited through estQty — the
+        // Resources drawer's quantity box writes estQty while actualQty still
+        // holds the loaded value, so "actualQty ?? estQty" silently discarded
+        // every planned-quantity edit (2026-09-19). Issued lines keep actuals.
+        const planned = ui.isPlanned !== false && !ui.dateUsed;
+        const qty = planned ? ui.estQty : (ui.actualQty !== undefined ? ui.actualQty : ui.estQty);
+        const uCost = planned
+            ? (ui.estUnitCost !== undefined ? ui.estUnitCost : ui.actualUnitCost)
+            : (ui.actualUnitCost !== undefined ? ui.actualUnitCost : ui.estUnitCost);
 
         return {
             id: ui.id.startsWith('new-') ? undefined : ui.id,
@@ -523,7 +530,9 @@ export class DataMapper {
             assetCode: foundAsset ? foundAsset.tag : undefined,
             createdById: record.created_by,
             dateCreated: record.created_at,
-            costCenter: record.cost_center,
+            // 0371: cost_center_id is the receiver settlement, budgets and PO lines
+            // read; the text column is legacy and kept in step by a trigger.
+            costCenter: record.cost_center_id || record.cost_center,
             workCenterId: record.work_center_id || undefined, // 0178 — Main Work Center
 
             // Scheduling
@@ -634,9 +643,13 @@ export class DataMapper {
 
         if (ui.assignedTo) record.assigned_to = ui.assignedTo;
 
-        // Cost Center (text field in DB)
+        // Cost centre: the Details select carries the cost_centers.id. Written
+        // to the uuid receiver column (what settlement / budgets / PO lines
+        // read) and mirrored to the legacy text column (0371).
         if (ui.costCenter !== undefined) {
-            record.cost_center = ui.costCenter || null;
+            const v = ui.costCenter || null;
+            record.cost_center = v;
+            record.cost_center_id = v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
         }
 
         // Main Work Center — the responsible work group (0178, SAP Main Work Center)

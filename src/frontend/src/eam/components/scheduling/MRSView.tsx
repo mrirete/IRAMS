@@ -753,8 +753,10 @@ export const MRSView: React.FC<MRSViewProps> = ({
                     </div>
                     <h3 className="text-lg font-bold text-slate-700 mb-2">No labor resources found</h3>
                     <p className="text-sm text-slate-500 leading-relaxed">
-                        Configure contacts as labor in the <span className="font-semibold text-blue-600">People</span> module.
-                        Resources need craft types and working day configurations to appear in the scheduling grid.
+                        Mark people as labour, or give them a craft type such as Technician, in the{' '}
+                        <span className="font-semibold text-blue-600">People</span> module.
+                        Anyone without a working pattern is shown on a default Mon–Fri, 8 h/day calendar
+                        until one is set on their contact record.
                     </p>
                 </div>
             </div>

@@ -75,6 +75,16 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const [typeFilter, setTypeFilter] = useState<string>('ALL'); // CONTACT_TYPE code, or ALL
     const [unitFilter, setUnitFilter] = useState<string>('ALL'); // org unit id, ALL, or NONE
     const [filterSheetOpen, setFilterSheetOpen] = useState(false); // below lg the rail is a sheet
+    // Logins with no person record ("SYS-USER / System Account") are noise in a
+    // people directory — hidden by default, one toggle to show them, remembered.
+    const SHOW_SYSTEM_KEY = 'ers_contacts_show_system_accounts';
+    const [showSystemAccounts, setShowSystemAccounts] = useState<boolean>(() => {
+        try { return localStorage.getItem(SHOW_SYSTEM_KEY) === '1'; } catch { return false; }
+    });
+    const toggleSystemAccounts = (on: boolean) => {
+        setShowSystemAccounts(on);
+        try { localStorage.setItem(SHOW_SYSTEM_KEY, on ? '1' : '0'); } catch { /* private mode: not remembered */ }
+    };
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; contactId: string | null; contactName: string }>({
         isOpen: false,
         contactId: null,
@@ -410,7 +420,11 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     };
 
     // --- Filtered list for rendering ---
-    const people = React.useMemo(() => mergedContacts.filter(isPerson), [mergedContacts]);
+    const systemAccountCount = React.useMemo(() => mergedContacts.filter(c => c.flags?.isVirtual).length, [mergedContacts]);
+    const people = React.useMemo(
+        () => mergedContacts.filter(c => isPerson(c) && (showSystemAccounts || !c.flags?.isVirtual)),
+        [mergedContacts, showSystemAccounts]
+    );
 
     // Type dropdown options, most common first.
     const typeOptions = React.useMemo(() => {
@@ -523,6 +537,18 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                     {typeOptions.map(([t, n]) => <option key={t} value={t}>{getContactTypeLabel(t)} ({n})</option>)}
                 </select>
             </div>
+            <label className="flex items-start gap-2 cursor-pointer select-none" title="Logins that have no person record yet (code SYS-USER)">
+                <input
+                    type="checkbox"
+                    className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-primary-500"
+                    checked={showSystemAccounts}
+                    onChange={e => toggleSystemAccounts(e.target.checked)}
+                />
+                <span className="text-xs text-slate-600 leading-snug">
+                    Show system accounts
+                    {systemAccountCount > 0 && <span className="text-slate-400"> ({systemAccountCount})</span>}
+                </span>
+            </label>
             {activeFilterCount > 0 && (
                 <button type="button" onClick={clearFilters} className="text-xs font-medium text-blue-600 hover:underline text-left">
                     Clear filters

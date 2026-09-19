@@ -304,6 +304,37 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     },
 
     // ────────────────────────────────────────────────────────
+    // FINANCE: accounts payable / cost control. Owns FinOps (no delete),
+    // approves and authorises purchase orders and sees every cost, but
+    // never plans, edits or schedules work. Added 2026-09-19 — the
+    // assurance run had no persona that could clear an invoice or
+    // authorise a PO without also being a maintenance manager.
+    // ────────────────────────────────────────────────────────
+    FINANCE: {
+        dashboard: { ...VIEW_ONLY_PERM, viewCosts: true },
+        assets: VIEW_ONLY_PERM,
+        requests: { ...VIEW_ONLY_PERM, create: true },
+        workOrders: { ...VIEW_ONLY_PERM, viewCosts: true },
+        pm: VIEW_ONLY_PERM,
+        scheduling: VIEW_ONLY_PERM,
+        inventory: { ...VIEW_ONLY_PERM, viewCosts: true },
+        purchasing: { ...VIEW_ONLY_PERM, approve: true, authorize: true, viewCosts: true, spendingLimit: 50000 },
+        readings: VIEW_ONLY_PERM,
+        analytics: { ...VIEW_ONLY_PERM, viewCosts: true },
+        contacts: VIEW_ONLY_PERM,
+        vendors: { ...VIEW_ONLY_PERM, viewCosts: true },
+        taskLibrary: VIEW_ONLY_PERM,
+        safety: VIEW_ONLY_PERM,
+        moc: VIEW_ONLY_PERM,
+        notifications: BASIC_ACCESS,
+        audits: VIEW_ONLY_PERM,
+        finops: { ...FULL_ACCESS, delete: false },
+        admin: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        activityLog: NO_ACCESS_PERM,
+    },
+
+    // ────────────────────────────────────────────────────────
     // TECHNICIAN: Work execution focus
     // View + Create requests, Edit WOs (complete tasks)
     // ────────────────────────────────────────────────────────

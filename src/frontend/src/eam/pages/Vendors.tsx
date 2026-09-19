@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
     Search, Plus, Truck, Mail, Phone, MapPin, Globe, Save, Trash2, X, FileText, DollarSign,
-    Calendar, Users, Building, Package, Upload
+    Calendar, Users, Building, Package, Upload, History, Receipt, Loader2
 } from 'lucide-react';
+import { getVendorHistory, VendorHistory } from '../services/vendorHistory';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { emptyResult, tally, errMessage } from '../services/importTypes';
 import type { ImportType } from '../services/assetTemplates';
@@ -39,6 +40,29 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [newModelCode, setNewModelCode] = useState('');
     const [newModelDesc, setNewModelDesc] = useState('');
     const [addingModel, setAddingModel] = useState(false);
+
+    // Supplier history — the orders, receipts and invoices behind this vendor.
+    const [history, setHistory] = useState<VendorHistory | null>(null);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyTab, setHistoryTab] = useState<'orders' | 'receipts' | 'invoices'>('orders');
+
+    useEffect(() => {
+        const id = selectedVendor?.id;
+        if (!id) { setHistory(null); return; }
+        let cancelled = false;
+        setHistoryLoading(true);
+        getVendorHistory(id)
+            .then(h => { if (!cancelled) setHistory(h); })
+            .catch(e => { if (!cancelled) setHistory({ purchaseOrders: [], goodsReceipts: [], invoices: [], warnings: [e?.message || 'History could not be read.'] }); })
+            .finally(() => { if (!cancelled) setHistoryLoading(false); });
+        return () => { cancelled = true; };
+    }, [selectedVendor?.id]);
+
+    const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString() : '—';
+    const fmtMoney = (n: number, ccy?: string | null) =>
+        `${ccy || selectedVendor?.currency || 'USD'} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const matchTone = (s: string): 'success' | 'danger' | 'warning' | 'neutral' =>
+        s === 'MATCHED' ? 'success' : s === 'BLOCKED' ? 'danger' : s === 'VARIANCE' ? 'warning' : 'neutral';
 
     useEffect(() => {
         loadData();
@@ -591,6 +615,148 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                     onChange={e => setSelectedVendor({ ...selectedVendor, hourlyRate: parseFloat(e.target.value) })}
                                     className="w-full p-2 border border-slate-300 rounded text-sm"
                                 />
+                            </div>
+                        </div>
+
+                        <hr className="border-slate-100" />
+
+                        {/* Supplier History — what has actually been bought from, received from and invoiced by this vendor */}
+                        <div>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                    <History size={16} /> Supplier History
+                                    {historyLoading && <Loader2 size={14} className="animate-spin text-slate-400" />}
+                                </h3>
+                                <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
+                                    {([
+                                        { id: 'orders', label: 'Orders', n: history?.purchaseOrders.length ?? 0, icon: FileText },
+                                        { id: 'receipts', label: 'Receipts', n: history?.goodsReceipts.length ?? 0, icon: Package },
+                                        { id: 'invoices', label: 'Invoices', n: history?.invoices.length ?? 0, icon: Receipt },
+                                    ] as const).map(t => (
+                                        <button
+                                            key={t.id}
+                                            type="button"
+                                            onClick={() => setHistoryTab(t.id)}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition ${historyTab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                                        >
+                                            <t.icon size={13} /> {t.label}
+                                            <span className={`ml-0.5 px-1.5 rounded-full text-[10px] ${historyTab === t.id ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>{t.n}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {history && history.warnings.length > 0 && (
+                                <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 space-y-0.5">
+                                    {history.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                                </div>
+                            )}
+
+                            <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
+                                {historyLoading && !history ? (
+                                    <div className="py-8 text-center text-sm text-slate-400">Loading history…</div>
+                                ) : historyTab === 'orders' ? (
+                                    history && history.purchaseOrders.length > 0 ? (
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                                <thead className="bg-slate-50">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Status</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Created</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Lines</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Total</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {history.purchaseOrders.map(po => (
+                                                        <tr key={po.id} className="hover:bg-slate-50">
+                                                            <td className="px-4 py-2 font-mono font-medium text-slate-900">{po.poCode}</td>
+                                                            <td className="px-4 py-2"><Badge tone="neutral">{po.status}</Badge></td>
+                                                            <td className="px-4 py-2 text-slate-600">{fmtDate(po.dateCreated)}</td>
+                                                            <td className="px-4 py-2 text-right text-slate-600">{po.lineCount}</td>
+                                                            <td className="px-4 py-2 text-right font-medium text-slate-900">{fmtMoney(po.total, po.currency)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                                <tfoot className="bg-slate-50">
+                                                    <tr>
+                                                        <td colSpan={4} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-right">Ordered to date</td>
+                                                        <td className="px-4 py-2 text-right font-bold text-slate-900">
+                                                            {fmtMoney(history.purchaseOrders.reduce((s, p) => s + p.total, 0))}
+                                                        </td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="py-8 text-center text-sm text-slate-400">No purchase orders have been placed with this vendor.</div>
+                                    )
+                                ) : historyTab === 'receipts' ? (
+                                    history && history.goodsReceipts.length > 0 ? (
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                                <thead className="bg-slate-50">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">GRN</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Received</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Qty</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Value</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {history.goodsReceipts.map(gr => (
+                                                        <tr key={gr.id} className="hover:bg-slate-50">
+                                                            <td className="px-4 py-2 font-mono font-medium text-slate-900">{gr.grnNumber}</td>
+                                                            <td className="px-4 py-2 font-mono text-slate-600">{gr.poCode || '—'}</td>
+                                                            <td className="px-4 py-2 text-slate-600">{fmtDate(gr.receivedDate)}</td>
+                                                            <td className="px-4 py-2 text-right text-slate-600">{gr.quantity.toLocaleString()}</td>
+                                                            <td className="px-4 py-2 text-right font-medium text-slate-900">{fmtMoney(gr.totalCost)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="py-8 text-center text-sm text-slate-400">
+                                            {history && history.purchaseOrders.length > 0
+                                                ? 'Nothing has been received against this vendor\'s orders yet.'
+                                                : 'No goods receipts — nothing has been ordered from this vendor.'}
+                                        </div>
+                                    )
+                                ) : (
+                                    history && history.invoices.length > 0 ? (
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                                <thead className="bg-slate-50">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Invoice</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Date</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Amount</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Match</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Payables</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {history.invoices.map(inv => (
+                                                        <tr key={inv.id} className="hover:bg-slate-50">
+                                                            <td className="px-4 py-2 font-mono font-medium text-slate-900">{inv.invoiceNumber}</td>
+                                                            <td className="px-4 py-2 font-mono text-slate-600">{inv.poCode || '—'}</td>
+                                                            <td className="px-4 py-2 text-slate-600">{fmtDate(inv.invoiceDate)}</td>
+                                                            <td className="px-4 py-2 text-right font-medium text-slate-900">{fmtMoney(inv.invoiceAmount, inv.currency)}</td>
+                                                            <td className="px-4 py-2"><Badge tone={matchTone(inv.matchStatus)}>{inv.matchStatus}</Badge></td>
+                                                            <td className="px-4 py-2 text-slate-600">{inv.payablesStatus}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="py-8 text-center text-sm text-slate-400">No invoices have been entered for this vendor.</div>
+                                    )
+                                )}
                             </div>
                         </div>
 

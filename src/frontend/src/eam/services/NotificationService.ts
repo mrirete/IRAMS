@@ -259,7 +259,7 @@ export class NotificationService {
         console.log(`[NOTIFICATION] Resolved ${recipients.length} recipient(s) for "${rule.name}": ${recipients.join(', ') || '(none)'}`);
 
         // Build notification content
-        const entityNumber = entity.woNumber || entity.requestNumber || entity.poNumber || entity.pmCode || entity.itemCode || entity.definitionName || entity.assetCode || '';
+        const entityNumber = entity.woNumber || entity.requestNumber || entity.poNumber || entity.poCode || entity.pmCode || entity.itemCode || entity.definitionName || entity.assetCode || '';
         const entityType = this.inferEntityType(rule.module);
         const wantEmail = activeChannels.includes('EMAIL');
         const emailRecipientIds: string[] = [];
@@ -437,7 +437,9 @@ export class NotificationService {
             'READING_TREND_ANOMALY': 'AI_RECOMMENDATION',
             // Purchasing
             'PO_CREATED': 'STATUS_CHANGE',
-            'PO_APPROVED': 'APPROVAL_REQUIRED',
+            // Informational: the order passed its budget check. It used to be
+            // filed as APPROVAL_REQUIRED, which asked the reader to act.
+            'PO_APPROVED': 'STATUS_CHANGE',
             'PO_RECEIVED': 'STATUS_CHANGE',
             'PO_OVERDUE': 'SCHEDULE_ALERT',
             'PO_BUDGET_EXCEEDED': 'COST_THRESHOLD',

@@ -66,7 +66,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
     if (block.type === 'HEADING') {
         return (
             <div className="border-l-4 border-blue-400 pl-3 py-2 mb-1 mt-4">
-                <h3 className="font-bold text-slate-800 text-base">{block.label}</h3>
+                <h3 className="font-bold text-slate-800 text-base">{block.label || (block as any).description || ''}</h3>
             </div>
         );
     }
@@ -86,7 +86,8 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
             {/* Label */}
             <h4 className="font-semibold text-slate-800 text-sm mb-2 flex flex-col gap-1">
                 <div className="flex items-start gap-2">
-                    <span className="mt-0.5">{block.label}</span>
+                    {/* Older library blocks kept their text in description (0371 repaired the data; this is the belt). */}
+                    <span className="mt-0.5">{block.label || (block as any).description || ''}</span>
                     {block.required && <span className="text-red-500 text-xs font-normal bg-red-50 px-1.5 py-0.5 rounded">*Required</span>}
                 </div>
 

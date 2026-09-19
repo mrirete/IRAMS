@@ -36,9 +36,11 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
         // 0365: a new schedule is due today unless the planner says otherwise —
         // the cadence is the gap between occurrences, not a wait before the first.
         firstDue: firstDueDate(),
-        // …and the first occurrence is raised on the spot, which also arms
-        // Autopilot once the technician completes it (0304 arming rule).
-        generateNow: true,
+        // The first occurrence is NOT raised on the spot by default: the order copies
+        // whatever is planned at that moment, and a brand-new schedule has no steps,
+        // labour, parts or JSA yet. Opt in once the plan exists (completing it still
+        // arms Autopilot — 0304 arming rule).
+        generateNow: false,
         // Automatic (daily sweep) or Manual (Generator only) — defaults to the company's choice.
         autoGenerate: true,
     });
@@ -260,15 +262,20 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                                 onChange={e => setFormData({ ...formData, leadTimeDays: parseInt(e.target.value) || 0 })}
                                             />
                                         </div>
-                                        <label className="col-span-2 flex items-center gap-2 text-xs text-slate-700 pb-2 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                className="rounded border-slate-300"
-                                                checked={formData.generateNow}
-                                                onChange={e => setFormData({ ...formData, generateNow: e.target.checked })}
-                                            />
-                                            Raise the first work order now
-                                        </label>
+                                        <div className="col-span-2 pb-2">
+                                            <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-slate-300"
+                                                    checked={formData.generateNow}
+                                                    onChange={e => setFormData({ ...formData, generateNow: e.target.checked })}
+                                                />
+                                                Raise the first work order now
+                                            </label>
+                                            <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                                                The first order copies whatever is planned now — plan steps, labour, parts and JSA first, then generate.
+                                            </p>
+                                        </div>
                                         <div className="col-span-2 md:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
                                             {([
                                                 [true, 'Automatic (Autopilot)', companyAuto

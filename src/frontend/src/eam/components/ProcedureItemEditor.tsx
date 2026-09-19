@@ -355,7 +355,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                                 ? 'text-base font-bold text-slate-800 border-none p-0 focus:ring-0 bg-transparent'
                                 : 'text-sm font-medium text-slate-700 border border-slate-200 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 hover:border-slate-300 transition-all duration-200 outline-none'}`}
                             placeholder={isHeading ? 'Section heading...' : 'Enter instruction...'}
-                            value={block.label}
+                            value={block.label || (block as any).description || ''}
                             onChange={(e) => onChange({ label: e.target.value })}
                             rows={2}
                         />

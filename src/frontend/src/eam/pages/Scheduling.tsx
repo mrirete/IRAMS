@@ -117,6 +117,38 @@ function isToday(d: Date): boolean {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
 
+/**
+ * A technician with no labor_rules still needs a row on the Resources grid.
+ * Mirrors the defaults DatabaseService.getLaborAvailability assumes
+ * (Mon–Fri, 8 h/day) so both paths draw the same capacity.
+ */
+const DEFAULT_WORKING_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const DEFAULT_DAILY_HOURS = 8;
+function defaultLaborResource(c: Contact, range: { start: string; end: string }): LaborResource {
+    const rules = c.labourRules;
+    const dailyHours = rules?.dailyHours || DEFAULT_DAILY_HOURS;
+    const workingDays = (rules?.days && rules.days.length > 0) ? rules.days : DEFAULT_WORKING_DAYS;
+    const availableHoursPerDay: Record<string, number> = {};
+    const end = new Date(range.end);
+    for (let d = new Date(range.start); d <= end; d.setDate(d.getDate() + 1)) {
+        const key = d.toISOString().split('T')[0];
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+        availableHoursPerDay[key] = workingDays.includes(dayName) ? dailyHours : 0;
+    }
+    return {
+        contactId: c.id,
+        name: c.name,
+        craftTypes: (c.types || []).filter(t => !['INTERNAL', 'LABOUR', 'LABOR', 'SYSTEM_USER'].includes(t.toUpperCase())),
+        hourlyRate: c.hourlyRate || 0,
+        dailyCapacityHours: dailyHours,
+        workingDays,
+        qualifications: (c.qualifications || []).map(q => ({ name: q.name || '', status: q.status || 'Active', expires: q.dateExpires || '' })),
+        orgUnitIds: c.organizationUnitIds || [],
+        assignments: [],
+        availableHoursPerDay,
+    };
+}
+
 // ========================================
 // MAIN SCHEDULING PAGE
 // ========================================
@@ -145,7 +177,19 @@ export const Scheduling: React.FC = () => {
     const [recurringJobs, setRecurringJobs] = useState<RecurringJob[]>([]);
     const [loadingPMs, setLoadingPMs] = useState(true);
     const [loadingWOs, setLoadingWOs] = useState(true);
-    const dictionaries = MOCK_DICTIONARIES;
+    // Priority colours/legend come from the tenant's dictionaries (same pattern
+    // as WorkOrders/RecurringWork); MOCK is only the pre-load / empty fallback.
+    const [dictionaries, setDictionaries] = useState<DictionaryEntry[]>(MOCK_DICTIONARIES);
+    useEffect(() => {
+        let live = true;
+        DatabaseService.getInstance().getDictionaries()
+            .then(d => { if (live && d.length > 0) setDictionaries(d); })
+            .catch(e => console.warn('[Scheduling] dictionaries fell back to defaults:', e));
+        return () => { live = false; };
+    }, []);
+    // Notification rows carry the caller's auth uid in created_by (0342 insert
+    // policy) — never the username.
+    const actorId = user?.id || 'SYSTEM';
 
     // Labor contacts for assignment modal
     const [laborContacts, setLaborContacts] = useState<Contact[]>([]);
@@ -220,12 +264,29 @@ export const Scheduling: React.FC = () => {
                 };
                 setMrsDateRange(range);
 
-                // GAP-A: Load both labor availability AND resource demand in parallel
+                // GAP-A: Load both labor availability AND resource demand in parallel.
+                // dataScope.siteIds defaults to the wildcard ['*']; getLaborAvailability
+                // feeds the list straight into a membership test, so the wildcard hid
+                // every contact ("No labor resources found"). Site scoping is applied
+                // here instead: wildcard = everyone; a real site list keeps people in
+                // those units and people with no unit at all (they can't belong to
+                // another site).
+                const siteIds = (dataScope?.siteIds || []).filter(id => id && id !== '*');
                 const [laborResult, demandResult] = await Promise.all([
-                    db.getLaborAvailability(range, dataScope?.siteIds),
+                    db.getLaborAvailability(range),
                     db.getResourceDemand(range),
                 ]);
-                setMrsResources(laborResult.resources as LaborResource[]);
+                const inScope = (orgUnitIds: string[] | undefined) =>
+                    siteIds.length === 0 || !orgUnitIds || orgUnitIds.length === 0 || orgUnitIds.some(id => siteIds.includes(id));
+                const live = (laborResult.resources as LaborResource[]).filter(r => inScope(r.orgUnitIds));
+                // Technician-type contacts the service did not return (no labor_rules,
+                // fetch error) still appear with the same default working pattern the
+                // service assumes: Mon–Fri, 8 h/day.
+                const seen = new Set(live.map(r => r.contactId));
+                const fallback: LaborResource[] = laborContacts
+                    .filter(c => !seen.has(c.id) && inScope(c.organizationUnitIds))
+                    .map(c => defaultLaborResource(c, range));
+                setMrsResources([...live, ...fallback]);
                 setMrsDemand(demandResult);
             } catch (err) {
                 console.error('[Scheduling] Failed to load MRS resources:', err);
@@ -236,7 +297,7 @@ export const Scheduling: React.FC = () => {
             }
         };
         loadMRS();
-    }, [viewMode, currentDate, dataScope?.siteIds]);
+    }, [viewMode, currentDate, dataScope?.siteIds, laborContacts]);
 
     // GAP-D: Batch material availability check (runs once on WO load, cached)
     useEffect(() => {
@@ -728,6 +789,61 @@ export const Scheduling: React.FC = () => {
         setMaterialPendingAction(null);
     };
 
+    /**
+     * Assigning is scheduling: one write puts the person on the order, dates it
+     * and moves OPEN/PLAN → SCHED (the Resources-grid drop and the Backlog
+     * Assign modal both come through here so the two can't diverge again).
+     * Then the assignment + status-change journal lines and the technician's
+     * "Scheduled for <date>" notice. Returns false when the write failed.
+     */
+    const assignAndSchedule = async (woId: string, contactId: string, date: string): Promise<boolean> => {
+        const db = DatabaseService.getInstance();
+        const wo = jobs.find(j => j.id === woId);
+        const before = wo?.assignedTo;
+        const prevStatus = (wo?.status || 'OPEN') as string;
+        const newStatus = (prevStatus === 'OPEN' || prevStatus === 'PLAN') ? 'SCHED' : prevStatus;
+        // Optimistic UI update
+        setJobs(prev => prev.map(j => j.id === woId ? { ...j, assignedTo: contactId, dateDueStart: date, dueDate: date, status: newStatus as any } : j));
+        try {
+            await db.scheduleWorkOrder(woId, {
+                assigned_to: contactId,
+                date_due_start: date,
+                due_date: date,
+                status: newStatus,
+            }, (profile?.username || 'scheduler') as string);
+        } catch (err) {
+            console.error('[Scheduling] assign+schedule failed:', err);
+            // Revert
+            setJobs(prev => prev.map(j => j.id === woId && wo ? { ...j, assignedTo: before, dateDueStart: wo.dateDueStart, dueDate: wo.dueDate, status: wo.status } : j));
+            return false;
+        }
+        const actorName = profile?.username || 'scheduler';
+        const dateLabel = new Date(date).toLocaleDateString();
+        db.journalAssignment(woId, before, contactId, actorName).catch(() => {});
+        if (newStatus !== prevStatus && user?.id) {
+            // Same "Status changed: A → B" wording the WO page writes, so the
+            // history reads the same whichever screen moved the order.
+            db.journalStatusChange(woId, prevStatus, newStatus, actorName, `scheduled for ${date}`)
+                .catch(e => console.warn('[Scheduling] status journal not written:', e?.message || e));
+        }
+        try {
+            await NotificationService.notify({
+                recipientId: contactId,
+                title: `Scheduled for ${dateLabel}: ${wo?.woNumber || 'WO'}`,
+                message: `Scheduled for ${dateLabel}: ${wo?.woNumber || 'WO'} — ${wo?.title || 'Work Order'}. Assigned to you.`,
+                severity: wo?.priority === 'EMERGENCY' ? 'CRITICAL' : 'INFO',
+                notificationType: 'SCHEDULE_ALERT',
+                module: 'workOrders',
+                entityId: woId,
+                entityType: 'WORK_ORDER',
+                entityNumber: wo?.woNumber || '',
+                actionLink: '/work-orders',
+                createdBy: actorId,
+            });
+        } catch { /* non-blocking */ }
+        return true;
+    };
+
     const handleMaterialScheduleSuggested = async (suggestedDate: string) => {
         setMaterialModalOpen(false);
         if (!materialPendingAction) return;
@@ -778,7 +894,7 @@ export const Scheduling: React.FC = () => {
                         entityType: 'WORK_ORDER',
                         entityNumber: wo?.woNumber || '',
                         actionLink: '/work-orders',
-                        createdBy: (profile?.username || 'scheduler') as string,
+                        createdBy: actorId,
                     });
                 } catch (notifErr) {
                     console.warn('[Scheduling] Reschedule notification failed (non-blocking):', notifErr);
@@ -1079,42 +1195,8 @@ export const Scheduling: React.FC = () => {
                                     showToast('Your role cannot assign work (needs Scheduling · Assign).', 'error');
                                     return;
                                 }
-                                const db = DatabaseService.getInstance();
-                                // Optimistic UI update
-                                setJobs(prev => prev.map(j => j.id === woId ? { ...j, assignedTo: contactId, dateDueStart: date, dueDate: date, status: (j.status === 'OPEN' || j.status === 'PLAN') ? 'SCHED' as any : j.status } : j));
-                                try {
-                                    const before = jobs.find(j => j.id === woId)?.assignedTo;
-                                    await db.scheduleWorkOrder(woId, {
-                                        assigned_to: contactId,
-                                        date_due_start: date,
-                                        due_date: date,
-                                        status: 'SCHED',
-                                    }, (profile?.username || 'scheduler') as string);
-                                    db.journalAssignment(woId, before, contactId, profile?.username || 'scheduler').catch(() => {});
-                                    showToast('Job assigned and scheduled', 'success');
-
-                                    // GAP-G: Notify assigned technician
-                                    try {
-                                        const wo = jobs.find(j => j.id === woId);
-                                        const contact = laborContacts.find(c => c.id === contactId);
-                                        await NotificationService.notify({
-                                            recipientId: contactId,
-                                            title: `New Assignment: ${wo?.woNumber || 'WO'}`,
-                                            message: `You have been assigned "${wo?.title || 'Work Order'}" for ${new Date(date).toLocaleDateString()}.`,
-                                            severity: wo?.priority === 'EMERGENCY' ? 'CRITICAL' : 'INFO',
-                                            notificationType: 'ASSIGNMENT',
-                                            module: 'workOrders',
-                                            entityId: woId,
-                                            entityType: 'WORK_ORDER',
-                                            entityNumber: wo?.woNumber || '',
-                                            actionLink: '/work-orders',
-                                            createdBy: (profile?.username || 'scheduler') as string,
-                                        });
-                                    } catch { /* non-blocking */ }
-                                } catch (err) {
-                                    console.error('[MRS] Failed to assign:', err);
-                                    showToast('Assignment failed', 'error');
-                                }
+                                const ok = await assignAndSchedule(woId, contactId, date);
+                                showToast(ok ? 'Job assigned and scheduled' : 'Assignment failed', ok ? 'success' : 'error');
                             }}
                             loading={mrsLoading}
                         />
@@ -1143,41 +1225,35 @@ export const Scheduling: React.FC = () => {
             <AssignmentModal
                 isOpen={assignModalOpen}
                 onClose={() => { setAssignModalOpen(false); setAssignTargetIds(new Set()); }}
-                onAssign={(contactId, contactName) => {
+                onAssign={async (contactId, contactName, date) => {
                     if (!canAssign) {
                         showToast('Your role cannot assign work (needs Scheduling · Assign).', 'error');
                         setAssignModalOpen(false);
                         return;
                     }
-                    const updated = jobs.map(j => assignTargetIds.has(j.id) ? { ...j, assignedTo: contactId } : j);
-                    setJobs(updated);
-                    // Persist each assignment, then notify the assignee (GAP-G parity with MRS drag-drop)
-                    const db = DatabaseService.getInstance();
-                    assignTargetIds.forEach(woId => {
-                        db.journalAssignment(woId, jobs.find(j => j.id === woId)?.assignedTo, contactId, profile?.username || 'scheduler').catch(() => {});
-                        db.updateWorkOrder(woId, { assigned_to: contactId } as any, 'scheduler')
-                            .then(() => {
-                                const wo = jobs.find(j => j.id === woId);
-                                return NotificationService.notify({
-                                    recipientId: contactId,
-                                    title: `New Assignment: ${wo?.woNumber || 'WO'}`,
-                                    message: `You have been assigned "${wo?.title || 'Work Order'}".`,
-                                    severity: wo?.priority === 'EMERGENCY' ? 'CRITICAL' : 'INFO',
-                                    notificationType: 'ASSIGNMENT',
-                                    module: 'workOrders',
-                                    entityId: woId,
-                                    entityType: 'WORK_ORDER',
-                                    entityNumber: wo?.woNumber || '',
-                                    actionLink: '/work-orders',
-                                    createdBy: (profile?.username || 'scheduler') as string,
-                                });
-                            })
-                            .catch(console.error);
-                    });
-                    showToast(`Assigned ${assignTargetIds.size} job(s) to ${contactName}`, 'success');
+                    // Backlog Assign = assign AND schedule (same write as the
+                    // Resources-grid drop); bulk uses the one date for every order.
+                    const ids = Array.from(assignTargetIds);
                     setAssignModalOpen(false);
                     setAssignTargetIds(new Set());
+                    const results = await Promise.all(ids.map(woId => assignAndSchedule(woId, contactId, date)));
+                    const okCount = results.filter(Boolean).length;
+                    const when = new Date(date).toLocaleDateString();
+                    if (okCount === ids.length) {
+                        showToast(`Assigned ${okCount} job(s) to ${contactName} — scheduled for ${when}`, 'success');
+                    } else if (okCount > 0) {
+                        showToast(`${okCount} of ${ids.length} scheduled for ${when}; ${ids.length - okCount} failed`, 'error');
+                    } else {
+                        showToast('Assignment failed', 'error');
+                    }
                 }}
+                defaultDate={
+                    // Single order: its due date. Bulk: the earliest due date among the targets.
+                    jobs.filter(j => assignTargetIds.has(j.id))
+                        .map(j => j.dueDate || j.dateDueStart)
+                        .filter(Boolean)
+                        .sort()[0]
+                }
                 contacts={laborContacts}
                 woTitle={assignWoTitle}
                 woNumber={assignWoNumber}
