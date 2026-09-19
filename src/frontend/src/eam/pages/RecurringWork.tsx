@@ -2424,70 +2424,51 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
 };
 
 const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJob>) => void; onNavigateToAsset?: (assetId: string) => void; assets?: Asset[] }> = ({ job, onUpdate, onNavigateToAsset, assets = [] }) => {
-    // Phase 5C — Functional Auto-Assignment Rules
-    type AssignRule = { id: string; field: 'assetType' | 'costCentre' | 'criticality' | 'tag'; operator: 'equals' | 'contains' | 'startsWith'; value: string };
-    const [rules, setRules] = React.useState<AssignRule[]>([]);
-    const [newRule, setNewRule] = React.useState<Omit<AssignRule, 'id'>>({ field: 'assetType', operator: 'equals', value: '' });
-    const [ruleResults, setRuleResults] = React.useState<string | null>(null);
+    // Link assets in bulk: a scope (where it sits, what kind, how critical, or a
+    // tag prefix) with a live preview, instead of a rule builder that offered
+    // fields nothing in the register carried (cost centre, asset type) and gave
+    // no feedback until Run. Nothing is persisted as a "rule": the links are the
+    // record, and each link persists on its own (handleAssetsUpdate).
+    const [scopeUnder, setScopeUnder] = React.useState<string>('');
+    const [scopeClass, setScopeClass] = React.useState<string>('');
+    const [scopeCrit, setScopeCrit] = React.useState<Set<string>>(new Set());
+    const [scopeTag, setScopeTag] = React.useState<string>('');
+    const [unticked, setUnticked] = React.useState<Set<string>>(new Set());
     const [showAddManual, setShowAddManual] = React.useState(false);
     const [assetSearch, setAssetSearch] = React.useState('');
 
-    const addRule = () => {
-        if (!newRule.value.trim()) return;
-        setRules(prev => [...prev, { ...newRule, id: `rule-${Date.now()}` }]);
-        setNewRule({ field: 'assetType', operator: 'equals', value: '' });
+    const linkedIds = React.useMemo(() => new Set(job.assignedAssets.map(a => a.assetId)), [job.assignedAssets]);
+    const byId = React.useMemo(() => new Map(assets.map(a => [a.id, a])), [assets]);
+    // Anything that has children is a place a schedule can be scoped "under".
+    const containers = React.useMemo(() => {
+        const parents = new Set(assets.map(a => a.parentId).filter(Boolean) as string[]);
+        return assets.filter(a => parents.has(a.id)).sort((x, y) => (x.tag || '').localeCompare(y.tag || ''));
+    }, [assets]);
+    const classes = React.useMemo(() => Array.from(new Set(assets.map(a => a.assetClass).filter(Boolean) as string[])).sort(), [assets]);
+    const critValues = React.useMemo(() => Array.from(new Set(assets.map(a => a.criticality).filter(Boolean) as string[])).sort(), [assets]);
+    const isUnder = React.useCallback((asset: Asset, rootId: string): boolean => {
+        let cur: string | null | undefined = asset.parentId; let hops = 0;
+        while (cur && hops < 64) { if (cur === rootId) return true; cur = byId.get(cur)?.parentId; hops += 1; }
+        return false;
+    }, [byId]);
+    const scopeActive = !!scopeUnder || !!scopeClass || scopeCrit.size > 0 || !!scopeTag.trim();
+    const matches = React.useMemo(() => {
+        if (!scopeActive) return [] as Asset[];
+        const tag = scopeTag.trim().toLowerCase();
+        return assets.filter(a =>
+            (!scopeUnder || isUnder(a, scopeUnder))
+            && (!scopeClass || a.assetClass === scopeClass)
+            && (scopeCrit.size === 0 || scopeCrit.has(String(a.criticality || '')))
+            && (!tag || String(a.tag || '').toLowerCase().startsWith(tag))
+        ).sort((x, y) => (x.tag || '').localeCompare(y.tag || ''));
+    }, [assets, scopeActive, scopeUnder, scopeClass, scopeCrit, scopeTag, isUnder]);
+    const toLink = matches.filter(a => !linkedIds.has(a.id) && !unticked.has(a.id));
+    const linkMatches = () => {
+        if (toLink.length === 0 || !onUpdate) return;
+        onUpdate({ assignedAssets: [...job.assignedAssets, ...toLink.map(a => ({ assetId: a.id, lastCompletedDate: undefined, lastReadingValue: undefined }))] });
+        setUnticked(new Set());
     };
-
-    const removeRule = (id: string) => setRules(prev => prev.filter(r => r.id !== id));
-
-    const runRules = () => {
-        if (rules.length === 0) {
-            setRuleResults('No rules defined. Add at least one rule to auto-assign assets.');
-            return;
-        }
-        // Filter assets by rules
-        const matched = assets.filter(asset => {
-            return rules.every(rule => {
-                let fieldVal = '';
-                switch (rule.field) {
-                    case 'assetType': fieldVal = (asset as any).assetType || (asset as any).type || ''; break;
-                    case 'costCentre': fieldVal = (asset as any).costCentre || (asset as any).costCenter || ''; break;
-                    case 'criticality': fieldVal = asset.criticality || ''; break;
-                    case 'tag': fieldVal = asset.tag || ''; break;
-                }
-                const fv = fieldVal.toLowerCase();
-                const rv = rule.value.toLowerCase();
-                switch (rule.operator) {
-                    case 'equals': return fv === rv;
-                    case 'contains': return fv.includes(rv);
-                    case 'startsWith': return fv.startsWith(rv);
-                    default: return false;
-                }
-            });
-        });
-
-        if (matched.length === 0) {
-            setRuleResults('No assets matched the current rules.');
-            return;
-        }
-
-        // Build assigned assets from matched
-        const existingIds = new Set(job.assignedAssets.map(a => a.assetId));
-        const newAssigned = matched
-            .filter(a => !existingIds.has(a.id))
-            .map(a => ({
-                assetId: a.id,
-                lastCompletedDate: undefined,
-                lastReadingValue: undefined,
-            }));
-
-        if (newAssigned.length > 0 && onUpdate) {
-            onUpdate({ assignedAssets: [...job.assignedAssets, ...newAssigned] });
-            setRuleResults(`✅ Assigned ${newAssigned.length} new asset(s). ${matched.length - newAssigned.length} already linked.`);
-        } else {
-            setRuleResults(`All ${matched.length} matching asset(s) are already linked.`);
-        }
-    };
+    const clearScope = () => { setScopeUnder(''); setScopeClass(''); setScopeCrit(new Set()); setScopeTag(''); setUnticked(new Set()); };
 
     const removeAsset = (assetId: string) => {
         if (onUpdate) {
@@ -2497,67 +2478,83 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
 
     return (
         <div className="space-y-3 sm:space-y-6">
-            {/* Auto-Assignment Rules Engine (Phase 5C) */}
-            <div className="bg-white p-3 sm:p-4 rounded-lg border border-slate-200 shadow-sm">
+            {/* Link assets in bulk — scope + live preview */}
+            <div className="bg-white p-3 sm:p-4 rounded-lg border border-slate-200 shadow-sm ers-dense ers-dense-labels">
                 <div className="flex justify-between items-start gap-2 mb-3">
                     <div className="min-w-0">
-                        <h3 className="font-bold text-slate-800 text-xs sm:text-sm uppercase">Auto-Assignment Rules</h3>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Link every asset that matches these rules.</p>
+                        <h3 className="font-bold text-slate-800 text-xs sm:text-sm uppercase">Link assets</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Choose where, what kind and how critical; tick what to link.</p>
                     </div>
-                    <button onClick={runRules} className="text-[11px] sm:text-xs bg-primary-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm flex items-center gap-1.5 flex-shrink-0">
-                        <TrendingUp size={12} /> Run<span className="hidden sm:inline"> Rules Now</span>
-                    </button>
+                    {scopeActive && (
+                        <button type="button" onClick={clearScope} className="text-[11px] text-slate-500 hover:text-slate-700 flex-shrink-0">Clear</button>
+                    )}
                 </div>
-
-                {/* Existing Rules */}
-                {rules.length > 0 && (
-                    <div className="space-y-2 mb-3">
-                        {rules.map((r, i) => (
-                            <div key={r.id} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs">
-                                <span className="font-mono text-blue-400 font-bold">{i + 1}</span>
-                                <span className="font-bold text-blue-800">{r.field}</span>
-                                <span className="text-blue-500">{r.operator}</span>
-                                <span className="font-mono bg-white border border-blue-200 rounded px-2 py-0.5 text-blue-900">"{r.value}"</span>
-                                <button onClick={() => removeRule(r.id)} className="ml-auto text-red-400 hover:text-red-600">
-                                    <X size={14} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Add New Rule — two small selects on one phone row, value + Add on the next; one row on sm+ */}
-                <div className="ers-dense grid grid-cols-2 sm:flex sm:items-end gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                    <div className="sm:flex-1 min-w-0">
-                        <label className="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Field</label>
-                        <select value={newRule.field} onChange={e => setNewRule(p => ({ ...p, field: e.target.value as any }))} className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white">
-                            <option value="assetType">Asset Type</option>
-                            <option value="costCentre">Cost Centre</option>
-                            <option value="criticality">Criticality</option>
-                            <option value="tag">Asset Tag</option>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Under</label>
+                        <select className="w-full text-xs border border-slate-300 rounded-lg bg-white px-2 py-1.5" value={scopeUnder} onChange={e => { setScopeUnder(e.target.value); setUnticked(new Set()); }}>
+                            <option value="">Whole register</option>
+                            {containers.map(c => <option key={c.id} value={c.id}>{c.tag}{c.name && c.name !== c.tag ? ` — ${c.name}` : ''}{c.hierarchyLevel ? ` (${String(c.hierarchyLevel).toLowerCase()})` : ''}</option>)}
                         </select>
                     </div>
-                    <div className="sm:flex-1 min-w-0">
-                        <label className="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Operator</label>
-                        <select value={newRule.operator} onChange={e => setNewRule(p => ({ ...p, operator: e.target.value as any }))} className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white">
-                            <option value="equals">Equals</option>
-                            <option value="contains">Contains</option>
-                            <option value="startsWith">Starts With</option>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Class</label>
+                        <select className="w-full text-xs border border-slate-300 rounded-lg bg-white px-2 py-1.5" value={scopeClass} onChange={e => { setScopeClass(e.target.value); setUnticked(new Set()); }}>
+                            <option value="">Any class</option>
+                            {classes.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase())}</option>)}
                         </select>
                     </div>
-                    <div className="col-span-2 sm:col-span-1 sm:flex-1 flex items-end gap-2 min-w-0">
-                        <div className="flex-1 min-w-0">
-                            <label className="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Value</label>
-                            <input type="text" value={newRule.value} onChange={e => setNewRule(p => ({ ...p, value: e.target.value }))} className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-md" placeholder="e.g. Pump" />
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Criticality</label>
+                        <div className="flex gap-1">
+                            {critValues.map(c => {
+                                const on = scopeCrit.has(c);
+                                return (
+                                    <button key={c} type="button" aria-pressed={on}
+                                        onClick={() => { const next = new Set(scopeCrit); on ? next.delete(c) : next.add(c); setScopeCrit(next); setUnticked(new Set()); }}
+                                        className={`flex-1 text-xs font-bold py-1.5 rounded-lg border transition-colors ${on ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>{c}</button>
+                                );
+                            })}
                         </div>
-                        <button onClick={addRule} className="px-3 min-h-[36px] border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 rounded-md text-xs font-bold flex-shrink-0">Add</button>
                     </div>
                 </div>
+                <div className="mt-2 flex items-center gap-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap" htmlFor="pm-scope-tag">or tag starts with</label>
+                    <input id="pm-scope-tag" className="flex-1 min-w-0 text-xs border border-slate-300 rounded-lg px-2 py-1.5 font-mono" placeholder="e.g. P-1" value={scopeTag} onChange={e => { setScopeTag(e.target.value); setUnticked(new Set()); }} />
+                </div>
 
-                {/* Rule Result */}
-                {ruleResults && (
-                    <div className={`mt-3 text-xs p-2 rounded-lg border ${ruleResults.startsWith('✅') ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
-                        {ruleResults}
+                {scopeActive && (
+                    <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-xs">
+                            <span className="text-slate-600">
+                                <strong className="text-slate-800">{matches.length}</strong> match{matches.length === 1 ? '' : 'es'}
+                                {matches.some(a => linkedIds.has(a.id)) && <> · {matches.filter(a => linkedIds.has(a.id)).length} already linked</>}
+                            </span>
+                            <button type="button" onClick={linkMatches} disabled={toLink.length === 0}
+                                className="text-[11px] sm:text-xs bg-primary-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+                                Link {toLink.length} asset{toLink.length === 1 ? '' : 's'}
+                            </button>
+                        </div>
+                        {matches.length === 0 ? (
+                            <p className="px-3 py-4 text-xs text-slate-400 text-center">Nothing in the register matches this scope.</p>
+                        ) : (
+                            <ul className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                {matches.map(a => {
+                                    const linked = linkedIds.has(a.id);
+                                    const checked = !linked && !unticked.has(a.id);
+                                    return (
+                                        <li key={a.id} className={`flex items-center gap-2 px-3 py-1.5 text-xs ${linked ? 'text-slate-400' : 'text-slate-700'}`}>
+                                            <input type="checkbox" className="rounded border-slate-300 h-3.5 w-3.5" checked={linked || checked} disabled={linked}
+                                                onChange={() => { const next = new Set(unticked); checked ? next.add(a.id) : next.delete(a.id); setUnticked(next); }} />
+                                            <span className="font-mono w-24 truncate flex-shrink-0">{a.tag}</span>
+                                            <span className="flex-1 truncate">{a.name}</span>
+                                            {a.criticality && <span className="font-bold w-4 text-center flex-shrink-0">{a.criticality}</span>}
+                                            {linked && <span className="text-[10px] flex-shrink-0">linked</span>}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
                     </div>
                 )}
             </div>
