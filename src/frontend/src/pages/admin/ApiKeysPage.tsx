@@ -28,7 +28,19 @@ interface CollectorKeyRow {
     readings_count: number;
     note: string | null;
     created_at: string;
+    /** 0374. Null = never expires. */
+    expires_at: string | null;
 }
+
+/** The one definition of whether a key still works, matching the SQL view. */
+const keyState = (k: CollectorKeyRow): 'revoked' | 'expired' | 'expiring' | 'active' => {
+    if (!k.is_active) return 'revoked';
+    if (!k.expires_at) return 'active';
+    const due = new Date(k.expires_at).getTime();
+    if (due <= Date.now()) return 'expired';
+    if (due <= Date.now() + 7 * 86_400_000) return 'expiring';
+    return 'active';
+};
 
 const sha256Hex = async (input: string): Promise<string> => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -58,11 +70,15 @@ export const ApiKeysPage: React.FC = () => {
     const [showMint, setShowMint] = useState(false);
     const [mintName, setMintName] = useState('');
     const [mintNote, setMintNote] = useState('');
+    /** Days until the key stops working. '' = never, the pre-0374 behaviour. */
+    const [mintExpiryDays, setMintExpiryDays] = useState<string>('');
     const [minting, setMinting] = useState(false);
     /** The one and only time the full key is visible. */
     const [mintedKey, setMintedKey] = useState<{ name: string; key: string } | null>(null);
     const [copied, setCopied] = useState(false);
     const [rowBusy, setRowBusy] = useState<string | null>(null);
+    /** True when this project has not applied 0374 yet — no expiry column. */
+    const [needsMigration, setNeedsMigration] = useState(false);
 
     const functionsBase = useMemo(() => {
         const url = String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
@@ -71,12 +87,30 @@ export const ApiKeysPage: React.FC = () => {
 
     const load = async () => {
         setLoading(true);
-        const { data, error: err } = await supabase
+        const COLS = 'id, name, key_prefix, is_active, last_seen_at, readings_count, note, created_at';
+        // Typed loosely on purpose: the two selects below return different row
+        // shapes depending on whether 0374 has been applied.
+        let { data, error: err } = await supabase
             .from('ers_collector_keys')
-            .select('id, name, key_prefix, is_active, last_seen_at, readings_count, note, created_at')
-            .order('created_at', { ascending: false });
+            .select(`${COLS}, expires_at`)
+            .order('created_at', { ascending: false }) as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+
+        // expires_at arrives with 0374. Before that migration is applied the
+        // select 400s on the unknown column and the whole page shows an error,
+        // which is a worse outcome than simply having no expiry to show. Fall
+        // back to the pre-0374 shape, exactly as CompaniesPage does for 0173.
+        if (err && /expires_at/i.test(err.message)) {
+            setNeedsMigration(true);
+            ({ data, error: err } = await supabase
+                .from('ers_collector_keys')
+                .select(COLS)
+                .order('created_at', { ascending: false }) as { data: Record<string, unknown>[] | null; error: { message: string } | null });
+        } else {
+            setNeedsMigration(false);
+        }
+
         if (err) setError(`Could not load keys: ${err.message}`);
-        setKeys((data ?? []) as CollectorKeyRow[]);
+        setKeys((data ?? []).map((r) => ({ expires_at: null, ...r })) as unknown as CollectorKeyRow[]);
         setLoading(false);
     };
     useEffect(() => { void load(); }, []);
@@ -94,10 +128,17 @@ export const ApiKeysPage: React.FC = () => {
                 key_hash: await sha256Hex(key),
                 is_active: true,
                 note: mintNote.trim() || null,
+                // 0374. Null means it never expires, which is what every key
+                // minted before this existed still does.
+                ...(needsMigration ? {} : {
+                    expires_at: mintExpiryDays
+                        ? new Date(Date.now() + Number(mintExpiryDays) * 86_400_000).toISOString()
+                        : null,
+                }),
             });
             if (err) throw new Error(err.message);
             setMintedKey({ name: mintName.trim(), key });
-            setMintName(''); setMintNote(''); setShowMint(false); setCopied(false);
+            setMintName(''); setMintNote(''); setMintExpiryDays(''); setShowMint(false); setCopied(false);
             await load();
         } catch (e) {
             setError(`Could not mint the key: ${e instanceof Error ? e.message : String(e)} (admin permission is required)`);
@@ -210,6 +251,23 @@ export const ApiKeysPage: React.FC = () => {
                                 className="rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-700 text-sm" />
                         </label>
                     </div>
+                    <label className={`flex flex-col gap-1 text-xs max-w-xs ${needsMigration ? 'opacity-50' : ''}`}>
+                        <span className="font-medium text-slate-600">Expires</span>
+                        <select value={mintExpiryDays} onChange={(e) => setMintExpiryDays(e.target.value)}
+                            disabled={needsMigration}
+                            className="rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-700 text-sm disabled:bg-slate-50">
+                            <option value="">Never</option>
+                            <option value="30">In 30 days</option>
+                            <option value="90">In 90 days</option>
+                            <option value="180">In 180 days</option>
+                            <option value="365">In 1 year</option>
+                        </select>
+                        <span className="text-[11px] text-slate-500 leading-relaxed">
+                            {needsMigration
+                                ? 'Key expiry needs migration 0374. Until it is applied, keys are minted without an expiry date, exactly as before.'
+                                : 'A key for a trial, a contractor or a one-off migration should stop working on its own. Pick a date and nobody has to remember to revoke it.'}
+                        </span>
+                    </label>
                     <div className="flex gap-2">
                         <button onClick={() => void mint()} disabled={minting || !mintName.trim()}
                             className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-4 py-2 disabled:opacity-40 transition-colors">
@@ -261,9 +319,31 @@ export const ApiKeysPage: React.FC = () => {
                                         </td>
                                         <td className="px-4 py-3 text-right font-mono text-xs text-slate-500">{Number(k.readings_count).toLocaleString()}</td>
                                         <td className="px-4 py-3">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${k.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                                                {k.is_active ? 'active' : 'revoked'}
-                                            </span>
+                                            {/* Four states, not two: an expired key is not revoked and not
+                                                working, and "expiring" is the only one an administrator can
+                                                still act on before an integration goes quiet. */}
+                                            {(() => {
+                                                const st = keyState(k);
+                                                const chip = {
+                                                    active:   'bg-emerald-50 text-emerald-600',
+                                                    expiring: 'bg-amber-50 text-amber-700',
+                                                    expired:  'bg-slate-100 text-slate-500',
+                                                    revoked:  'bg-slate-100 text-slate-500',
+                                                }[st];
+                                                return (
+                                                    <>
+                                                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${chip}`}>
+                                                            {st}
+                                                        </span>
+                                                        {k.expires_at && (
+                                                            <div className="text-[10px] text-slate-400 mt-1" title={new Date(k.expires_at).toLocaleString()}>
+                                                                {st === 'expired' ? 'expired ' : 'expires '}
+                                                                {new Date(k.expires_at).toLocaleDateString()}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <button onClick={() => void setActive(k, !k.is_active)} disabled={rowBusy !== null}

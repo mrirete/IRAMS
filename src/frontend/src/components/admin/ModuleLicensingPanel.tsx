@@ -64,13 +64,13 @@ export const ModuleLicensingPanel: React.FC = () => {
                                     return (
                                         <div key={mod.id}>
                                             {/* Parent module card */}
-                                            <div className={`flex items-center justify-between p-3.5 rounded-lg border transition-all ${isEnabled
+                                            <div className={`flex items-center justify-between gap-3 p-3.5 rounded-lg border transition-all ${isEnabled
                                                 ? 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
                                                 : 'bg-slate-100 border-slate-200 opacity-50'
                                                 }`}>
-                                                <div className="flex items-center gap-3">
-                                                    <Icon size={18} className={isEnabled ? meta.color : 'text-slate-400'} />
-                                                    <div>
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <Icon size={18} className={`shrink-0 ${isEnabled ? meta.color : 'text-slate-400'}`} />
+                                                    <div className="min-w-0">
                                                         <p className={`text-sm font-bold ${isEnabled ? 'text-slate-800' : 'text-slate-500'}`}>
                                                             {mod.label}
                                                             {locked && <span className="ml-2 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Not in plan</span>}
@@ -81,7 +81,7 @@ export const ModuleLicensingPanel: React.FC = () => {
                                                 <div
                                                     onClick={() => !isCore && !locked && toggleModule(mod.id)}
                                                     title={locked ? 'Decided by your plan — contact sales to change plans' : undefined}
-                                                    className={`relative w-11 h-6 rounded-full transition-colors ${isCore || locked ? 'bg-slate-300 cursor-not-allowed' : isEnabled ? 'bg-accent-cyan cursor-pointer' : 'bg-slate-300 cursor-pointer'
+                                                    className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${isCore || locked ? 'bg-slate-300 cursor-not-allowed' : isEnabled ? 'bg-accent-cyan cursor-pointer' : 'bg-slate-300 cursor-pointer'
                                                         }`}
                                                 >
                                                     <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform ${isEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'
@@ -95,18 +95,20 @@ export const ModuleLicensingPanel: React.FC = () => {
                                                     {mod.children.map(child => {
                                                         const childEnabled = enabledSubModules.has(child.id);
                                                         return (
-                                                            <div key={child.id} className={`flex items-center justify-between p-2.5 pl-4 rounded-lg border transition-all ${childEnabled
+                                                            <div key={child.id} className={`flex items-center justify-between gap-2 p-2.5 pl-4 rounded-lg border transition-all ${childEnabled
                                                                 ? 'border-slate-200 bg-white shadow-sm'
                                                                 : 'border-slate-100 bg-slate-50 opacity-50'
                                                                 }`}>
-                                                                <div className="flex items-center gap-2.5">
-                                                                    <div className={`w-1.5 h-1.5 rounded-full transition-colors ${childEnabled ? meta.color.replace('text-', 'bg-') : 'bg-slate-300'}`} />
-                                                                    <p className={`text-sm transition-colors font-medium ${childEnabled ? 'text-slate-700' : 'text-slate-400'}`}>{child.label}</p>
-                                                                    <span className="text-[10px] text-slate-400 font-mono">{child.path}</span>
+                                                                {/* min-w-0 + truncate: the route path is the part that may be
+                                                                    clipped on a phone, never the toggle. */}
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <div className={`w-1.5 h-1.5 shrink-0 rounded-full transition-colors ${childEnabled ? meta.color.replace('text-', 'bg-') : 'bg-slate-300'}`} />
+                                                                    <p className={`text-sm transition-colors font-medium whitespace-nowrap ${childEnabled ? 'text-slate-700' : 'text-slate-400'}`}>{child.label}</p>
+                                                                    <span className="text-[10px] text-slate-400 font-mono truncate">{child.path}</span>
                                                                 </div>
                                                                 <div
                                                                     onClick={() => toggleSubModule(child.id)}
-                                                                    className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${childEnabled ? 'bg-accent-cyan/80' : 'bg-slate-300'}`}
+                                                                    className={`relative w-9 h-5 shrink-0 rounded-full transition-colors cursor-pointer ${childEnabled ? 'bg-accent-cyan/80' : 'bg-slate-300'}`}
                                                                 >
                                                                     <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-transform ${childEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                                                                 </div>

@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import { X, KeyRound, Eye, EyeOff, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
+import { useSettings } from '../../../contexts/SettingsContext';
 
 interface Props {
     userId: string;       // auth user id (= public.users.id)
@@ -22,10 +23,19 @@ interface Props {
     forced?: boolean;
 }
 
-const MIN = 8;
+/**
+ * Floor when no tenant policy is readable (a forced change can run before the
+ * settings row has loaded). The identity provider enforces its own minimum on
+ * top of whatever is asked for here.
+ */
+const FLOOR = 8;
 
 export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, onClose, forced = false }) => {
     const { showToast } = useToast();
+    // Global Settings › Security › Password Minimum Length. Until this line the
+    // setting was stored and read by nothing.
+    const { settings } = useSettings();
+    const MIN = Math.max(FLOOR, settings.passwordMinLength || FLOOR);
     const [pw, setPw] = useState('');
     const [confirm, setConfirm] = useState('');
     const [show, setShow] = useState(false);

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Play, Settings, RefreshCw, Power, Clock, Zap, BarChart3, History, MapPin } from 'lucide-react';
 import { useConnectors } from '../../hooks/useConnectors';
+import { useToast } from '../../eam/contexts/ToastContext';
+import { useConfirm } from '../../eam/contexts/ConfirmContext';
 import { DQSRadarChart } from '../../components/connectors/DQSRadarChart';
 import { SyncHistoryTable } from '../../components/connectors/SyncHistoryTable';
 import type { ConnectorHealth, ConnectorSyncLog, ConnectorType } from '../../types/connectors';
@@ -28,7 +30,14 @@ const getTypeName = (type: ConnectorType) => {
 export const ConnectorDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { connectors, triggerSync, getSyncLogs } = useConnectors();
+    const { connectors, triggerSync, getSyncLogs, setConnectorActive, deleteConnector } = useConnectors();
+    const { showToast } = useToast();
+    const confirm = useConfirm();
+
+    // Pause / delete were rendered as buttons with no handler: pressing them did
+    // nothing and said nothing, on the page that owns a live data feed. The hook
+    // already exposed both actions; only the wiring was missing.
+    const [busy, setBusy] = useState<'power' | 'delete' | null>(null);
 
     const [connector, setConnector] = useState<ConnectorHealth | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -46,6 +55,43 @@ export const ConnectorDetail: React.FC = () => {
             setConnector(found || null);
         }
     }, [id, connectors]);
+
+    const isPaused = connector?.status === 'stopped';
+
+    const handleTogglePower = async () => {
+        if (!id || !connector) return;
+        setBusy('power');
+        try {
+            await setConnectorActive(id, isPaused);
+            showToast(isPaused ? `${connector.name} resumed — it will sync on its next interval.` : `${connector.name} paused. No further syncs until it is resumed.`, 'success');
+        } catch (e: any) {
+            showToast(e?.message || 'Could not change the connector state.', 'error');
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!id || !connector) return;
+        // Deleting a feed is not recoverable from this screen, so it asks first
+        // and names what is going away.
+        const ok = await confirm({
+            title: 'Delete this connector?',
+            message: `${connector.name} will stop syncing and its configuration will be removed. Readings it has already written stay in place. This cannot be undone.`,
+            variant: 'danger',
+            confirmLabel: 'Delete connector',
+        });
+        if (!ok) return;
+        setBusy('delete');
+        try {
+            await deleteConnector(id);
+            showToast(`${connector.name} deleted.`, 'success');
+            navigate('/admin/connectors');
+        } catch (e: any) {
+            showToast(e?.message || 'Could not delete the connector.', 'error');
+            setBusy(null);
+        }
+    };
 
     const handleSync = async () => {
         if (!id) return;
@@ -152,7 +198,11 @@ export const ConnectorDetail: React.FC = () => {
                             {connector.status === 'running' ? 'Active' : connector.status === 'error' ? 'Error' : 'Stopped'}
                         </p>
                     </div>
-                    <button className="p-2.5 bg-slate-50 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors border border-slate-200" title="Pause Connector">
+                    <button
+                        onClick={handleTogglePower}
+                        disabled={busy !== null}
+                        title={isPaused ? 'Resume this connector' : 'Pause this connector'}
+                        className={`p-2.5 rounded-lg transition-colors border disabled:opacity-50 ${isPaused ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-red-500 hover:bg-red-50'}`}>
                         <Power size={20} />
                     </button>
                 </div>
@@ -212,10 +262,15 @@ export const ConnectorDetail: React.FC = () => {
                         Reconfigure connection credentials, sync intervals, and retry policies.
                     </p>
                     <div className="flex items-center justify-center gap-3 mt-6">
-                        <button className="px-4 py-2.5 bg-white text-slate-700 rounded-lg border border-slate-300 hover:bg-slate-50 hover:text-slate-900 transition-colors text-sm font-semibold shadow-sm">
+                        <button
+                            onClick={() => navigate(`/admin/connectors/new?id=${id}`)}
+                            className="px-4 py-2.5 bg-white text-slate-700 rounded-lg border border-slate-300 hover:bg-slate-50 hover:text-slate-900 transition-colors text-sm font-semibold shadow-sm">
                             Reconfigure
                         </button>
-                        <button className="px-4 py-2.5 bg-red-50 text-red-600 rounded-lg border border-red-200 hover:bg-red-100 transition-colors text-sm font-semibold">
+                        <button
+                            onClick={handleDelete}
+                            disabled={busy !== null}
+                            className="px-4 py-2.5 bg-red-50 text-red-600 rounded-lg border border-red-200 hover:bg-red-100 disabled:opacity-50 transition-colors text-sm font-semibold">
                             Delete Connector
                         </button>
                     </div>

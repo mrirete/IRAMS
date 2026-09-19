@@ -61,12 +61,15 @@ export const OpsHealthPage: React.FC = () => {
 
     return (
         <div className="h-full overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-5">
-                <div>
-                    <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2"><Activity size={22} className="text-primary-600" /> Operations Health</h1>
-                    <p className="text-sm text-slate-500 mt-1">Scheduled jobs, email delivery, client errors and the Specialist's last runs — what would otherwise fail silently.</p>
+            {/* Stacks on a phone. Side by side, the title competed with two
+                buttons in 390px and wrapped to two words a line, with the icon
+                stranded beside the second line. */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+                <div className="min-w-0">
+                    <h1 className="text-xl sm:text-2xl font-black text-slate-800 flex items-center gap-2"><Activity size={22} className="text-primary-600 shrink-0" /> Operations Health</h1>
+                    <p className="text-[12.5px] sm:text-sm text-slate-500 mt-1">Scheduled jobs, email delivery, client errors and the Specialist's last runs — what would otherwise fail silently.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                     <Link to="/admin/error-logs" className="text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 flex items-center gap-1.5"><Bug size={13} /> Error log</Link>
                     <button onClick={load} className="text-xs font-semibold text-white bg-primary-600 rounded-lg px-3 py-2 hover:bg-primary-500 flex items-center gap-1.5"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh</button>
                 </div>

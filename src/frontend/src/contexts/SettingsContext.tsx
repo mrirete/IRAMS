@@ -38,10 +38,10 @@ export interface AppSettings {
     currency: Currency;
     fiscalYearStart: number; // month 1-12
     // Notifications
-    escalationTierThreshold: number;
     emailNotifications: boolean;
     badgeExpiryWarningDays: number;
-    // Security (read-only display)
+    // Security — enforced by SessionGuard (timeout, MFA gate) and the
+    // in-app password forms. Not decorative: see components/security.
     sessionTimeoutMinutes: number;
     passwordMinLength: number;
     mfaEnforced: boolean;
@@ -54,7 +54,6 @@ const DEFAULT_SETTINGS: AppSettings = {
     locale: 'en-US',
     currency: 'USD',
     fiscalYearStart: 1,
-    escalationTierThreshold: 3,
     emailNotifications: true,
     badgeExpiryWarningDays: 30,
     sessionTimeoutMinutes: 30,
@@ -148,11 +147,32 @@ async function fetchTenantRow(): Promise<{ id: string; app_settings: Partial<App
     return { id: (fallback.data[0] as { id: string }).id, app_settings: {} };
 }
 
+/**
+ * Merge stored settings over the defaults, ignoring keys whose stored value is
+ * null or undefined.
+ *
+ * A plain spread lets a stored null win, which is how Session Timeout rendered
+ * as an empty number box: the tenant row carried an explicit null and it
+ * overwrote the default of 30. An absent or null value means "not set", and not
+ * set has to mean the default, or a control that reads a number goes blank and
+ * the setting appears broken.
+ */
+function mergeSettings(base: AppSettings, stored: unknown): AppSettings {
+    if (!stored || typeof stored !== 'object') return base;
+    const out = { ...base };
+    for (const [k, v] of Object.entries(stored as Record<string, unknown>)) {
+        if (v === null || v === undefined) continue;
+        if (!(k in base)) continue;   // drop retired keys, e.g. escalationTierThreshold
+        (out as Record<string, unknown>)[k] = v;
+    }
+    return out;
+}
+
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [settings, setSettings] = useState<AppSettings>(() => {
         try {
             const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+            if (stored) return mergeSettings(DEFAULT_SETTINGS, JSON.parse(stored));
         } catch { /* ignore */ }
         return DEFAULT_SETTINGS;
     });
@@ -171,7 +191,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             if (row) {
                 setCompanyId(row.id);
                 if (row.app_settings && typeof row.app_settings === 'object') {
-                    setSettings(prev => ({ ...prev, ...row.app_settings }));
+                    setSettings(prev => mergeSettings(prev, row.app_settings));
                 }
             }
             setLoading(false);

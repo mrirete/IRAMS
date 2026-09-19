@@ -85,14 +85,17 @@ Deno.serve(async (req: Request) => {
     try {
         const hash = await sha256Hex(presented);
         const rows = await rest(
-            `ers_collector_keys?select=id,name,readings_count,company_id&key_hash=eq.${hash}&is_active=eq.true`,
+            `ers_collector_keys?select=id,name,readings_count,company_id&key_hash=eq.${hash}&is_active=eq.true&or=(expires_at.is.null,expires_at.gt.${new Date().toISOString()})`,
         ) as { id: string; name: string; readings_count: number; company_id: string | null }[];
         collector = rows?.[0] ?? null;
     } catch (e) {
         console.error("collector key lookup failed (0236 applied?):", e);
         return json({ error: "Ingestion unavailable: collector key store unreachable" }, 503);
     }
-    if (!collector) return json({ error: "Invalid or revoked collector key" }, 401);
+    // A key that is revoked, expired or simply wrong all land here. The message
+    // stays deliberately vague — telling an unauthenticated caller WHICH of the
+    // three it is tells them whether the key was ever real (0374 added expiry).
+    if (!collector) return json({ error: "Invalid, expired or revoked collector key" }, 401);
 
     try {
         const body = await req.json().catch(() => null);

@@ -94,8 +94,11 @@ export const WorkCentersPage: React.FC = () => {
 
     return (
         <div className="space-y-5 ers-page-record">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
+            {/* Sticky on a phone. Each work center becomes a full stacked form
+                below md, so after the first row the Save button had scrolled out
+                of reach and there was no other way to commit an edit. */}
+            <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-slate-50/95 backdrop-blur border-b border-slate-200 md:static md:mx-0 md:px-0 md:py-0 md:bg-transparent md:backdrop-blur-none md:border-0 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
                     <h1 className="text-lg md:text-xl font-bold text-slate-900 flex items-center gap-2">
                         <Factory size={20} className="text-primary-600" /> Work Centers
                     </h1>
@@ -150,7 +153,7 @@ export const WorkCentersPage: React.FC = () => {
                                 <label className={mLabel}>Site</label>
                                 <select className={mInput} value={r.siteId || ''}
                                     onChange={e => update(idx, { siteId: e.target.value || undefined })}>
-                                    <option value="">—</option>
+                                    <option value="">{sites.length ? '—' : 'No sites in the register yet'}</option>
                                     {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
@@ -209,8 +212,11 @@ export const WorkCentersPage: React.FC = () => {
                                     <td className="px-3 py-2 min-w-[180px]"><input className={inputCls} value={r.name} onChange={e => update(idx, { name: e.target.value })} placeholder="Mechanical Maintenance" /></td>
                                     <td className="px-3 py-2 w-36"><input className={inputCls} value={r.category || ''} onChange={e => update(idx, { category: e.target.value })} placeholder="MECHANICAL" /></td>
                                     <td className="px-3 py-2 w-40">
+                                        {/* Sites are asset-register rows, not a list maintained here.
+                                            A column of bare dashes read as missing data rather than
+                                            as "there are no sites to choose yet". */}
                                         <select className={inputCls} value={r.siteId || ''} onChange={e => update(idx, { siteId: e.target.value || undefined })}>
-                                            <option value="">—</option>
+                                            <option value="">{sites.length ? '—' : 'No sites in the register yet'}</option>
                                             {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                         </select>
                                     </td>

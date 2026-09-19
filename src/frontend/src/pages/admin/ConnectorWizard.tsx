@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronRight, CheckCircle2, ArrowLeft, Loader2, Server, XCircle, RotateCcw, AlertTriangle, Globe, Database, FileText, Radio, Activity, FolderOpen, CloudSun } from 'lucide-react';
 import { ConnectorTypeSelector } from '../../components/connectors/ConnectorTypeSelector';
 import { ConfigForm } from '../../components/connectors/ConfigForm';
@@ -34,7 +34,11 @@ const getTypeIcon = (type: ConnectorType | null) => {
 
 export const ConnectorWizard: React.FC = () => {
     const navigate = useNavigate();
-    const { registerConnector, testConnector } = useConnectors();
+    const { registerConnector, testConnector, getConnectorConfig } = useConnectors();
+    // Reconfigure on a saved connector routes here with ?id=. Without this the
+    // Reconfigure button had nowhere to go, so it was left unwired entirely.
+    const [searchParams] = useSearchParams();
+    const editId = searchParams.get('id');
 
     const [currentStep, setCurrentStep] = useState(0);
     const [selectedType, setSelectedType] = useState<ConnectorType | null>(null);
@@ -49,6 +53,22 @@ export const ConnectorWizard: React.FC = () => {
     const [mapping, setMapping] = useState<Record<string, string>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
+
+    // Editing an existing connector: load its saved wizard fields and jump past
+    // type selection, which is fixed once a connector exists.
+    useEffect(() => {
+        if (!editId) return;
+        let active = true;
+        (async () => {
+            const cfg = await getConnectorConfig(editId);
+            if (!active || !cfg) return;
+            setSelectedType(cfg.type as ConnectorType);
+            setConfig(cfg);
+            setDraftId(editId);
+            setCurrentStep(1);
+        })();
+        return () => { active = false; };
+    }, [editId, getConnectorConfig]);
 
     // Mock schemas for Step 4
     const mockExternalFields = ['id_external', 'equip_num', 'description', 'status_code', 'last_modified', 'location_code', 'manufacturer'];

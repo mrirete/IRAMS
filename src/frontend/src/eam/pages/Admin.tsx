@@ -1059,6 +1059,7 @@ const DictionaryManager: React.FC = () => {
 const UserPermissionManager: React.FC = () => {
     // We track selection by a unique ID (User ID if exists, otherwise Contact ID)
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [directoryQuery, setDirectoryQuery] = useState('');
     const { showToast } = useToast();
     const [users, setUsers] = useState<User[]>([]); // Local state for edits
     const [contacts, setContacts] = useState<Contact[]>([]); // Local state for roles
@@ -1164,6 +1165,18 @@ const UserPermissionManager: React.FC = () => {
         // Sort by name
         return list.sort((a, b) => a.name.localeCompare(b.name));
     }, [users, contacts, roles]);
+
+    // Free-text filter over the directory. Matches the display name, the login
+    // username and the role line, because an administrator looking for "the
+    // planners" searches by role as readily as by name.
+    const visibleIdentities = useMemo(() => {
+        const q = directoryQuery.trim().toLowerCase();
+        if (!q) return identities;
+        return identities.filter(i =>
+            i.name.toLowerCase().includes(q) ||
+            (i.subtext || '').toLowerCase().includes(q)
+        );
+    }, [identities, directoryQuery]);
 
     const selectedIdentity = useMemo(() => identities.find(i => i.id === selectedId), [identities, selectedId]);
 
@@ -1418,12 +1431,42 @@ const UserPermissionManager: React.FC = () => {
             {/* Mobile: master-detail collapse — show the directory full-width until a person
                 is picked, then swap to the detail panel. Desktop keeps both side-by-side. */}
             <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-72 bg-slate-50 border-r border-slate-200 flex-col`}>
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-                    <h2 className="font-bold text-slate-800 text-sm">System Access Directory</h2>
-                    <span className="text-xs bg-slate-200 px-2 py-0.5 rounded-full text-slate-600">{identities.length}</span>
+                <div className="p-4 border-b border-slate-200 space-y-3">
+                    <div className="flex justify-between items-center">
+                        <h2 className="font-bold text-slate-800 text-sm">System Access Directory</h2>
+                        <span className="text-xs bg-slate-200 px-2 py-0.5 rounded-full text-slate-600">
+                            {directoryQuery ? `${visibleIdentities.length}/${identities.length}` : identities.length}
+                        </span>
+                    </div>
+                    {/* The directory had no search at all. At fifteen people it
+                        already scrolled past one screen; at a real headcount,
+                        granting one person a permission meant hunting a list. */}
+                    <div className="relative">
+                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <input
+                            value={directoryQuery}
+                            onChange={e => setDirectoryQuery(e.target.value)}
+                            placeholder="Search name, username or role…"
+                            className="w-full h-9 pl-8 pr-8 rounded-lg border border-slate-300 bg-white text-[13px] text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        />
+                        {directoryQuery && (
+                            <button
+                                onClick={() => setDirectoryQuery('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                title="Clear search"
+                            >
+                                <XIcon size={14} />
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <div className="overflow-y-auto flex-1">
-                    {identities.map(identity => {
+                    {visibleIdentities.length === 0 && (
+                        <p className="px-4 py-8 text-center text-[13px] text-slate-400">
+                            Nobody matches “{directoryQuery}”.
+                        </p>
+                    )}
+                    {visibleIdentities.map(identity => {
                         return (
                             <div
                                 key={identity.id}
@@ -2015,10 +2058,8 @@ const UserPermissionManager: React.FC = () => {
                                                     qualifications: []
                                                 });
                                                 // Link to User
-                                                console.log('[Admin] Linking user', selectedUser.id, 'to contact', newContact.id);
                                                 const updatedUser = { ...selectedUser, contactId: newContact.id, contact_id: newContact.id };
                                                 await db.updateUser(selectedUser.id, { contact_id: newContact.id });
-                                                console.log('[Admin] updateUser completed successfully');
 
                                                 // Update Local State
                                                 const newContactsList = [...contacts, newContact];
@@ -2243,7 +2284,6 @@ export const Admin: React.FC = () => {
         ];
 
         try {
-            console.log('Seeding dictionaries...');
             let count = 0;
             for (const item of SEED_DATA) {
                 try {

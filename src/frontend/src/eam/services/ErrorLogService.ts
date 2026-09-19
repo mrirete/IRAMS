@@ -103,6 +103,53 @@ function extractTechnicalDetail(error: unknown): string {
     }
 }
 
+/**
+ * Turn anything that was thrown into one readable line.
+ *
+ * This exists because `String(error)` on a plain object yields the literal text
+ * "[object Object]", and that is what every API failure recorded. The Error Logs
+ * page ended up holding 942 rows that all read "API error: [object Object]" —
+ * severity, module and timestamp all correct, and no way to tell which call had
+ * failed or why. Supabase rejections are plain objects with `message`, `code`,
+ * `details` and `hint`, never Error instances, so they took that path every time.
+ *
+ * Order matters: a Postgres error's `message` is the useful half and its `code`
+ * is what you search for, so both are kept, and `details` only when it adds
+ * something the message did not already say.
+ */
+function describeError(error: unknown): string {
+    if (error == null) return 'unknown error';
+    if (typeof error === 'string') return error;
+    if (error instanceof Error) return error.message || error.name || 'Error';
+
+    if (typeof error === 'object') {
+        const e = error as Record<string, unknown>;
+        const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+        const message = str(e.message) ?? str(e.error_description) ?? str(e.error) ?? str(e.msg);
+        const code = str(e.code) ?? (typeof e.status === 'number' ? String(e.status) : null);
+        const details = str(e.details);
+        const hint = str(e.hint);
+
+        if (message) {
+            const parts = [code ? `[${code}] ${message}` : message];
+            if (details && details !== message) parts.push(details);
+            if (hint) parts.push(`Hint: ${hint}`);
+            return parts.join(' — ');
+        }
+        if (code) return `error ${code}`;
+
+        // Nothing recognisable: serialise rather than stamp [object Object].
+        try {
+            const json = JSON.stringify(error);
+            if (json && json !== '{}') return json.slice(0, 500);
+        } catch { /* circular — fall through */ }
+        return 'unserialisable error object';
+    }
+
+    return String(error);
+}
+
 // ── Service ──────────────────────────────────────────────────
 
 export class ErrorLogService {
@@ -201,8 +248,7 @@ export class ErrorLogService {
 
     /** Log an API/Supabase error */
     public apiError(module: string, action: string, error: unknown, entityType?: string, entityId?: string) {
-        const msg = error instanceof Error ? error.message : String(error);
-        this.capture({ severity: 'error', category: 'api', module, action, message: `API error: ${msg}`, error, entityType, entityId });
+        this.capture({ severity: 'error', category: 'api', module, action, message: `API error: ${describeError(error)}`, error, entityType, entityId });
     }
 
     /** Log a business rule violation */

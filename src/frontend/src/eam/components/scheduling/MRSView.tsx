@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useSettings } from '../../../contexts/SettingsContext';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -600,6 +601,11 @@ export const MRSView: React.FC<MRSViewProps> = ({
     const gridRef = useRef<HTMLDivElement>(null);
     const { permissions } = useAuth();
     const confirm = useConfirm();
+    // Global Settings › Notifications › Badge Expiry Warning. Read here so a
+    // planner is warned about a ticket that lapses mid-week, not only one that
+    // has already lapsed.
+    const { settings } = useSettings();
+    const badgeWarningDays = settings.badgeExpiryWarningDays || 30;
 
     // Responsive: detect small screen
     const [isSmallScreen, setIsSmallScreen] = useState(false);
@@ -708,14 +714,33 @@ export const MRSView: React.FC<MRSViewProps> = ({
                 if (!proceed) return;
             }
 
-            // Qualification expiry check
+            // Qualification expiry check.
+            //
+            // Expired is a hard fact. "About to expire" is a judgement, and the
+            // number of days that counts as soon is Global Settings › Notifications
+            // › Badge Expiry Warning — a value that was stored and read by nothing
+            // until this check started using it. A planner scheduling a week ahead
+            // needs to know that a ticket lapses on Thursday, not discover it when
+            // the technician is refused at the gate.
+            const now = new Date();
+            const soonCutoff = new Date(now.getTime() + badgeWarningDays * 86_400_000);
+            const parseExpiry = (q: { expires?: string }) => {
+                if (!q.expires) return null;
+                const d = new Date(q.expires);
+                return Number.isNaN(d.getTime()) ? null : d;
+            };
+
             const expiredQuals = resource.qualifications.filter(q => {
                 if (q.status === 'EXPIRED') return true;
-                if (q.expires) {
-                    try { return new Date(q.expires) < new Date(); } catch { return false; }
-                }
-                return false;
+                const d = parseExpiry(q);
+                return d ? d < now : false;
             });
+            const expiringQuals = resource.qualifications.filter(q => {
+                if (q.status === 'EXPIRED') return false;
+                const d = parseExpiry(q);
+                return d ? d >= now && d <= soonCutoff : false;
+            });
+
             if (expiredQuals.length > 0) {
                 const proceed = await confirm({
                     title: 'Qualification Alert',
@@ -724,11 +749,19 @@ export const MRSView: React.FC<MRSViewProps> = ({
                     confirmLabel: 'Assign Anyway',
                 });
                 if (!proceed) return;
+            } else if (expiringQuals.length > 0) {
+                const proceed = await confirm({
+                    title: 'Qualification Expiring Soon',
+                    message: `${resource.name} has ${expiringQuals.length} qualification(s) lapsing within ${badgeWarningDays} days: ${expiringQuals.map(q => `${q.name} (expires ${q.expires})`).join(', ')}. Assign anyway?`,
+                    variant: 'warning',
+                    confirmLabel: 'Assign Anyway',
+                });
+                if (!proceed) return;
             }
         }
 
         onAssignJob(woId, contactId, dateKey);
-    }, [onAssignJob, resources, jobs, confirm]);
+    }, [onAssignJob, resources, jobs, confirm, badgeWarningDays]);
 
     // Week label
     const weekLabel = useMemo(() => {

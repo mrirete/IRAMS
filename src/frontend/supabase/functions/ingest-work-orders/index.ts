@@ -143,14 +143,14 @@ Deno.serve(async (req: Request) => {
     try {
         const hash = await sha256Hex(presented);
         const rows = await rest(
-            `ers_collector_keys?select=id,name,company_id&key_hash=eq.${hash}&is_active=eq.true`,
+            `ers_collector_keys?select=id,name,company_id&key_hash=eq.${hash}&is_active=eq.true&or=(expires_at.is.null,expires_at.gt.${new Date().toISOString()})`,
         ) as { id: string; name: string; company_id: string | null }[];
         collector = rows?.[0] ?? null;
     } catch (e) {
         console.error("collector key lookup failed:", e);
         return json({ error: "Ingestion unavailable: key store unreachable" }, 503);
     }
-    if (!collector) return json({ error: "Invalid or revoked collector key" }, 401);
+    if (!collector) return json({ error: "Invalid, expired or revoked collector key" }, 401);
     const tenantFilter = collector.company_id ? `&company_id=eq.${collector.company_id}` : "";
     const tenantStamp = collector.company_id ? { company_id: collector.company_id } : {};
 

@@ -79,12 +79,21 @@ export const InvitationsPage: React.FC = () => {
         if (error) {
             showToast(`Could not load invitations: ${error.message}`, 'error');
         } else {
-            setInvites((data || []) as InviteRow[]);
+            // Resolve the inviter names BEFORE publishing the rows.
+            //
+            // This used to set the rows first and then fetch the names, so the
+            // table rendered once with an empty name map. An unresolved id and a
+            // genuinely absent inviter both print as an em dash, which made the
+            // Invited by column look permanently empty while the same record on
+            // a narrow screen — rendered a moment later — showed the name.
             const inviterIds = [...new Set((data || []).map((i: any) => i.invited_by).filter(Boolean))];
+            let names: Record<string, string> = {};
             if (inviterIds.length > 0) {
                 const { data: users } = await supabase.from('users').select('id, username').in('id', inviterIds);
-                setInviterNames(Object.fromEntries((users || []).map((u: any) => [u.id, u.username])));
+                names = Object.fromEntries((users || []).map((u: any) => [u.id, u.username]));
             }
+            setInviterNames(names);
+            setInvites((data || []) as InviteRow[]);
         }
         setLoading(false);
     }, [showToast]);
@@ -99,6 +108,42 @@ export const InvitationsPage: React.FC = () => {
         } catch {
             showToast('Could not access the clipboard.', 'error');
         }
+    };
+
+    /**
+     * Re-issue an invite whose window has closed.
+     *
+     * An invite expires after seven days. Until now the only route back was to
+     * revoke it and create a new one, which changes the link, loses the record
+     * of who was originally asked, and means finding the person's details again.
+     * This pushes the deadline out and puts the same link back in play.
+     *
+     * The token is deliberately unchanged: it is a capability in a link the
+     * person may already have in their inbox, and the point of the action is to
+     * make THAT link work again.
+     */
+    const reissue = async (inv: InviteRow) => {
+        setRevokingId(inv.id);
+        const { error } = await supabase
+            .from('user_invites')
+            .update({
+                status: 'pending',
+                expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', inv.id);
+        setRevokingId(null);
+        if (error) {
+            showToast(`Could not re-issue: ${error.message}`, 'error');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(inviteLinkFor(inv.token));
+            showToast('Invite re-issued for another 7 days — link copied.', 'success');
+        } catch {
+            showToast('Invite re-issued for another 7 days.', 'success');
+        }
+        load();
     };
 
     const revoke = async (inv: InviteRow) => {
@@ -208,6 +253,18 @@ export const InvitationsPage: React.FC = () => {
                                         <span>{v.status === 'accepted' ? v.when : `Expires ${v.when}`}</span>
                                         {v.inviter !== '—' && <><span className="text-slate-300">·</span><span>by {v.inviter}</span></>}
                                     </div>
+                                    {v.status === 'expired' && (
+                                        <button
+                                            onClick={() => reissue(inv)}
+                                            disabled={revokingId === inv.id}
+                                            className="mt-3 w-full h-10 rounded-lg border border-primary-200 text-[13px] font-semibold text-primary-600 active:bg-primary-50 inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                        >
+                                            {revokingId === inv.id
+                                                ? <Loader2 size={14} className="animate-spin" />
+                                                : <RefreshCw size={14} />}
+                                            Re-issue for 7 days
+                                        </button>
+                                    )}
                                     {v.isLive && (
                                         <div className="mt-3 flex gap-2">
                                             <button
@@ -302,6 +359,21 @@ export const InvitationsPage: React.FC = () => {
                                                             Revoke
                                                         </button>
                                                     </>
+                                                )}
+                                                {/* An expired invite had no action at all — the only way
+                                                    back was to revoke it and start again with a new link. */}
+                                                {status === 'expired' && (
+                                                    <button
+                                                        onClick={() => reissue(inv)}
+                                                        disabled={revokingId === inv.id}
+                                                        className="px-2.5 py-1.5 rounded-md border border-primary-200 text-xs font-semibold text-primary-600 hover:bg-primary-50 flex items-center gap-1.5 disabled:opacity-50"
+                                                        title="Give this invite another 7 days and copy the link"
+                                                    >
+                                                        {revokingId === inv.id
+                                                            ? <Loader2 size={12} className="animate-spin" />
+                                                            : <RefreshCw size={12} />}
+                                                        Re-issue
+                                                    </button>
                                                 )}
                                             </div>
                                         </td>

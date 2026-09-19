@@ -12,6 +12,7 @@ import { AssetProvider } from './contexts/AssetContext';
 import { RelanternProvider } from './eam/contexts/RelanternContext';
 import { DashboardProvider } from './eam/stores/DashboardStore';
 import { AppLayout } from './shell/AppLayout';
+import { SessionGuard } from './components/security/SessionGuard';
 import { ModuleGate } from './components/ModuleGate';
 import { permKeyForModule } from './config/modulePermissions';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -190,6 +191,10 @@ function App() {
                       path="*"
                       element={
                         <ProtectedRoute>
+                          {/* SessionGuard is what makes the Global Settings
+                              "Session Timeout" and "MFA Enforcement" values do
+                              something. Both were stored and read by nothing. */}
+                          <SessionGuard>
                           <AppLayout>
                             <ErrorBoundary>
                             <Suspense fallback={<Loading />}>
@@ -307,6 +312,7 @@ function App() {
                             </Suspense>
                             </ErrorBoundary>
                           </AppLayout>
+                          </SessionGuard>
                         </ProtectedRoute>
                       }
                     />

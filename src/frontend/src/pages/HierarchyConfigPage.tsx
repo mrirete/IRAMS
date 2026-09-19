@@ -116,13 +116,151 @@ export const HierarchyConfigPage: React.FC = () => {
                     <span key={n} className={Number(n) < 3 ? 'text-slate-400' : ''}><span className="font-mono font-bold">L{n}</span> {name}</span>
                 ))}
                 <span className="text-slate-400">· L1–L2 sit above a register; L9 parts live in the BOM.</span>
+                {/* Two of your levels can legitimately carry the same ISO number:
+                    the standard gives a band per level, and a plant that splits
+                    Area from Plant, or System from Sub-system, maps both halves
+                    into one band. Without saying so, a table showing L4 twice and
+                    L5 twice reads as a data error on the screen that defines the
+                    whole register. */}
+                <span className="w-full text-slate-400 mt-0.5">
+                    Two of your levels may share one ISO number — the standard gives a band per level, so a
+                    plant that splits Area from Plant, or System from Sub-system, maps both into the same band.
+                    Your own codes stay distinct.
+                </span>
             </div>
 
             {loading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400"><Loader2 size={24} className="animate-spin" /></div>
             ) : (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                    {/* Phone / tablet: one card per level.
+
+                        The table below is a seven-column editor with a number
+                        spinner, two selects, a checkbox and a chip grid on every
+                        row. At 390px it scrolled sideways and 89 of its 134
+                        controls sat under the 36px touch minimum, which made the
+                        screen that defines the asset hierarchy unusable on the
+                        device most likely to be holding it. Same state, same
+                        handlers, different arrangement. */}
+                    <div className="lg:hidden divide-y divide-slate-100">
+                        {levels.map((l, idx) => {
+                            const isNew = !originalCodes.has(l.code);
+                            const childOptions = levels.filter(c => c.code && c.code !== l.code);
+                            return (
+                                <div key={idx} className="p-4 space-y-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            {isNew ? (
+                                                <input
+                                                    value={l.code}
+                                                    onChange={e => update(idx, { code: e.target.value.toUpperCase().replace(/\s/g, '_') })}
+                                                    placeholder="CODE"
+                                                    className="w-28 h-9 text-[13px] font-mono border border-amber-300 bg-amber-50 rounded-lg px-2 uppercase"
+                                                />
+                                            ) : (
+                                                <p className="text-sm font-mono font-bold text-slate-700">{l.code}</p>
+                                            )}
+                                            {isoLevelName(l.isoLevel) && (
+                                                <p className="text-[11px] text-slate-400 mt-0.5">{isoLevelName(l.isoLevel)}</p>
+                                            )}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeLevel(idx)}
+                                            className="h-9 w-9 shrink-0 grid place-items-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition"
+                                            title="Remove level"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Label</label>
+                                        <input
+                                            value={l.label}
+                                            onChange={e => update(idx, { label: e.target.value })}
+                                            placeholder="Level name"
+                                            className="w-full h-11 text-sm border border-slate-300 rounded-lg px-3 focus:ring-1 focus:ring-primary-500 outline-none"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">ISO level</label>
+                                            <input
+                                                type="number" min={1} max={9} value={l.isoLevel}
+                                                onChange={e => update(idx, { isoLevel: Number(e.target.value) || 1 })}
+                                                className="w-full h-11 text-sm border border-slate-300 rounded-lg px-3"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Numbering</label>
+                                            <div className="h-11 flex items-center">
+                                                <span className={`text-xs font-mono font-bold px-2 py-1 rounded ${l.objectClass === 'EQUIPMENT' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                                    {l.objectClass === 'EQUIPMENT' ? 'EQ-' : 'FL-'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Object class</label>
+                                        <select
+                                            value={l.objectClass}
+                                            onChange={e => { const oc = e.target.value as LevelConfig['objectClass']; update(idx, { objectClass: oc, showEquipmentFields: oc === 'EQUIPMENT' }); }}
+                                            className="w-full h-11 text-sm border border-slate-300 rounded-lg px-3 bg-white"
+                                        >
+                                            <option value="FLOC">Functional Location</option>
+                                            <option value="EQUIPMENT">Equipment</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Criticality</label>
+                                        <select
+                                            value={l.criticality}
+                                            onChange={e => update(idx, { criticality: e.target.value as LevelConfig['criticality'] })}
+                                            className="w-full h-11 text-sm border border-slate-300 rounded-lg px-3 bg-white"
+                                        >
+                                            <option value="optional">Optional</option>
+                                            <option value="mandatory">Mandatory</option>
+                                        </select>
+                                    </div>
+
+                                    <label className="flex items-center gap-3 h-11 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!l.showEquipmentFields}
+                                            onChange={e => update(idx, { showEquipmentFields: e.target.checked })}
+                                            className="w-5 h-5 rounded text-primary-600"
+                                        />
+                                        <span className="text-sm text-slate-700 font-medium">Show equipment fields at this level</span>
+                                    </label>
+
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Allowed children</label>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {childOptions.length === 0 && <span className="text-xs text-slate-300">&mdash;</span>}
+                                            {childOptions.map(c => {
+                                                const on = l.allowedChildCodes.includes(c.code);
+                                                return (
+                                                    <button
+                                                        key={c.code} type="button"
+                                                        onClick={() => toggleChild(idx, c.code)}
+                                                        className={`min-h-[36px] text-[11px] font-mono px-2.5 rounded-lg border transition ${on ? 'bg-primary-100 border-primary-300 text-primary-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+                                                    >
+                                                        {c.code}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <table className="min-w-full text-sm hidden lg:table">
                         <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400">
                             <tr>
                                 <th className="text-left font-bold px-3 py-2.5 w-24">Level / Code</th>

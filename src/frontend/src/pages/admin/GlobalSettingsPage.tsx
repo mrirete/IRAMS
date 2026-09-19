@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Settings, DollarSign, Bell, Shield, Info, Save, RotateCcw, Check, Globe, Layers, AlertTriangle } from 'lucide-react';
+import { Settings, DollarSign, Bell, Shield, Info, Save, RotateCcw, Check, Globe, Layers, AlertTriangle, ArrowRight } from 'lucide-react';
 import { useSettings, CURRENCY_OPTIONS, TIMEZONE_OPTIONS } from '../../contexts/SettingsContext';
 import type { Currency, DateFormatOption } from '../../contexts/SettingsContext';
-import { ModuleLicensingPanel } from '../../components/admin/ModuleLicensingPanel';
+import { Link } from 'react-router-dom';
 import { MFAPanel } from '../../components/security/MFAPanel';
 
 // ─────────────────────────────────────────────────────────
@@ -137,6 +137,17 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
 const selectClass = "w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-800 font-medium focus:outline-none focus:border-accent-cyan focus:ring-2 focus:ring-accent-cyan/20 transition-all";
 const inputClass = "w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-800 font-medium focus:outline-none focus:border-accent-cyan focus:ring-2 focus:ring-accent-cyan/20 transition-all placeholder-slate-400";
 
+/**
+ * Number inputs get a fixed width, not `w-full` capped by a max.
+ *
+ * Field puts its label and hint in a flex sibling of the control. A long hint
+ * grows that sibling, and `w-full` on the input then resolves against whatever
+ * space is left — for Session Timeout that came out at 43px, narrow enough that
+ * the spinner covered the digits and the field read as empty while holding 30.
+ * A fixed basis cannot be squeezed by the length of the copy beside it.
+ */
+const numberInputClass = inputClass.replace('w-full', 'w-28 shrink-0');
+
 // ── General Tab ───────────────────────────────────────────
 
 const GeneralTab: React.FC = () => {
@@ -208,15 +219,27 @@ const NotificationsTab: React.FC = () => {
     return (
         <div>
             <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Bell size={18} className="text-amber-600" /> Notification Preferences</h3>
-            <p className="text-sm text-slate-500 mb-4">Escalation thresholds, email alerts, and warning timeframes.</p>
-            <Field label="Escalation Tier Threshold" hint="Governance tier that triggers escalation alerts">
-                <select value={settings.escalationTierThreshold} onChange={e => updateSettings({ escalationTierThreshold: Number(e.target.value) })} className={selectClass}>
-                    <option value={1}>Tier 1 — Low</option>
-                    <option value={2}>Tier 2 — Medium</option>
-                    <option value={3}>Tier 3 — High</option>
-                    <option value={4}>Tier 4 — Critical</option>
-                </select>
-            </Field>
+            <p className="text-sm text-slate-500 mb-4">Email alerts and warning timeframes.</p>
+
+            {/* There are two notification screens and they do different jobs.
+                This one sets workspace-wide preferences; the rules table decides
+                which event notifies whom, on which channel. Neither used to
+                mention the other, so they read as one setting in two places. */}
+            <Link to="/eam-admin" className="flex items-start gap-2.5 p-3 mb-5 rounded-xl border border-slate-200 bg-slate-50 hover:border-primary-300 hover:bg-primary-50/40 transition group">
+                <Bell size={14} className="mt-0.5 shrink-0 text-primary-600" />
+                <span className="text-xs text-slate-600 leading-relaxed">
+                    These are workspace-wide preferences. To choose which event notifies whom, and on which
+                    channel, open <strong className="text-slate-800 group-hover:text-primary-700">System Administration › Notifications</strong>.
+                </span>
+                <ArrowRight size={14} className="mt-0.5 shrink-0 text-slate-300 group-hover:text-primary-500" />
+            </Link>
+            {/* "Escalation Tier Threshold" was removed here rather than left in
+                place. It offered four governance tiers and no code anywhere in
+                the product read the chosen value — there is no escalation engine
+                behind it to configure. Per-event routing lives in Admin ›
+                Notifications, which is a real rules table. A dropdown that
+                changes nothing is worse than an absent one: it tells an
+                administrator a control exists. */}
             <Field label="Email Notifications">
                 <label className="flex items-center gap-3 cursor-pointer">
                     <div className={`relative w-12 h-6.5 rounded-full transition-colors ${settings.emailNotifications ? 'bg-accent-cyan' : 'bg-slate-300'}`} onClick={() => updateSettings({ emailNotifications: !settings.emailNotifications })}>
@@ -227,7 +250,7 @@ const NotificationsTab: React.FC = () => {
             </Field>
             <Field label="Badge Expiry Warning" hint="Days before certification expiry to show warning">
                 <div className="flex items-center gap-2">
-                    <input type="number" min={7} max={90} value={settings.badgeExpiryWarningDays} onChange={e => updateSettings({ badgeExpiryWarningDays: Number(e.target.value) })} className={`${inputClass} w-24`} />
+                    <input type="number" min={7} max={90} value={settings.badgeExpiryWarningDays} onChange={e => updateSettings({ badgeExpiryWarningDays: Number(e.target.value) })} className={numberInputClass} />
                     <span className="text-sm text-slate-600 font-semibold">days</span>
                 </div>
             </Field>
@@ -237,30 +260,85 @@ const NotificationsTab: React.FC = () => {
 
 // ── Security Tab ──────────────────────────────────────────
 
+/**
+ * Security tab.
+ *
+ * These three values used to be printed back as read-only text under a banner
+ * saying they were "managed by the system administrator". They were managed by
+ * nobody: each was stored on the company record and read by no other code in
+ * the product, so a workspace that displayed "✓ Enforced" enforced nothing.
+ *
+ * They are now editable and each one states who acts on it, because two of the
+ * three are enforced in this application and the third is not enforceable from
+ * here at all. Saying which is which is the point of the tab.
+ */
 const SecurityTab: React.FC = () => {
-    const { settings } = useSettings();
+    const { settings, updateSettings } = useSettings();
     return (
         <div>
             <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Shield size={18} className="text-red-500" /> Security Configuration</h3>
             <p className="text-sm text-slate-500 mb-4">Authentication, session management, and access controls.</p>
 
-            {/* Real, per-account control (F-004) — everything below it is display-only */}
+            {/* Per-account enrolment for whoever is reading this page. */}
             <div className="mb-5">
                 <MFAPanel isAdmin />
             </div>
 
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-5">
-                <p className="text-sm text-amber-700 font-semibold">⚠️ Security settings are managed by the system administrator and are read-only in this view.</p>
-            </div>
-            <Field label="Session Timeout">
-                <p className="text-sm text-slate-800 font-mono font-semibold bg-slate-100 px-3 py-2.5 rounded-lg border border-slate-200">{settings.sessionTimeoutMinutes} minutes</p>
+            <Field
+                label="Session Timeout"
+                hint="Signs a session out after this long with no mouse, key or touch input. A warning appears in the final minute. Set 0 to never time out."
+            >
+                <div className="flex items-center gap-2">
+                    <input
+                        type="number" min={0} max={1440}
+                        className={numberInputClass}
+                        value={settings.sessionTimeoutMinutes}
+                        onChange={e => updateSettings({ sessionTimeoutMinutes: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                    />
+                    <span className="text-sm text-slate-500 font-medium">minutes</span>
+                </div>
             </Field>
-            <Field label="Password Minimum Length">
-                <p className="text-sm text-slate-800 font-mono font-semibold bg-slate-100 px-3 py-2.5 rounded-lg border border-slate-200">{settings.passwordMinLength} characters</p>
+
+            <Field
+                label="MFA Enforcement"
+                hint="When on, anyone without a verified authenticator app is stopped at a setup screen before they can use the workspace."
+            >
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-primary-600"
+                        checked={settings.mfaEnforced}
+                        onChange={e => updateSettings({ mfaEnforced: e.target.checked })}
+                    />
+                    <span className={`text-sm font-bold ${settings.mfaEnforced ? 'text-emerald-700' : 'text-slate-600'}`}>
+                        {settings.mfaEnforced ? 'Required for everyone' : 'Optional'}
+                    </span>
+                </label>
+                {settings.mfaEnforced && (
+                    <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                        Enforced in this application. It stops the console, not the API — a token holder
+                        calling the database directly is governed by its own policies.
+                    </p>
+                )}
             </Field>
-            <Field label="MFA Enforcement">
-                <p className={`text-sm font-bold font-mono px-3 py-2.5 rounded-lg border ${settings.mfaEnforced ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                    {settings.mfaEnforced ? '✓ Enforced' : 'Optional'}
+
+            <Field
+                label="Password Minimum Length"
+                hint="Applied when a password is changed from inside the workspace, by the person or by an administrator."
+            >
+                <div className="flex items-center gap-2">
+                    <input
+                        type="number" min={8} max={72}
+                        className={numberInputClass}
+                        value={settings.passwordMinLength}
+                        onChange={e => updateSettings({ passwordMinLength: Math.max(8, parseInt(e.target.value, 10) || 8) })}
+                    />
+                    <span className="text-sm text-slate-500 font-medium">characters</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                    Signup and invitation acceptance happen before this workspace's settings can be read,
+                    so those two forms keep the platform floor. The identity provider also enforces its own
+                    minimum and rejects anything shorter, whatever is set here.
                 </p>
             </Field>
         </div>
@@ -301,15 +379,36 @@ const AboutTab: React.FC = () => (
 // Shares the ModuleLicensingPanel with Admin → Access Control (same useLicense
 // state — editing here or there changes the same org-wide licensing).
 
+/**
+ * Modules tab — a signpost, not a second editor.
+ *
+ * This used to render ModuleLicensingPanel, the identical control that System
+ * Administration › Module Licensing renders. Two screens wrote the same org-wide
+ * switches, neither said which one won, and the banner here pointed at "Admin →
+ * Access Control", a tab that does not exist under either name. An administrator
+ * had no way to know they were looking at one setting twice.
+ *
+ * Licensing now has one home, beside the per-role Module Access it is constantly
+ * confused with. This tab says where that is.
+ */
 const ModulesTab: React.FC = () => (
     <div className="space-y-4">
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
-            <Info size={14} className="mt-0.5 shrink-0 text-blue-500" />
-            <span>
-                Licensing and per-role <strong>Module Access</strong> are now consolidated under
-                <strong> Admin → Access Control</strong>. This panel edits the same org-wide licensing.
-            </span>
-        </div>
-        <ModuleLicensingPanel />
+        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Layers size={18} className="text-primary-600" /> Modules</h3>
+        <p className="text-sm text-slate-500">Which modules are switched on for this workspace, and who may use them.</p>
+
+        <Link
+            to="/eam-admin"
+            className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-white hover:border-primary-300 hover:bg-primary-50/40 transition group"
+        >
+            <Layers size={18} className="mt-0.5 shrink-0 text-primary-600" />
+            <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-800 group-hover:text-primary-700">Module Licensing &amp; User Access</p>
+                <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">
+                    Org-wide licensing decides which modules exist for everyone. Module Access decides which
+                    roles may open them. Both live in System Administration so the two layers are edited together.
+                </p>
+            </div>
+            <ArrowRight size={16} className="mt-1 shrink-0 text-slate-300 group-hover:text-primary-500" />
+        </Link>
     </div>
 );

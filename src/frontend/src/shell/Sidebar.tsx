@@ -410,16 +410,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                     Migration Center's "Export to SAP" card, not from here — one migration
                                     entry point, the reverse direction tucked inside it. */}
                                 <NavLink to="/eam-admin" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Dictionaries & Permissions
+                                    System Administration
                                 </NavLink>
                                 <NavLink to="/admin/invitations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Invitations
                                 </NavLink>
                                 <NavLink to="/admin/connectors" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Connector Hub
-                                </NavLink>
-                                <NavLink to="/admin/connectors/new" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    New Connector
                                 </NavLink>
                                 <NavLink to="/admin/api-keys" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     API Keys
@@ -438,6 +435,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 </NavLink>
                                 <NavLink to="/admin/work-centers" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Work Centers
+                                </NavLink>
+                                <NavLink to="/admin/ops-health" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                                    Operations Health
                                 </NavLink>
                                 <NavLink to="/admin/error-logs" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Error Logs
