@@ -13,7 +13,16 @@ dist
 dist-ssr
 
 # ── Local Supabase CLI ───────────────────────────────────
-supabase/
+# Migrations, baseline and Edge Function sources stay out of the upload —
+# EXCEPT the modules the browser shares with an Edge Function. gitignore
+# syntax cannot re-include a file under an excluded directory, so each
+# level is opened explicitly. Add a pair of lines per shared file.
+supabase/*
+!supabase/functions/
+supabase/functions/*
+!supabase/functions/agent-run/
+supabase/functions/agent-run/*
+!supabase/functions/agent-run/pidGraph.ts
 
 # ── Standalone sub-apps (not imported by main app) ────────
 # NOTE (2026-07-27): this used to claim agent-panel/ and dashboards/ were
