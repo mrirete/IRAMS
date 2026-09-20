@@ -146,6 +146,9 @@ export const RecurringWork: React.FC = () => {
     const pendingRef = useRef<RecurringJob | null>(null);
     const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const latestJobRef = useRef<RecurringJob | null>(null);
+    // The unmount flush below is registered once; it must call the CURRENT save
+    // function (with today's permissions and toast), not the first render's.
+    const handleSaveRef = useRef<(job?: RecurringJob, opts?: { silent?: boolean }) => Promise<void>>(async () => {});
     // Autosave: 1.5 s after the last edit (the work-order page's rhythm). The
     // page used to persist only on Save and had no unsaved-changes guard, so a
     // planner who wrote five steps and tapped the sidebar lost them.
@@ -155,13 +158,12 @@ export const RecurringWork: React.FC = () => {
         if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
         autosaveTimer.current = setTimeout(() => {
             autosaveTimer.current = null;
-            if (latestJobRef.current) void handleSave(latestJobRef.current, { silent: true });
+            if (latestJobRef.current) void handleSaveRef.current(latestJobRef.current, { silent: true });
         }, 1500);
     };
     // Leaving the page with a save pending: write it now rather than drop it.
     useEffect(() => () => {
-        if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null; if (latestJobRef.current) void handleSave(latestJobRef.current, { silent: true }); }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null; if (latestJobRef.current) void handleSaveRef.current(latestJobRef.current, { silent: true }); }
     }, []);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -937,6 +939,8 @@ export const RecurringWork: React.FC = () => {
             if (pendingRef.current) { const next = pendingRef.current; pendingRef.current = null; void handleSave(next, { silent: true }); }
         }
     };
+
+    handleSaveRef.current = handleSave;
 
     const TABS: { id: TabId; label: string; icon: any }[] = [
         { id: 'details', label: 'Details', icon: FileText },
