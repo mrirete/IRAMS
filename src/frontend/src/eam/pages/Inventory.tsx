@@ -553,6 +553,11 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
     // Logic for creating initial stock location using Stores/Bins
     const [selectedStoreId, setSelectedStoreId] = useState<string>(availableStores[0]?.id || '');
     const [selectedBinCode, setSelectedBinCode] = useState<string>('');
+    // Stores load asynchronously; a dialog opened before they arrive captured
+    // '' as the store and the item was created with no store row at all.
+    useEffect(() => {
+        if (!selectedStoreId && availableStores[0]?.id) setSelectedStoreId(availableStores[0].id);
+    }, [availableStores, selectedStoreId]);
 
     // Get bins for selected store
     const currentBins = availableStores.find(s => s.id === selectedStoreId)?.bins || [];
