@@ -18,8 +18,6 @@ const ASSIGNABLE_ROLES = Object.keys(ROLE_PERMISSION_TEMPLATES).filter(r => r !=
 const DEFAULT_ROLE = 'TECHNICIAN';
 /** Roles whose holders are, by default, people a planner can put on a job (flags.isLabour). */
 const LABOUR_ROLES = new Set(['TECHNICIAN', 'ELECTRICIAN', 'MECHANIC', 'INSTRUMENT', 'OPERATOR', 'SUPERVISOR']);
-/** CONTACT_TYPE rows that are business-partner kinds, not crafts a person can hold. */
-const NON_CRAFT_CODES = new Set(['VENDOR', 'MANUFACTURER', 'SUPPLIER']);
 const FALLBACK_RATE = 85;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -47,17 +45,17 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
     const [createUser, setCreateUser] = useState(true);
 
     // Labour attributes. Rate and the schedulable flag follow the chosen role
-    // until the admin edits them by hand; craft is an explicit choice.
+    // until the admin edits them by hand. There is no separate craft field:
+    // the CONTACT_TYPE dictionary IS the role list, so a "craft" picker showed
+    // the same entries a second time. Pickers read the trade from the role.
     const roleRate = (role: string): number => {
         const r = Number(contactTypes.find(t => t.code === role && t.active !== false)?.hourlyRate);
         return Number.isFinite(r) && r > 0 ? r : FALLBACK_RATE;
     };
     const [hourlyRate, setHourlyRate] = useState<string>(String(roleRate(DEFAULT_ROLE)));
     const [rateTouched, setRateTouched] = useState(false);
-    const [craft, setCraft] = useState<string>('');
     const [isLabour, setIsLabour] = useState<boolean>(LABOUR_ROLES.has(DEFAULT_ROLE));
     const [labourTouched, setLabourTouched] = useState(false);
-    const craftOptions = contactTypes.filter(t => t.active !== false && !t.isManufacturer && !NON_CRAFT_CODES.has(t.code));
 
     useEffect(() => {
         if (!rateTouched) setHourlyRate(String(roleRate(formData.role)));
@@ -174,9 +172,9 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
             }
 
             // The role is the person's system role (permission template) and
-            // always leads contacts.roles; the craft is what a labour picker
-            // filters on and rides alongside it. Same code twice is one entry.
-            const types = craft && craft !== formData.role ? [formData.role, craft] : [formData.role];
+            // is what contacts.roles carries; labour pickers read the trade
+            // from it too.
+            const types = [formData.role];
 
             // Use standard UUID to satisfy Postgres requirements
             const contactId = self.crypto.randomUUID();
@@ -344,9 +342,9 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         />
                     </div>
 
-                    {/* Description (previously Title/Job Role) */}
+                    {/* Job title — free text, shown on lists; the role below is what governs access */}
                     <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Description <span className="text-red-500">*</span></label>
+                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Job title <span className="text-red-500">*</span></label>
                         <input
                             required
                             className="w-full text-sm border-slate-300 rounded-md p-2"
@@ -354,6 +352,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                             onChange={e => setFormData({ ...formData, title: e.target.value })}
                             placeholder="e.g. Senior Technician, Maintenance Lead"
                         />
+                        <p className="text-[11px] text-slate-400 mt-1">How this person is described on lists. Does not affect access.</p>
                     </div>
 
 
@@ -396,22 +395,8 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         </p>
                     </div>
 
-                    {/* Craft + rate — what labour pickers and cost rules read */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Craft</label>
-                            <select
-                                className="w-full text-sm border-slate-300 rounded-md p-2 bg-white"
-                                value={craft}
-                                onChange={e => setCraft(e.target.value)}
-                            >
-                                <option value="">— none —</option>
-                                {craftOptions.map(t => (
-                                    <option key={t.code} value={t.code}>{t.description || t.code}</option>
-                                ))}
-                            </select>
-                            <p className="text-[11px] text-slate-400 mt-1">Trade a planner picks by.</p>
-                        </div>
+                    {/* Rate + schedulable flag — what cost rules and labour pickers read */}
+                    <div className="grid grid-cols-2 gap-4 items-start">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Hourly rate</label>
                             <div className="flex items-center gap-1">
@@ -430,18 +415,19 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                                 {rateTouched ? 'Person-specific rate.' : `Standard rate for ${formData.role.replace(/_/g, ' ').toLowerCase()}.`}
                             </p>
                         </div>
+                        <label className="flex items-start gap-2 cursor-pointer pt-6">
+                            <input
+                                type="checkbox"
+                                className="rounded text-blue-600 focus:ring-primary-500 mt-0.5"
+                                checked={isLabour}
+                                onChange={e => { setLabourTouched(true); setIsLabour(e.target.checked); }}
+                            />
+                            <span>
+                                <span className="block text-sm text-slate-700">Schedulable labour</span>
+                                <span className="block text-[11px] text-slate-400">Can be put on work orders and the schedule.</span>
+                            </span>
+                        </label>
                     </div>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            className="rounded text-blue-600 focus:ring-primary-500"
-                            checked={isLabour}
-                            onChange={e => { setLabourTouched(true); setIsLabour(e.target.checked); }}
-                        />
-                        <span className="text-sm text-slate-700">Schedulable labour</span>
-                        <span className="text-[11px] text-slate-400">— can be put on work orders and the schedule</span>
-                    </label>
 
                     {/* Fields moved to details page: First Name, Last Name, Cost Center */}
 
