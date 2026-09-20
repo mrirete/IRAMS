@@ -892,6 +892,7 @@ const ItemsTab: React.FC<{
         // order still showed as outstanding.
         let grnNumber: string | undefined;
         let serverTotal: number | undefined;
+        let onOrderAdjusted = false;
         try {
             const result = await db.receivePOLine({
                 poId: po.id,
@@ -902,13 +903,16 @@ const ItemsTab: React.FC<{
             });
             grnNumber = result.grnNumber;
             serverTotal = result.qtyReceivedTotal;
+            onOrderAdjusted = result.onOrderAdjusted;
         } catch (e: any) {
             showToast('Receipt failed: ' + e.message, 'error');
             return;
         }
 
-        // Stock planning: what arrived is no longer on order.
-        if (targetItem.inventoryId && deliveryLocationId) {
+        // Stock planning: what arrived is no longer on order. Since 0379 the
+        // receipt function does this inside its own transaction; this call
+        // remains for the client fallback path only.
+        if (!onOrderAdjusted && targetItem.inventoryId && deliveryLocationId) {
             try {
                 // On-order only, as a delta (clamped at zero server-side).
                 // receivePOLine has already moved on-hand and written the

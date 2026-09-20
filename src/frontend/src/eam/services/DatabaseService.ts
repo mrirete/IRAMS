@@ -4636,6 +4636,18 @@ export class DatabaseService {
     }
 
     /**
+     * True when an RPC failed because the function does not exist on this
+     * project (migration not applied yet) — the only case the client-side
+     * fallbacks below are for. Any other error is the function refusing
+     * (permission, tenant, rule) and must surface as-is.
+     */
+    private static rpcMissing(err: { message?: string; code?: string } | null): boolean {
+        if (!err) return false;
+        if (err.code === 'PGRST202' || err.code === '42883') return true;
+        return /Could not find the function|does not exist|schema cache/i.test(err.message || '');
+    }
+
+    /**
      * Move on-order at one store by a delta — written by purchasing when a
      * line is ordered (+) or received (−). The generic item save never wrote
      * qty_on_order, so the column was read on every Stores tab and written by
@@ -4644,6 +4656,15 @@ export class DatabaseService {
      * produce the second line's quantity alone.
      */
     public async adjustStockOnOrder(itemId: string, locationId: string, delta: number): Promise<void> {
+        // 0379: one locked read-modify-write in the database, gated on
+        // purchasing.edit / inventory.edit. The client path below stays only
+        // for a project that has not applied 0379.
+        const { error: rpcErr } = await supabase.rpc('ers_adjust_stock_on_order', {
+            p_item_id: itemId, p_location_id: locationId, p_delta: delta,
+        });
+        if (!rpcErr) return;
+        if (!DatabaseService.rpcMissing(rpcErr)) throw rpcErr;
+
         const { data: row, error: readErr } = await supabase
             .from('inventory_stock')
             .select('qty_on_order')
@@ -4700,6 +4721,24 @@ export class DatabaseService {
          */
         opts?: { poId?: string; woId?: string; movementType?: string }
     ): Promise<void> {
+        // 0379: stock and its movement move in ONE transaction, and the
+        // function checks the permission the act needs (inventory.edit; or
+        // workOrders.edit with the order for a return; or purchasing.edit
+        // with the PO for a receipt). It also refuses a target below zero.
+        // The client steps below remain only for a project without 0379.
+        const { error: rpcErr } = await supabase.rpc('ers_stock_adjust', {
+            p_item_id: itemId,
+            p_location_id: locationId,
+            p_target_qty: newLocationQty,
+            p_type: transactionType,
+            p_reason: reason || null,
+            p_movement_type: opts?.movementType ?? null,
+            p_wo_id: opts?.woId ?? null,
+            p_po_id: opts?.poId ?? null,
+        });
+        if (!rpcErr) return;
+        if (!DatabaseService.rpcMissing(rpcErr)) throw rpcErr;
+
         // 1. Get current stock at this location
         const { data: currentStock, error: fetchError } = await supabase
             .from('inventory_stock')
@@ -5411,9 +5450,28 @@ export class DatabaseService {
         quantity: number;
         locationId?: string;
         actor?: string;
-    }): Promise<{ grnNumber: string; qtyReceivedTotal: number }> {
+    }): Promise<{ grnNumber: string; qtyReceivedTotal: number; onOrderAdjusted: boolean }> {
         const { poId, lineId, quantity } = params;
         if (!(quantity > 0)) throw new Error('Receive quantity must be greater than zero.');
+
+        // 0379: stock, on-order, goods receipt, line quantity and service
+        // settlement in ONE transaction, gated on purchasing.edit, refusing
+        // over-receipt. The four client steps below remain only for a project
+        // that has not applied 0379 — there, on-order is the caller's to fix
+        // (onOrderAdjusted: false).
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('ers_receive_po_line', {
+            p_po_id: poId, p_line_id: lineId, p_quantity: quantity, p_location_id: params.locationId ?? null,
+        });
+        if (!rpcErr && rpcData && typeof rpcData === 'object') {
+            const d = rpcData as any;
+            if (d.settlement_deferred) console.warn('[po] service settlement deferred to the next run');
+            return {
+                grnNumber: String(d.grn_number || ''),
+                qtyReceivedTotal: Number(d.qty_received_total) || 0,
+                onOrderAdjusted: d.on_order_adjusted === true,
+            };
+        }
+        if (rpcErr && !DatabaseService.rpcMissing(rpcErr)) throw rpcErr;
 
         const { data: line, error: lineErr } = await supabase
             .from('purchase_order_lines').select('*').eq('id', lineId).single();
@@ -5483,7 +5541,7 @@ export class DatabaseService {
             if (settleErr) console.warn('[po] service settlement deferred to the next run:', settleErr.message);
         }
 
-        return { grnNumber: grn?.grn_number, qtyReceivedTotal: newTotal };
+        return { grnNumber: grn?.grn_number, qtyReceivedTotal: newTotal, onOrderAdjusted: false };
     }
 
     /**
