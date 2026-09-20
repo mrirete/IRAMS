@@ -229,7 +229,14 @@ export const Login: React.FC = () => {
         } else if (normalizedUser === 'mrirete') {
             virtualEmail = 'admin001@cainergy.com';
         } else {
-            virtualEmail = `${normalizedUser}@cainergy.com`;
+            // People created by Add Person sign in with the e-mail on their
+            // record (launch rule), so a username has to be looked up first
+            // (0380). Legacy accounts that pre-date the rule still live at
+            // <username>@cainergy.com — that stays the fallback.
+            const { data: resolved } = await supabase.rpc('login_email_for_username', { p_username: normalizedUser });
+            virtualEmail = typeof resolved === 'string' && resolved.includes('@')
+                ? resolved.toLowerCase()
+                : `${normalizedUser}@cainergy.com`;
         }
 
         const { error } = await supabase.auth.signInWithPassword({
