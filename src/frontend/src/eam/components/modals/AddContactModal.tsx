@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Shield, Key, Network, Loader2 } from 'lucide-react';
+import { X, Shield, Network, Loader2 } from 'lucide-react';
 import { Contact, DictionaryEntry, OrganizationUnit } from '../../types';
 import { DatabaseService } from '../../services/DatabaseService';
 import { useToast } from '../../contexts/ToastContext';
@@ -266,15 +266,22 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
         }
     };
 
+    const mismatch = !!userCreds.confirmPassword && userCreds.password !== userCreds.confirmPassword;
+    // One label / input / hint style for the whole form.
+    const L = 'block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1';
+    const I = 'w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500';
+    const H = 'text-[11px] text-slate-400 mt-1';
+    const Req = () => <span className="text-red-500">*</span>;
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <h3 className="text-lg font-bold text-slate-900">{isMfr ? 'Add New Manufacturer' : 'Add New Person / Entity'}</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[92vh]">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="text-base font-bold text-slate-900">{isMfr ? 'Add Manufacturer' : 'Add Person'}</h3>
+                    <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
+                <form id="add-contact-form" onSubmit={handleSubmit} className="px-5 py-4 overflow-y-auto space-y-3.5 ers-dense">
                     {error && (
                         <div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-200 flex items-center gap-2">
                             <Shield size={16} /> {error}
@@ -328,208 +335,174 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     </>
                     ) : (
                     <>
-                    {/* Username / Code */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Username <span className="text-red-500">*</span></label>
-                        <input
-                            required
-                            autoComplete="off"
-                            name="new-person-username"
-                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500 font-mono"
-                            value={formData.code || ''}
-                            onChange={e => setFormData({ ...formData, code: e.target.value })}
-                            placeholder="e.g. jdoe, EMP-001"
-                        />
-                    </div>
-
-                    {/* Job title — free text, shown on lists; the role below is what governs access */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Job title <span className="text-red-500">*</span></label>
-                        <input
-                            required
-                            className="w-full text-sm border-slate-300 rounded-md p-2"
-                            value={formData.title}
-                            onChange={e => setFormData({ ...formData, title: e.target.value })}
-                            placeholder="e.g. Senior Technician, Maintenance Lead"
-                        />
-                        <p className="text-[11px] text-slate-400 mt-1">How this person is described on lists. Does not affect access.</p>
-                    </div>
-
-
-                    {/* System role — drives the permission template for the contact AND the login */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">System Role <span className="text-red-500">*</span></label>
-                        <select
-                            required
-                            className="w-full text-sm border-slate-300 rounded-md p-2 bg-white"
-                            value={formData.role}
-                            onChange={e => setFormData({ ...formData, role: e.target.value })}
-                        >
-                            {ASSIGNABLE_ROLES.map(r => (
-                                <option key={r} value={r}>
-                                    {contactTypes.find(t => t.code === r)?.description || r.replace(/_/g, ' ')}
-                                </option>
-                            ))}
-                        </select>
-                        <p className="text-[11px] text-slate-400 mt-1">Sets what this person can see and do. Fine-tune per person later in Admin → Access Control.</p>
-                    </div>
-
-                    {/* E-mail — the login identity when an account is created */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                            E-mail {createUser && !existingUser && <span className="text-red-500">*</span>}
-                        </label>
-                        <input
-                            type="email"
-                            required={createUser && !existingUser}
-                            autoComplete="off"
-                            name="new-person-email"
-                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500"
-                            value={formData.email}
-                            onChange={e => setFormData({ ...formData, email: e.target.value })}
-                            placeholder="name@company.com"
-                            readOnly={!!existingUser}
-                        />
-                        <p className="text-[11px] text-slate-400 mt-1">
-                            {existingUser ? 'The e-mail of the linked login.' : createUser ? 'This person signs in with this address.' : 'Optional without a login.'}
-                        </p>
-                    </div>
-
-                    {/* Rate + schedulable flag — what cost rules and labour pickers read */}
-                    <div className="grid grid-cols-2 gap-4 items-start">
+                    {/* Who — identity in two rows */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Hourly rate</label>
-                            <div className="flex items-center gap-1">
-                                <span className="text-sm text-slate-400">$</span>
+                            <label className={L}>Username <Req /></label>
+                            <input
+                                required
+                                autoComplete="off"
+                                name="new-person-username"
+                                className={`${I} font-mono`}
+                                value={formData.code || ''}
+                                onChange={e => setFormData({ ...formData, code: e.target.value })}
+                                placeholder="jdoe"
+                            />
+                        </div>
+                        <div>
+                            <label className={L}>Job title <Req /></label>
+                            <input
+                                required
+                                className={I}
+                                value={formData.title}
+                                onChange={e => setFormData({ ...formData, title: e.target.value })}
+                                placeholder="Senior Technician"
+                            />
+                        </div>
+                        <div>
+                            <label className={L}>System role <Req /></label>
+                            <select
+                                required
+                                className={`${I} bg-white`}
+                                value={formData.role}
+                                onChange={e => setFormData({ ...formData, role: e.target.value })}
+                            >
+                                {ASSIGNABLE_ROLES.map(r => (
+                                    <option key={r} value={r}>
+                                        {contactTypes.find(t => t.code === r)?.description || r.replace(/_/g, ' ')}
+                                    </option>
+                                ))}
+                            </select>
+                            <p className={H}>Controls access. Editable later in Admin.</p>
+                        </div>
+                        <div>
+                            <label className={L}>E-mail {createUser && !existingUser && <Req />}</label>
+                            <input
+                                type="email"
+                                required={createUser && !existingUser}
+                                autoComplete="off"
+                                name="new-person-email"
+                                className={I}
+                                value={formData.email}
+                                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                placeholder="name@company.com"
+                                readOnly={!!existingUser}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Labour — what cost rules and the schedule read */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                        <div>
+                            <label className={L}>Hourly rate</label>
+                            <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
                                 <input
                                     type="number"
                                     min={0}
                                     step="0.01"
                                     inputMode="decimal"
-                                    className="w-full text-sm border-slate-300 rounded-md p-2"
+                                    className={`${I} pl-6`}
                                     value={hourlyRate}
                                     onChange={e => { setRateTouched(true); setHourlyRate(e.target.value); }}
                                 />
                             </div>
-                            <p className="text-[11px] text-slate-400 mt-1">
-                                {rateTouched ? 'Person-specific rate.' : `Standard rate for ${formData.role.replace(/_/g, ' ').toLowerCase()}.`}
-                            </p>
                         </div>
-                        <label className="flex items-start gap-2 cursor-pointer pt-6">
+                        <label className="flex items-center gap-2 cursor-pointer h-[38px] px-3 rounded-md border border-slate-200 bg-slate-50">
                             <input
                                 type="checkbox"
-                                className="rounded text-blue-600 focus:ring-primary-500 mt-0.5"
+                                className="rounded text-blue-600 focus:ring-primary-500"
                                 checked={isLabour}
                                 onChange={e => { setLabourTouched(true); setIsLabour(e.target.checked); }}
                             />
-                            <span>
-                                <span className="block text-sm text-slate-700">Schedulable labour</span>
-                                <span className="block text-[11px] text-slate-400">Can be put on work orders and the schedule.</span>
-                            </span>
+                            <span className="text-sm text-slate-700">Schedulable labour</span>
                         </label>
                     </div>
 
-                    {/* Fields moved to details page: First Name, Last Name, Cost Center */}
-
-                    {/* Organization Unit removed - assign via Admin module instead */}
-
-                    {/* System Access Toggle */}
-                    {
-                        !existingUser && (
-                            <div className="pt-4 border-t border-slate-100">
-                                <label className="flex items-center gap-2 mb-4 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        className="rounded text-blue-600 focus:ring-primary-500"
-                                        checked={createUser}
-                                        onChange={e => setCreateUser(e.target.checked)}
-                                    />
-                                    <span className="text-sm font-medium text-slate-700">Create Account</span>
-                                </label>
-
-                                {createUser && (
-                                    <div className="bg-slate-50 p-4 rounded-lg space-y-3">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password <span className="text-red-500">*</span></label>
-                                            <input
-                                                type="password"
-                                                required={createUser}
-                                                autoComplete="new-password"
-                                                name="new-account-password"
-                                                className="w-full text-sm border-slate-300 rounded-md p-2"
-                                                value={userCreds.password}
-                                                onChange={e => setUserCreds({ ...userCreds, password: e.target.value })}
-                                                placeholder="Enter password"
-                                                minLength={6}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Confirm Password <span className="text-red-500">*</span></label>
-                                            <input
-                                                type="password"
-                                                required={createUser}
-                                                autoComplete="new-password"
-                                                name="confirm-new-account-password"
-                                                className={`w-full text-sm rounded-md p-2 ${
-                                                    userCreds.confirmPassword && userCreds.password !== userCreds.confirmPassword
-                                                        ? 'border-red-400 focus:ring-red-500 focus:border-red-500'
-                                                        : 'border-slate-300 focus:ring-primary-500 focus:border-blue-500'
-                                                }`}
-                                                value={userCreds.confirmPassword}
-                                                onChange={e => setUserCreds({ ...userCreds, confirmPassword: e.target.value })}
-                                                placeholder="Re-enter password"
-                                                minLength={6}
-                                            />
-                                            {userCreds.confirmPassword && userCreds.password !== userCreds.confirmPassword && (
-                                                <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
-                                            )}
-                                            {userCreds.confirmPassword && userCreds.password === userCreds.confirmPassword && userCreds.password.length >= 6 && (
-                                                <p className="text-xs text-green-600 mt-1 font-medium">✓ Passwords match</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )
-                    }
-
-                    {
-                        existingUser && (
-                            <div className="pt-4 border-t border-slate-100">
-                                <div className="bg-green-50 p-4 rounded-lg flex items-start gap-3">
-                                    <Network className="text-green-600 mt-0.5" size={16} />
+                    {/* Login */}
+                    {!existingUser && (
+                        <div className="rounded-lg border border-slate-200 overflow-hidden">
+                            <label className="flex items-center gap-2 cursor-pointer px-3 py-2.5 bg-slate-50">
+                                <input
+                                    type="checkbox"
+                                    className="rounded text-blue-600 focus:ring-primary-500"
+                                    checked={createUser}
+                                    onChange={e => setCreateUser(e.target.checked)}
+                                />
+                                <span className="text-sm font-medium text-slate-700">Create login</span>
+                                <span className="text-xs text-slate-400 ml-auto">{createUser ? 'signs in with the e-mail above' : 'record only'}</span>
+                            </label>
+                            {createUser && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 border-t border-slate-200">
                                     <div>
-                                        <h4 className="text-sm font-bold text-green-900">System Access Active</h4>
-                                        <p className="text-xs text-green-700 mt-1">
-                                            This profile will be linked to existing user <strong>@{existingUser.username}</strong>
-                                        </p>
+                                        <label className={L}>Password <Req /></label>
+                                        <input
+                                            type="password"
+                                            required={createUser}
+                                            autoComplete="new-password"
+                                            name="new-account-password"
+                                            className={I}
+                                            value={userCreds.password}
+                                            onChange={e => setUserCreds({ ...userCreds, password: e.target.value })}
+                                            placeholder="At least 6 characters"
+                                            minLength={6}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className={L}>Confirm <Req /></label>
+                                        <input
+                                            type="password"
+                                            required={createUser}
+                                            autoComplete="new-password"
+                                            name="confirm-new-account-password"
+                                            className={`w-full text-sm rounded-md p-2 ${
+                                                mismatch
+                                                    ? 'border-red-400 focus:ring-red-500 focus:border-red-500'
+                                                    : 'border-slate-300 focus:ring-primary-500 focus:border-blue-500'
+                                            }`}
+                                            value={userCreds.confirmPassword}
+                                            onChange={e => setUserCreds({ ...userCreds, confirmPassword: e.target.value })}
+                                            placeholder="Re-enter"
+                                            minLength={6}
+                                        />
+                                        {mismatch && <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>}
                                     </div>
                                 </div>
-                            </div>
-                        )
-                    }
-                    </>
+                            )}
+                        </div>
                     )}
 
-                    <div className="pt-4 flex justify-end gap-3">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={createLoading || (createUser && !existingUser && !isMfr && userCreds.password !== userCreds.confirmPassword)}
-                            className="px-6 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-500 shadow-sm flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                            {createLoading && <Loader2 size={16} className="animate-spin" />}
-                            {createLoading ? 'Creating…' : 'Create Record'}
-                        </button>
-                    </div>
-                </form >
-            </div >
-        </div >
+                    {existingUser && (
+                        <div className="bg-green-50 p-3 rounded-lg flex items-start gap-3">
+                            <Network className="text-green-600 mt-0.5" size={16} />
+                            <p className="text-xs text-green-800">
+                                Linked to existing login <strong>@{existingUser.username}</strong>.
+                            </p>
+                        </div>
+                    )}
+                    </>
+                    )}
+                </form>
+
+                <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        form="add-contact-form"
+                        disabled={createLoading || (createUser && !existingUser && !isMfr && userCreds.password !== userCreds.confirmPassword)}
+                        className="px-5 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-500 shadow-sm flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        {createLoading && <Loader2 size={16} className="animate-spin" />}
+                        {createLoading ? 'Creating…' : isMfr ? 'Add manufacturer' : 'Add person'}
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 };
