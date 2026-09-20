@@ -1697,7 +1697,7 @@ export const RecurringWork: React.FC = () => {
                             className="lg:hidden p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-30 flex-shrink-0"
                             title="Previous tab"
                         ><ChevronLeft size={16} /></button>
-                        <div ref={tabStripRef} className="flex gap-x-1 sm:gap-x-6 overflow-x-auto flex-1 min-w-0">
+                        <div ref={tabStripRef} className="flex gap-x-1 sm:gap-x-4 xl:gap-x-5 overflow-x-auto lg:overflow-visible lg:flex-wrap flex-1 min-w-0">
                             {TABS.map(tab => (
                                 <button
                                     key={tab.id}
