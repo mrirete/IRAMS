@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import {
     Search, Plus, Filter, Save, Calendar, Clock, Gauge, FileText,
     Link as LinkIcon, Layers, Package, Users, ClipboardList,
@@ -169,6 +169,8 @@ export const RecurringWork: React.FC = () => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     // Deep link (e.g. RCM task matrix → /recurring-work?q=RCM-xxxx) seeds the search box
     const [urlParams, setUrlParams] = useSearchParams();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState(urlParams.get('q') || '');
     // Deep link from Specialist missions: ?due=overdue lands the plan already
     // scoped to past-due programmes (clearable chip in the toolbar).
@@ -316,8 +318,12 @@ export const RecurringWork: React.FC = () => {
             }));
 
             setJobs(mappedPMs);
+            // Returned as well as set: an importer that creates schedules and
+            // must then attach steps to them cannot wait for a state update.
+            return mappedPMs;
         } catch (e) {
             console.error("Failed to load PMs", e);
+            return [] as RecurringJob[];
         }
     };
 
@@ -976,14 +982,18 @@ export const RecurringWork: React.FC = () => {
      * Re-importing a pmCode replaces that schedule's plan, so a corrected
      * export can simply be re-run.
      */
-    const handleJobPlanImport = async (rows: Record<string, string>[]) => {
+    // `against` is the schedule list to match on; it defaults to state, and is
+    // passed explicitly when schedules were only just created (state has not
+    // caught up, and every operation would report "import schedules first").
+    const handleJobPlanImport = async (rows: Record<string, string>[], against?: RecurringJob[]) => {
+        const pmPool = against ?? jobs;
         const db = DatabaseService.getInstance();
         const res = emptyResult();
 
         // recurring_work.code carries no unique constraint, so a code that
         // matches more than one schedule is ambiguous and must not be guessed.
         const pmsByCode = new Map<string, RecurringJob[]>();
-        for (const pm of jobs) {
+        for (const pm of pmPool) {
             const key = (pm.code || '').toUpperCase();
             if (!key) continue;
             (pmsByCode.get(key) ?? pmsByCode.set(key, []).get(key)!).push(pm);
@@ -999,7 +1009,7 @@ export const RecurringWork: React.FC = () => {
         // import. Unlike a PM code, one task list legitimately serves several
         // schedules — the operations attach to every one of them.
         const pmsByTaskList = new Map<string, RecurringJob[]>();
-        for (const pm of jobs) {
+        for (const pm of pmPool) {
             const origin = pm.origin as Record<string, unknown> | undefined;
             const ref = String(origin?.task_list ?? '').toUpperCase();
             // A package sibling ("…-12M") carries the task list too, but it is
@@ -1182,6 +1192,36 @@ export const RecurringWork: React.FC = () => {
         loadStrategies();
         return res;
     };
+
+    // --- Strategy handed over from the SAP Migration Cockpit import ---
+    // That page maps the cockpit's task lists and maintenance items into the
+    // same canonical rows this page's own importer takes, then navigates here
+    // with them. Running both passes in one place is what makes the ORDER
+    // safe: operations attach to schedules that already exist, so schedules
+    // are imported first and the fresh list is handed straight to the second
+    // pass rather than waiting on a state update.
+    const cockpitHandoff = (location.state as { cockpitImport?: { recurring: Record<string, string>[]; jobplan: Record<string, string>[] } } | null)?.cockpitImport;
+    const handoffRun = useRef(false);
+    useEffect(() => {
+        // The schedule importer resolves assets from the list this page loads,
+        // so the hand-off waits for it: firing on mount would report every row
+        // as "asset not found".
+        if (!cockpitHandoff || handoffRun.current || dbAssets.length === 0) return;
+        handoffRun.current = true;
+        // Consume it, so a refresh or a back-navigation cannot import twice.
+        navigate(location.pathname, { replace: true, state: null });
+        void (async () => {
+            const { recurring, jobplan } = cockpitHandoff;
+            if (recurring.length) await handleBulkImportData('recurring', recurring);
+            if (jobplan.length) {
+                const fresh = await loadStrategies();
+                await handleJobPlanImport(jobplan, fresh);
+            } else {
+                await loadStrategies();
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cockpitHandoff, dbAssets.length]);
 
     // --- Bulk Import handler for Recurring Jobs ---
     const handleBulkImportData = async (type: ImportType, rows: Record<string, string>[]) => {

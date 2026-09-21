@@ -13,10 +13,10 @@
  * reported rather than guessed at.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Database, FolderOpen, FileSpreadsheet, Loader2, AlertTriangle,
-    AlertOctagon, Info, CheckCircle2, Upload,
+    AlertOctagon, Info, CheckCircle2, Upload, CalendarClock, ArrowRight,
 } from 'lucide-react';
 import { useToast } from '../../eam/contexts/ToastContext';
 import { errMessage, type ImportResult } from '../../eam/services/importTypes';
@@ -24,6 +24,7 @@ import { bulkImportService } from '../../eam/services/bulkImportService';
 import {
     readCockpitSet, toReadingRows, type CockpitFile, type CockpitIssue,
 } from '../../lib/sapCockpit/inbound';
+import { toStrategyRows } from '../../lib/sapCockpit/strategy';
 import { COCKPIT_OBJECT_BY_KEY } from '../../lib/sapCockpit/structures';
 
 const ISSUE_ICON = {
@@ -46,6 +47,7 @@ const IssueRow: React.FC<{ issue: CockpitIssue }> = ({ issue }) => (
 
 export const CockpitImportPage: React.FC = () => {
     const { showToast } = useToast();
+    const navigate = useNavigate();
     const [files, setFiles] = useState<CockpitFile[]>([]);
     const [reading, setReading] = useState(false);
     const [importing, setImporting] = useState(false);
@@ -76,6 +78,7 @@ export const CockpitImportPage: React.FC = () => {
 
     const set = useMemo(() => readCockpitSet(files), [files]);
     const mapped = useMemo(() => toReadingRows(set), [set]);
+    const strategy = useMemo(() => toStrategyRows(set), [set]);
 
     const points = mapped.rows.filter(r => !r.value).length;
     const readings = mapped.rows.length - points;
@@ -112,9 +115,9 @@ export const CockpitImportPage: React.FC = () => {
                     <Database size={22} className="text-primary-600" /> Import from SAP Migration Cockpit
                 </h1>
                 <p className="text-slate-500 text-sm mt-1 max-w-2xl">
-                    Download the source data for <b>PM - Measuring point</b> and <b>PM - Measurement document</b> from the
-                    cockpit, unzip them, and drop the folders here. The points become reading points on the register and
-                    the documents become readings on them — the condition history a reliability study runs on.
+                    Download the source data from the cockpit, unzip it, and drop the folders here. Measuring points and
+                    measurement documents become the condition history a reliability study runs on; task lists, maintenance
+                    items and plans become job plans and PM schedules.
                 </p>
             </div>
 
@@ -205,6 +208,41 @@ export const CockpitImportPage: React.FC = () => {
                             or import the rest knowingly.
                         </p>
                     )}
+                </section>
+            )}
+
+            {/* Strategy — schedules and job plans, handed to the importer that owns them */}
+            {(strategy.recurring.length > 0 || strategy.jobplan.length > 0 || strategy.skipped > 0) && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+                        <CalendarClock size={16} className="text-slate-400" /> Maintenance strategy
+                    </h3>
+                    <p className="text-sm text-slate-500 mb-3">
+                        What the plant does today: maintenance items become PM schedules, task-list operations become the
+                        steps on them. These import on Recurring Work, in that order — a step can only attach to a
+                        schedule that already exists.
+                    </p>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm mb-4">
+                        <span className="text-slate-600"><b className="text-slate-900">{strategy.recurring.length.toLocaleString()}</b> schedule(s)</span>
+                        <span className="text-slate-600"><b className="text-slate-900">{strategy.jobplan.length.toLocaleString()}</b> job-plan step(s)</span>
+                        {strategy.skipped > 0 && (
+                            <span className="text-rose-700"><b>{strategy.skipped.toLocaleString()}</b> row(s) skipped</span>
+                        )}
+                    </div>
+
+                    {strategy.issues.length > 0 && <ul className="mb-4">{strategy.issues.map((i, n) => <IssueRow key={n} issue={i} />)}</ul>}
+
+                    <button
+                        onClick={() => navigate('/recurring-work', { state: { cockpitImport: { recurring: strategy.recurring, jobplan: strategy.jobplan } } })}
+                        disabled={strategy.recurring.length === 0 && strategy.jobplan.length === 0}
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary-600 text-white px-4 py-2 text-sm font-semibold hover:bg-primary-700 disabled:opacity-60"
+                    >
+                        Import on Recurring Work <ArrowRight size={15} />
+                    </button>
+                    <p className="text-xs text-slate-400 mt-2">
+                        Opens Recurring Work and runs both passes there, so the schedules and their steps are created by
+                        the importer that owns them rather than a second copy of it.
+                    </p>
                 </section>
             )}
 

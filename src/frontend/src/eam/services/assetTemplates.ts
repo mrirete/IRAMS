@@ -1052,12 +1052,12 @@ const SAP_MTART_MAP: Record<string, string> = {
 // Vanilla maintenance activity types (ILART). Order types are client
 // configuration, so the activity type decides the job type and PM02 is only
 // recognised, never relied on.
-const SAP_ILART_MAP: Record<string, string> = { '001': 'INSPECTION', '002': 'PM', '003': 'CM', '004': 'PM' };
-const SAP_ORDER_TYPES = new Set(['PM01', 'PM02', 'PM03', 'PM04', 'PM05', 'PM06']);
-const SAP_PRIOK_MAP: Record<string, string> = { '1': 'EMERGENCY', '2': 'HIGH', '3': 'MEDIUM', '4': 'LOW' };
+export const SAP_ILART_MAP: Record<string, string> = { '001': 'INSPECTION', '002': 'PM', '003': 'CM', '004': 'PM' };
+export const SAP_ORDER_TYPES = new Set(['PM01', 'PM02', 'PM03', 'PM04', 'PM05', 'PM06']);
+export const SAP_PRIOK_MAP: Record<string, string> = { '1': 'EMERGENCY', '2': 'HIGH', '3': 'MEDIUM', '4': 'LOW' };
 // Operation control keys: PM01 internal, PM02 external (IREAMS's vocabulary);
 // consultants also write INT / EXT.
-const SAP_CONTROL_KEYS: Record<string, string> = { INT: 'PM01', EXT: 'PM02', PM01: 'PM01', PM02: 'PM02', PM03: 'PM02' };
+export const SAP_CONTROL_KEYS: Record<string, string> = { INT: 'PM01', EXT: 'PM02', PM01: 'PM01', PM02: 'PM02', PM03: 'PM02' };
 
 export const SAP_PROFILES: SapSheetProfile[] = [
     {
