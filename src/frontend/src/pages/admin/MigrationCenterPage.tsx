@@ -439,6 +439,28 @@ export const MigrationCenterPage: React.FC = () => {
                 </label>
             </div>
 
+            {/* Straight from the cockpit's own source data, when the plant is
+                coming OFF SAP. Separate from the phases below because it reads
+                SAP's staging structures rather than a spreadsheet: the files
+                arrive as one CSV per structure and have to be read together. */}
+            {sourceSystem === 'sap_pm' && (
+                <Link
+                    to="/admin/migration/cockpit"
+                    className="flex items-start gap-3 rounded-2xl border border-primary-200 bg-primary-50/40 hover:bg-white transition-colors px-5 py-4 text-sm"
+                >
+                    <Database size={18} className="mt-0.5 text-primary-600 shrink-0" />
+                    <span className="flex-1">
+                        <span className="font-semibold text-slate-800">Have the cockpit's source data? Import it directly.</span>
+                        <span className="block text-slate-500 mt-0.5">
+                            The ZIPs from SAP's Migration Cockpit ("Source data for PM - Measuring point",
+                            "PM - Measurement document") load straight in — points become reading points, documents become
+                            readings on them. No re-shaping into a spreadsheet first.
+                        </span>
+                    </span>
+                    <ArrowRight size={16} className="mt-0.5 text-slate-400 shrink-0" />
+                </Link>
+            )}
+
             {/* The other direction: this register OUT into SAP Migration Cockpit load files. */}
             <Link
                 to="/admin/migration/sap"

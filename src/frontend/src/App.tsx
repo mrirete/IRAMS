@@ -35,6 +35,7 @@ const AdminActivityPage = lazyWithReload(() => import('./pages/admin/AdminActivi
 const InvitationsPage = lazyWithReload(() => import('./pages/admin/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
 const MigrationCenterPage = lazyWithReload(() => import('./pages/admin/MigrationCenterPage').then(m => ({ default: m.MigrationCenterPage })));
 const SapLoadCenterPage = lazyWithReload(() => import('./pages/admin/SapLoadCenterPage').then(m => ({ default: m.SapLoadCenterPage })));
+const CockpitImportPage = lazyWithReload(() => import('./pages/admin/CockpitImportPage').then(m => ({ default: m.CockpitImportPage })));
 const ApiKeysPage = lazyWithReload(() => import('./pages/admin/ApiKeysPage').then(m => ({ default: m.ApiKeysPage })));
 const SpecialistWorkspacePage = lazyWithReload(() => import('./pages/specialist/SpecialistWorkspacePage').then(m => ({ default: m.SpecialistWorkspacePage })));
 const ImportWizardPage = lazyWithReload(() => import('./pages/specialist/ImportWizardPage').then(m => ({ default: m.ImportWizardPage })));
@@ -293,6 +294,8 @@ function App() {
                                 <Route path="/admin/migration" element={<PermissionGate module="admin"><MigrationCenterPage /></PermissionGate>} />
                                 {/* Outbound: IREAMS → SAP Migration Cockpit load files. Same gate as the Center. */}
                                 <Route path="/admin/migration/sap" element={<PermissionGate module="admin"><SapLoadCenterPage /></PermissionGate>} />
+                                {/* Inbound: SAP Migration Cockpit source data → IREAMS. */}
+                                <Route path="/admin/migration/cockpit" element={<PermissionGate module="admin"><CockpitImportPage /></PermissionGate>} />
                                 <Route path="/admin/invitations" element={<PermissionGate module="admin"><InvitationsPage /></PermissionGate>} />
                                 <Route path="/admin/connectors" element={<PermissionGate module="admin"><ConnectorHub /></PermissionGate>} />
                                 <Route path="/admin/api-keys" element={<PermissionGate module="admin"><ApiKeysPage /></PermissionGate>} />

@@ -835,16 +835,21 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
         if (!date) { tally(res, { row, key: tag, status: 'failed', reason: `Unrecognised date "${r['date']}"` }); continue; }
         if (isNaN(value)) { tally(res, { row, key: tag, status: 'failed', reason: `Value "${r['value']}" is not a number` }); continue; }
 
-        // Find-or-create the reading point.
+        // Find-or-create the reading point. A row that NAMES its point (a
+        // cockpit measurement document always does — it refers to one
+        // measuring point and nothing else) must land on that point: a pump
+        // carries eight VIBRATION points, and matching on type alone would
+        // pile all eight histories onto whichever one happens to be first.
         const dk = `${asset.id}::${type}`;
-        let defId = defByKey.get(dk);
+        const logName = (r['pointname'] || '').trim();
+        let defId = logName ? defByName.get(nameKey(asset.id, type, logName)) : defByKey.get(dk);
         if (!defId) {
             const { data, error } = await supabase
                 .from('reading_definitions')
                 .insert({
                     asset_id: asset.id,
                     reading_type_code: type,
-                    name: `${type.charAt(0)}${type.slice(1).toLowerCase()} (imported)`,
+                    name: logName || `${type.charAt(0)}${type.slice(1).toLowerCase()} (imported)`,
                     unit: r['unit'] || null,
                 })
                 .select('id')
@@ -854,31 +859,104 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
                 continue;
             }
             defId = data.id as string;
-            defByKey.set(dk, defId);
+            if (!defByKey.has(dk)) defByKey.set(dk, defId);
+            if (logName) defByName.set(nameKey(asset.id, type, logName), defId);
             pointsCreated += 1;
         }
 
-        drafts.push({
-            row, key: `${tag} ${type}`,
-            log: {
-                definition_id: defId,
-                asset_id: asset.id,
-                reading_type_code: type,
-                reading_value: value,
-                reading_date: date,
-                entered_by: 'import',
-                // The column is `comments` — `notes` was a 42703 that failed
-                // every log row at runtime (caught by the SAP UAT journey).
-                comments: r['notes'] || null,
-            },
-        });
+        const log: Record<string, unknown> = {
+            definition_id: defId,
+            asset_id: asset.id,
+            reading_type_code: type,
+            reading_value: value,
+            reading_date: date,
+            entered_by: (r['enteredby'] || '').trim() || 'import',
+            // The column is `comments` — `notes` was a 42703 that failed
+            // every log row at runtime (caught by the SAP UAT journey).
+            comments: r['notes'] || null,
+        };
+        // Optional columns a source may carry: SAP measurement documents have
+        // the time, the counter difference, who read it and a coded finding.
+        // Dropping them would throw away the part that makes the history
+        // usable for analysis.
+        const time = (r['time'] || '').trim();
+        if (time) log.reading_time = time;
+        const delta = Number(r['delta']);
+        if ((r['delta'] ?? '') !== '' && !isNaN(delta)) log.delta = delta;
+        const valuation = (r['valuationcode'] || '').trim();
+        if (valuation) log.valuation_code = valuation;
+        // 0381: the source system's own id for this reading. With it, importing
+        // the same export twice inserts nothing the second time; without it
+        // (a reading typed into IREAMS) nothing is constrained.
+        const sourceRef = (r['sourceref'] || '').trim();
+        if (sourceRef) {
+            log.source_ref = sourceRef;
+            log.source_system = (r['sourcesystem'] || '').trim() || 'import';
+        }
+
+        drafts.push({ row, key: `${tag} ${type}`, log });
     }
 
+    let valuationDropped = false;
+    // 0381 may not be applied on this tenant yet. The guard is attempted once;
+    // if the column or the index is not there, every row still imports and the
+    // result says plainly that duplicate protection was off.
+    let sourceGuard = drafts.some(d => d.log.source_ref !== undefined);
     for (const part of chunk(drafts, READING_CHUNK)) {
+        if (sourceGuard) {
+            const { data, error: upErr } = await supabase
+                .from('reading_logs')
+                .upsert(part.map(d => d.log), { onConflict: 'company_id,source_system,source_ref', ignoreDuplicates: true })
+                .select('source_ref');
+            if (!upErr) {
+                // With ignoreDuplicates, only the rows actually written come
+                // back. A draft whose source ref is missing from that list was
+                // already in the database: skipped, not failed.
+                if (!Array.isArray(data)) {
+                    // No representation came back, so which rows were written
+                    // cannot be told apart. The database has still enforced the
+                    // guard; only the reporting is uncertain, and calling a
+                    // written row "already imported" would be the worse lie.
+                    for (const d of part) tally(res, { row: d.row, key: d.key, status: 'inserted' });
+                    continue;
+                }
+                const written = new Set(data.map(d => String((d as { source_ref: string | null }).source_ref ?? '')));
+                for (const d of part) {
+                    const ref = d.log.source_ref === undefined ? '' : String(d.log.source_ref);
+                    if (ref && !written.has(ref)) {
+                        tally(res, { row: d.row, key: d.key, status: 'skipped', reason: 'Already imported from this source — same reading, same source id' });
+                    } else {
+                        tally(res, { row: d.row, key: d.key, status: 'inserted' });
+                    }
+                }
+                continue;
+            }
+            if (!/source_ref|source_system|on conflict|unique or exclusion constraint|PGRST204/i.test(upErr.message || '')) {
+                // A real failure, not a missing guard — fall through to the
+                // per-row path below so each row reports its own reason.
+                sourceGuard = false;
+            } else {
+                sourceGuard = false;
+                for (const d of drafts) { delete d.log.source_ref; delete d.log.source_system; }
+                res.notes!.push('Duplicate protection is OFF — this database has not been given the reading source-identity guard (migration 0381). Importing the same file twice will double the readings.');
+            }
+        }
         const { error } = await supabase.from('reading_logs').insert(part.map(d => d.log));
         if (error) {
             for (const d of part) {
-                const { error: oneErr } = await supabase.from('reading_logs').insert(d.log);
+                let oneErr = (await supabase.from('reading_logs').insert(d.log)).error;
+                // 0192 may not be applied on this tenant. A coded finding is
+                // worth dropping to keep the reading itself.
+                if (oneErr && d.log.valuation_code !== undefined
+                    && /valuation_code|PGRST204|column .* does not exist/i.test(oneErr.message || '')) {
+                    const { valuation_code: _dropped, ...rest } = d.log;
+                    oneErr = (await supabase.from('reading_logs').insert(rest)).error;
+                    // Once, however many rows carry one.
+                    if (!oneErr && !valuationDropped) {
+                        valuationDropped = true;
+                        res.notes!.push('Coded findings (valuation codes) were dropped — this database has no valuation_code column yet.');
+                    }
+                }
                 if (oneErr) tally(res, { row: d.row, key: d.key, status: 'failed', reason: oneErr.message });
                 else tally(res, { row: d.row, key: d.key, status: 'inserted' });
             }

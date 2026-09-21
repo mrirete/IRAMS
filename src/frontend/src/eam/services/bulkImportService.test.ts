@@ -11,6 +11,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 interface TableState {
     rows: Record<string, unknown>[];
     insertError?: { message: string; code?: string } | null;
+    /** Simulates a database that has not been given the 0381 guard. */
+    upsertError?: { message: string; code?: string } | null;
 }
 const db: Record<string, TableState> = {};
 const inserted: Record<string, Record<string, unknown>[]> = {};
@@ -35,6 +37,7 @@ const nextId = () => `id-${++idSeq}`;
 function makeQuery(table: string) {
     const state = () => (db[table] ??= { rows: [] });
     let pendingInsert: Record<string, unknown>[] | null = null;
+    let pendingUpsert: { rows: Record<string, unknown>[]; opts: { onConflict?: string; ignoreDuplicates?: boolean } } | null = null;
     let pendingUpdate: Record<string, unknown> | null = null;
     let eqFilter: { col: string; val: unknown } | null = null;
 
@@ -68,6 +71,15 @@ function makeQuery(table: string) {
             pendingInsert = Array.isArray(payload) ? payload : [payload];
             return builder;
         },
+        // Insert-or-skip on a conflict target, as Postgres does it: a row
+        // whose key is already present is not written, and not returned.
+        upsert: (
+            payload: Record<string, unknown> | Record<string, unknown>[],
+            opts?: { onConflict?: string; ignoreDuplicates?: boolean },
+        ) => {
+            pendingUpsert = { rows: Array.isArray(payload) ? payload : [payload], opts: opts ?? {} };
+            return builder;
+        },
         single: () => {
             const err = state().insertError;
             if (err) return Promise.resolve({ data: null, error: err });
@@ -77,9 +89,35 @@ function makeQuery(table: string) {
             return Promise.resolve({ data: row, error: null });
         },
         then: (resolve: (v: unknown) => unknown) => {
-            // Awaiting the builder directly = an update, an insert, or an
-            // unfiltered select — in that order of precedence.
+            // Awaiting the builder directly = an update, an upsert, an insert,
+            // or an unfiltered select — in that order of precedence.
             if (pendingUpdate) return resolve(applyUpdate());
+            if (pendingUpsert) {
+                const { rows: payload, opts } = pendingUpsert;
+                pendingUpsert = null;
+                const err = state().upsertError;
+                if (err) return resolve({ data: null, error: err });
+                const cols = (opts.onConflict ?? '').split(',').map(c => c.trim()).filter(Boolean);
+                // company_id is stamped by a database default + trigger, so it
+                // is never in the payload but is part of the key.
+                const stamp = (r: Record<string, unknown>) => ({ company_id: 'co-1', ...r });
+                const keyOf = (r: Record<string, unknown>) => cols.map(c => JSON.stringify(r[c] ?? null)).join('|');
+                // A NULL anywhere in the key conflicts with nothing — the
+                // NULLS DISTINCT behaviour the index deliberately relies on.
+                const keyed = (r: Record<string, unknown>) => cols.length > 0 && cols.every(c => r[c] !== undefined && r[c] !== null);
+                const existing = new Set(state().rows.filter(keyed).map(keyOf));
+                const written: Record<string, unknown>[] = [];
+                for (const r of payload) {
+                    const eff = stamp(r);
+                    if (keyed(eff) && existing.has(keyOf(eff))) continue;
+                    const stored = { id: nextId(), ...eff };
+                    state().rows.push(stored);
+                    (inserted[table] ??= []).push(stored);
+                    if (keyed(eff)) existing.add(keyOf(eff));
+                    written.push(stored);
+                }
+                return resolve({ data: written, error: null });
+            }
             if (!pendingInsert) return resolve({ data: state().rows, error: null });
             const err = state().insertError;
             if (err) return resolve({ data: null, error: err });
@@ -697,6 +735,74 @@ describe('importReadings: SAP measuring points and documents', () => {
         expect(def.unit).toBe('mm/s');
         expect(def.max_warning).toBe(7.1);
         expect(inserted.reading_logs ?? []).toHaveLength(0);  // no phantom reading
+    });
+
+    // 0381: a reading imported from another system keeps that system's id, so
+    // the same export can be imported again without doubling the history.
+    const sapReading = (ref: string, value: string) => ({
+        assettag: '2000001222', readingtype: 'RUNHOURS', date: '2026-01-31', value,
+        sourceref: ref, sourcesystem: 'sap_pm',
+    });
+
+    it('carries the source id onto the reading', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push({ id: 'def-1', asset_id: 'a-9', reading_type_code: 'RUNHOURS' });
+        await importReadings([sapReading('4711003', '48210')]);
+        const log = (inserted.reading_logs ?? [])[0];
+        expect(log.source_ref).toBe('4711003');
+        expect(log.source_system).toBe('sap_pm');
+    });
+
+    it('importing the same export twice writes nothing the second time', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push({ id: 'def-1', asset_id: 'a-9', reading_type_code: 'RUNHOURS' });
+
+        const first = await importReadings([sapReading('4711003', '48210'), sapReading('4711004', '48930')]);
+        expect(first.inserted).toBe(2);
+
+        const second = await importReadings([sapReading('4711003', '48210'), sapReading('4711004', '48930')]);
+        expect(second.inserted).toBe(0);
+        expect(second.skipped).toBe(2);
+        expect(second.outcomes.every(o => /Already imported/.test(o.reason ?? ''))).toBe(true);
+        expect(db.reading_logs.rows).toHaveLength(2);      // still two, not four
+    });
+
+    it('a new reading in a re-imported file is inserted while the rest are skipped', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push({ id: 'def-1', asset_id: 'a-9', reading_type_code: 'RUNHOURS' });
+        await importReadings([sapReading('4711003', '48210')]);
+
+        const res = await importReadings([sapReading('4711003', '48210'), sapReading('4711005', '49600')]);
+        expect(res.inserted).toBe(1);
+        expect(res.skipped).toBe(1);
+        expect(db.reading_logs.rows).toHaveLength(2);
+    });
+
+    it('readings with no source id are never treated as duplicates of each other', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push({ id: 'def-1', asset_id: 'a-9', reading_type_code: 'RUNHOURS' });
+        // Two identical manual readings: same point, same date, same value.
+        // NULLS DISTINCT is what keeps both — a technician may legitimately
+        // read a point twice, and the importer must not decide otherwise.
+        const manual = { assettag: '2000001222', readingtype: 'RUNHOURS', date: '2026-01-31', value: '48210' };
+        const res = await importReadings([manual, { ...manual }]);
+        expect(res.inserted).toBe(2);
+        expect(db.reading_logs.rows).toHaveLength(2);
+    });
+
+    it('imports anyway, and says so, when the database has no guard yet', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push({ id: 'def-1', asset_id: 'a-9', reading_type_code: 'RUNHOURS' });
+        db.reading_logs.upsertError = { message: 'column reading_logs.source_ref does not exist', code: 'PGRST204' };
+
+        const res = await importReadings([sapReading('4711003', '48210')]);
+        expect(res.inserted).toBe(1);
+        expect(res.failed).toBe(0);
+        expect(res.notes!.some(n => /Duplicate protection is OFF/.test(n))).toBe(true);
+        // The columns are stripped rather than sent to a table without them.
+        const log = (inserted.reading_logs ?? [])[0];
+        expect(log.source_ref).toBeUndefined();
+        expect(log.reading_value).toBe(48210);
     });
 
     it('definition-only row on an existing point updates its limits', async () => {
