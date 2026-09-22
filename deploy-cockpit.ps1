@@ -35,19 +35,36 @@ if (-not (Select-String -Path (Join-Path $dst 'src\frontend\src\App.tsx') -Patte
 New-Item -ItemType Directory -Path (Join-Path $dst '.vercel') | Out-Null
 '{"projectId":"prj_EJoUo2Vn1Z8tHARzl0c5cw62naRk","orgId":"team_jCSjXZz6c72FumnD01Cdi6t2"}' | Set-Content -Encoding ascii (Join-Path $dst '.vercel\project.json')
 
-Write-Host "`n=== Deploy (pinned CLI) ===" -ForegroundColor Cyan
+Write-Host "`n=== Deploy (pinned CLI, installed into the copy) ===" -ForegroundColor Cyan
 Set-Location $dst
 try {
+# Not npx: its cache was left half-written when the CLI's self-upgrade failed
+# ("could not determine executable to run"), and it floats versions. The
+# pinned CLI is installed into the copy, which is deleted afterwards anyway.
+npm install --prefix "$dst" --no-save --no-audit --no-fund --loglevel=error vercel@58.9.5
+if ($LASTEXITCODE -ne 0) { throw "could not install vercel@58.9.5 into the copy (exit $LASTEXITCODE)" }
+$cli = Join-Path $dst 'node_modules\.bin\vercel.cmd'
+if (-not (Test-Path $cli)) { throw "vercel CLI not found at $cli" }
+
+# No 2>&1: in Windows PowerShell 5.1 it wraps a native command's stderr in
+# ErrorRecords and the first warning line becomes a terminating error. Stdout
+# is captured for the verdict; stderr goes to the console as it is.
 # The CLI's exit code is not the deploy's: after a successful deploy it offers
-# to upgrade itself, and a failed upgrade exits 1 (seen 2026-09-22, "spawn
-# npm ENOENT"). The deploy is judged on its output — the Production line.
-$out = & npx vercel@58.9.5 deploy --prod --yes --archive=tgz 2>&1 | ForEach-Object { "$_" }
+# to upgrade itself, and a failed upgrade exits 1 (seen 2026-09-22). The deploy
+# is judged on its output — the Production line.
+$env:NO_UPDATE_NOTIFIER = '1'
+$out = & $cli deploy --prod --yes --archive=tgz | ForEach-Object { "$_" }
 $out | Write-Host
 $prod = $out | Where-Object { $_ -match 'Production:\s+https://\S+' } | Select-Object -First 1
 if (-not $prod) { throw "vercel deploy produced no Production URL (exit $LASTEXITCODE) — nothing was deployed" }
 if ($LASTEXITCODE -ne 0) { Write-Host "CLI exited $LASTEXITCODE after the deploy (its self-upgrade prompt); the deploy itself succeeded." -ForegroundColor Yellow }
 }
-finally { Set-Location $repo }
+finally {
+    Set-Location $repo
+    # The copy never outlives the run, whatever happened — a stale copy once
+    # shipped a half-tree.
+    if (Test-Path $dst) { Remove-Item -Recurse -Force $dst -ErrorAction SilentlyContinue }
+}
 
 Write-Host "`n=== Verify the RUNNING app, not the deployment API ===" -ForegroundColor Cyan
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
@@ -61,5 +78,10 @@ if ($chunkJs -notmatch 'Import from SAP Migration Cockpit') { throw 'Chunk serve
 Write-Host "Served: $chunk carries the cockpit import page." -ForegroundColor Green
 
 Set-Location $repo
-Remove-Item -Recurse -Force $dst
-Write-Host "Deployed HEAD $head and removed the copy." -ForegroundColor Green
+# The CLI's esbuild.exe can stay locked for a few seconds after it exits; a
+# leftover copy is untidy, not a failed deploy, so this never throws.
+for ($try = 1; $try -le 3 -and (Test-Path $dst); $try++) {
+    try { Remove-Item -Recurse -Force $dst -ErrorAction Stop } catch { Start-Sleep -Seconds 3 }
+}
+if (Test-Path $dst) { Write-Host "Copy still locked at $dst — delete it later; the deploy is done." -ForegroundColor Yellow }
+else { Write-Host "Deployed HEAD $head and removed the copy." -ForegroundColor Green }
