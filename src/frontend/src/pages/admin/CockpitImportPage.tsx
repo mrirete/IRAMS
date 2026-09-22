@@ -15,35 +15,19 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-    ArrowLeft, Database, FolderOpen, FileSpreadsheet, Loader2, AlertTriangle,
-    AlertOctagon, Info, CheckCircle2, Upload, CalendarClock, ArrowRight,
+    ArrowLeft, Database, FolderOpen, FileSpreadsheet, Loader2,
+    Info, CheckCircle2, Upload, CalendarClock, ArrowRight,
 } from 'lucide-react';
+import { readinessView } from '../../lib/sapCockpit/readinessView';
+import { ReadinessGroups } from '../../components/migration/ReadinessGroups';
 import { useToast } from '../../eam/contexts/ToastContext';
 import { errMessage, type ImportResult } from '../../eam/services/importTypes';
 import { bulkImportService } from '../../eam/services/bulkImportService';
 import {
-    readCockpitSet, toReadingRows, type CockpitFile, type CockpitIssue,
+    readCockpitSet, toReadingRows, type CockpitFile,
 } from '../../lib/sapCockpit/inbound';
 import { toStrategyRows } from '../../lib/sapCockpit/strategy';
 import { COCKPIT_OBJECT_BY_KEY } from '../../lib/sapCockpit/structures';
-
-const ISSUE_ICON = {
-    error: <AlertOctagon size={14} className="text-rose-600 mt-0.5 shrink-0" />,
-    warn: <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" />,
-    info: <Info size={14} className="text-slate-400 mt-0.5 shrink-0" />,
-};
-
-const IssueRow: React.FC<{ issue: CockpitIssue }> = ({ issue }) => (
-    <li className="flex items-start gap-2 py-2 border-b border-slate-100 last:border-0 text-sm text-slate-700">
-        {ISSUE_ICON[issue.level]}
-        <span>
-            {issue.message}
-            {issue.count && issue.count > 1 && (
-                <span className="ml-1.5 text-xs text-slate-400">({issue.count} rows)</span>
-            )}
-        </span>
-    </li>
-);
 
 export const CockpitImportPage: React.FC = () => {
     const { showToast } = useToast();
@@ -202,7 +186,11 @@ export const CockpitImportPage: React.FC = () => {
                         )}
                     </div>
 
-                    {issues.length > 0 && <ul className="mb-4">{issues.map((i, n) => <IssueRow key={n} issue={i} />)}</ul>}
+                    {issues.length > 0 && (
+                        <div className="mb-4">
+                            <ReadinessGroups view={readinessView(issues, mapped.rows.length)} mustFixHint="these rows are skipped, not imported" />
+                        </div>
+                    )}
 
                     <button
                         onClick={() => void runImport()}
@@ -240,7 +228,11 @@ export const CockpitImportPage: React.FC = () => {
                         )}
                     </div>
 
-                    {strategy.issues.length > 0 && <ul className="mb-4">{strategy.issues.map((i, n) => <IssueRow key={n} issue={i} />)}</ul>}
+                    {strategy.issues.length > 0 && (
+                        <div className="mb-4">
+                            <ReadinessGroups view={readinessView(strategy.issues, strategy.recurring.length + strategy.jobplan.length)} mustFixHint="these rows are skipped, not imported" />
+                        </div>
+                    )}
 
                     <button
                         onClick={() => navigate('/recurring-work', { state: { cockpitImport: { recurring: strategy.recurring, jobplan: strategy.jobplan } } })}

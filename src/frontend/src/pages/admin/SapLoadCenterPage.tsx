@@ -14,7 +14,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-    ArrowLeft, Download, FileSpreadsheet, Loader2, RefreshCw, AlertTriangle, AlertOctagon, Info,
+    ArrowLeft, Download, FileSpreadsheet, Loader2, RefreshCw,
     CheckCircle2, Settings2, Database,
 } from 'lucide-react';
 import { downloadWorkbook } from '../../eam/services/assetTemplates';
@@ -29,7 +29,8 @@ import { loadSapSource } from '../../lib/sapLoad/source';
 import { saveAs } from 'file-saver';
 import { buildCockpitExport, exportZipEntries, studiesIn, type CockpitExportParams } from '../../lib/sapCockpit/outbound';
 import { buildZip } from '../../lib/sapCockpit/zip';
-import { readinessView, type ViewItem, type ReadinessView } from '../../lib/sapCockpit/readinessView';
+import { readinessView } from '../../lib/sapCockpit/readinessView';
+import { ReadinessGroups } from '../../components/migration/ReadinessGroups';
 import { cadenceText, revisionText } from '../../lib/sapCockpit/handover';
 import { markSentToSap, markConfirmedInSap } from '../../eam/services/sapSyncService';
 
@@ -69,54 +70,6 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
 );
 
 const inputCls = 'mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-200';
-
-/** One readiness item: plain name first, SAP code as a tag, what to do underneath. */
-const IssueLine: React.FC<{ item: ViewItem }> = ({ item }) => {
-    const icon = item.level === 'error'
-        ? <AlertOctagon size={15} className="text-rose-600 mt-0.5 shrink-0" />
-        : item.level === 'warn' ? <AlertTriangle size={15} className="text-amber-600 mt-0.5 shrink-0" /> : <Info size={15} className="text-slate-400 mt-0.5 shrink-0" />;
-    return (
-        <li className="flex items-start gap-2.5 py-2.5">
-            {icon}
-            <div className="min-w-0 flex-1">
-                <div className="text-sm text-slate-800 flex items-start gap-2 flex-wrap">
-                    <span>{item.title}</span>
-                    {item.code && <span className="text-[10px] font-mono text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 mt-0.5">{item.code}</span>}
-                    {item.rows && item.rows > 1 && <span className="text-xs text-slate-400 mt-0.5">{item.rows.toLocaleString()} rows</span>}
-                </div>
-                {item.action && <div className="text-xs text-slate-500 mt-0.5">{item.action}</div>}
-                {item.details && item.details.length > 0 && (
-                    <details className="mt-1">
-                        <summary className="text-xs text-primary-700 cursor-pointer select-none">Which fields ({item.details.length})</summary>
-                        <ul className="mt-1 text-xs text-slate-500 list-disc pl-4 space-y-0.5">{item.details.map((d, i) => <li key={i}>{d}</li>)}</ul>
-                    </details>
-                )}
-            </div>
-        </li>
-    );
-};
-
-/** The three groups a person acts on, in order. Empty groups are not shown. */
-const ReadinessGroups: React.FC<{ view: ReadinessView }> = ({ view }) => {
-    const group = (title: string, hint: string, items: ViewItem[], tone: string, open: boolean) => items.length === 0 ? null : (
-        <details open={open} className="rounded-xl border border-slate-200 bg-white">
-            <summary className="cursor-pointer select-none px-4 py-3 flex items-center gap-2 text-sm">
-                <span className={`font-semibold ${tone}`}>{title}</span>
-                <span className="text-slate-400">·</span>
-                <span className="text-slate-500">{items.length} item{items.length === 1 ? '' : 's'}</span>
-                <span className="text-xs text-slate-400 ml-1 hidden md:inline">— {hint}</span>
-            </summary>
-            <ul className="px-4 pb-2 divide-y divide-slate-100 border-t border-slate-100">{items.map((it, i) => <IssueLine key={i} item={it} />)}</ul>
-        </details>
-    );
-    return (
-        <div className="space-y-2">
-            {group('Must fix before loading', 'SAP will reject these rows', view.mustFix, 'text-rose-700', true)}
-            {group('Worth a look', 'loads, but something was changed or left out', view.check, 'text-amber-700', view.mustFix.length === 0)}
-            {group('Good to know', 'how the file was built', view.notes, 'text-slate-700', false)}
-        </div>
-    );
-};
 
 const Step: React.FC<{ n: number; title: string; children: React.ReactNode }> = ({ n, title, children }) => (
     <section className="rounded-2xl border border-slate-200 bg-white p-5">
