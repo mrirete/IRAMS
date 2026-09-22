@@ -34,6 +34,11 @@ export const FAMILY_PHASE: Record<Family, 1 | 2 | 3> = {
     master_data: 1, condition: 2, work: 2, reliability: 3, finance: 3,
 };
 
+/** Which families the worker actually carries today. The rule is saved for all of them; only these flow. */
+export const FAMILY_LIVE: Record<Family, boolean> = {
+    master_data: true, condition: true, work: true, reliability: false, finance: false,
+};
+
 /**
  * The default ownership rule (plan §2.3): SAP owns master data and orders;
  * IREAMS owns readings, reliability results and PM cycle proposals. A tenant

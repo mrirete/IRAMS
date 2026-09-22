@@ -46,6 +46,10 @@ import {
     fromMeasurementDocument, fromMeasuringPoint, newPointFromMeasuringPoint, pointDiff, pointOwner, readingGoesOut,
     toMeasurementDocumentDoc, toMeasuringPointDoc, type LinkPoint, type LinkReading,
 } from './lib/condition.ts';
+import {
+    newWorkOrderFromOrder, objectRefOf, orderPatch, requestGoesOut, toNotificationDoc, workOrderDiff,
+    type LinkRequest, type OrderDoc,
+} from './lib/work.ts';
 
 type Json = Record<string, unknown>;
 type Mode = 'sync' | 'dry_run' | 'test' | 'sim_edit' | 'sim_reset';
@@ -58,8 +62,8 @@ interface Target {
     dry_run: boolean; is_active: boolean; watermarks: Watermarks | null; last_run_at: string | null;
 }
 /** External object types the link maps: SAP's own table names, so a planner recognises them. */
-type ExternalType = SapObjectType | 'IMPT' | 'IMRG';
-type EntityType = 'asset' | 'reading_definition' | 'reading_log';
+type ExternalType = SapObjectType | 'IMPT' | 'IMRG' | 'QMEL' | 'AUFK';
+type EntityType = 'asset' | 'reading_definition' | 'reading_log' | 'request' | 'work_order';
 interface MapRow { id: string; entity_id: string; external_key: string; external_type: ExternalType | null; etag: string | null; last_synced_at: string | null }
 interface Stats { [k: string]: number }
 
@@ -297,6 +301,12 @@ async function specFor(sb: SupabaseClient, t: Target, row: OutboxRow): Promise<S
             if (!data) return null;
             const r = data as { id: string; reading_type_code: string };
             return { set: 'A_MeasurementDocument', entityType: 'reading_log', externalType: 'IMRG', entityId: r.id, label: `reading ${r.reading_type_code}`, map: undefined, createOnly: true };
+        }
+        case 'notification': {
+            const { data } = await sb.from('service_requests').select('id, request_number').eq('company_id', co).eq('id', row.document_id).maybeSingle();
+            if (!data) return null;
+            const r = data as { id: string; request_number: string };
+            return { set: 'A_MaintenanceNotification', entityType: 'request', externalType: 'QMEL', entityId: r.id, label: r.request_number, map: (await mapsFor(sb, co, 'request', [r.id])).get(r.id) };
         }
         default: return null;
     }
@@ -680,6 +690,128 @@ async function conditionIn(sb: SupabaseClient, t: Target, rule: FamilyRule, head
     return { points: settleWatermark(wmP, processedP, []), docs: settleWatermark(wmD, processedD, []) };
 }
 
+// ── Work: notifications out, orders and status in ────────────────────────────
+
+const REQUEST_COLS = 'id, request_number, status, description, asset_id, requester_id, risk_score, is_breakdown, category, created_at, updated_at';
+
+/** Who raised it, in the 12 characters SAP keeps: the login name, else nothing. */
+async function reporterName(sb: SupabaseClient, companyId: string, userId: string | null): Promise<string | null> {
+    if (!userId) return null;
+    const { data } = await sb.from('users').select('username, email').eq('company_id', companyId).eq('id', userId).maybeSingle();
+    const u = data as { username: string | null; email: string | null } | null;
+    return (u?.username || u?.email?.split('@')[0] || '').trim() || null;
+}
+
+async function workOut(sb: SupabaseClient, t: Target, rule: FamilyRule, headers: Record<string, string>, dryRun: boolean, stats: Stats): Promise<string | null> {
+    const wm = watermarkOf(t.watermarks, 'work', 'out');
+    const processed: string[] = []; const held: string[] = [];
+    if (!dryRun) await retryDue(sb, t, 'work', rule.owner, headers, stats);
+
+    let q = sb.from('service_requests').select(REQUEST_COLS).eq('company_id', t.company_id).order('updated_at').limit(BATCH);
+    if (wm) q = q.gt('updated_at', wm);
+    const { data, error } = await q;
+    if (error) throw new Error(`service_requests: ${error.message}`);
+    const requests = (data ?? []) as LinkRequest[];
+    const maps = await mapsFor(sb, t.company_id, 'request', requests.map((r) => r.id));
+    const assetMaps = await mapsFor(sb, t.company_id, 'asset', requests.map((r) => r.asset_id));
+    const names = new Map<string, string | null>();
+    for (const r of requests) {
+        if (!requestGoesOut(r)) { processed.push(r.updated_at); bump(stats, 'out_request_not_sent'); continue; }
+        const map = maps.get(r.id);
+        if (map?.last_synced_at && instant(r.updated_at) <= instant(map.last_synced_at)) { processed.push(r.updated_at); bump(stats, 'out_in_sync'); continue; }
+        const object = refOf(assetMaps.get(r.asset_id));
+        if (!object && !map) { held.push(r.updated_at); bump(stats, 'out_object_unlinked'); continue; }
+        processed.push(r.updated_at);
+        if (!names.has(r.requester_id ?? '')) names.set(r.requester_id ?? '', await reporterName(sb, t.company_id, r.requester_id));
+        const doc = toNotificationDoc(r, map?.external_key ?? null, object, names.get(r.requester_id ?? '') ?? null) as unknown as Json;
+        const row = await liveRow(sb, t, 'work', 'notification', r.id, r.updated_at, r.request_number, doc, stats);
+        if (!row) continue;
+        if (dryRun) { await markDryRun(sb, row, stats); continue; }
+        await send(sb, t, rule.owner, headers, row, { set: 'A_MaintenanceNotification', entityType: 'request', externalType: 'QMEL', entityId: r.id, label: r.request_number, map }, stats);
+    }
+    return settleWatermark(wm, processed, held);
+}
+
+async function workIn(sb: SupabaseClient, t: Target, rule: FamilyRule, headers: Record<string, string>, dryRun: boolean, stats: Stats): Promise<string | null> {
+    const wm = watermarkOf(t.watermarks, 'work', 'in');
+    const processed: string[] = [];
+    for (const e of await changedSince(headers, t, 'A_MaintenanceOrder', wm)) {
+        const key = String(e.MaintenanceOrder ?? '');
+        const changedAt = typeof e.LastChangeDateTime === 'string' ? e.LastChangeDateTime : nowIso();
+        processed.push(changedAt);
+        if (!key) { bump(stats, 'in_no_key'); continue; }
+        const etag = bodyEtag(e);
+        const order = e as unknown as OrderDoc;
+        const map = await mapByExternal(sb, t.company_id, 'work_order', 'AUFK', key);
+        if (map?.etag && etag && map.etag === etag) { bump(stats, 'in_echo'); continue; }
+        const rowBase = {
+            company_id: t.company_id, target_id: t.id, family: 'work', direction: 'IN',
+            document_type: 'order', document_version: changedAt, document_key: key, payload: e, external_key: key, etag,
+        };
+
+        if (map) {
+            const { data: cur } = await sb.from('work_orders').select('id, wo_number, title, status, priority_code, due_date, date_due_start, updated_at, properties').eq('company_id', t.company_id).eq('id', map.entity_id).maybeSingle();
+            const wo = cur as { id: string; wo_number: string; status: string; updated_at: string; properties: Json | null } & Record<string, unknown> | null;
+            if (!wo) { bump(stats, 'in_orphan_map'); continue; }
+            const patch = orderPatch(order);
+            const diff = workOrderDiff(wo, patch);
+            const localChanged = !!map.last_synced_at && instant(wo.updated_at) > instant(map.last_synced_at);
+            const decision = resolveInbound(rule.owner, localChanged && Object.keys(diff).length > 0, Object.keys(diff));
+            if (dryRun) {
+                await sb.from('erp_outbox').insert({ ...rowBase, document_id: wo.id, status: 'dry_run', reason: decision.reason ?? (Object.keys(diff).length ? `Would change ${Object.keys(diff).join(', ')} on ${wo.wo_number}.` : `No difference on ${wo.wo_number}.`) });
+                bump(stats, 'in_dry_run');
+                continue;
+            }
+            if (decision.apply === 'remote' && Object.keys(diff).length > 0) {
+                const props = { ...(wo.properties ?? {}), sap_status: order.MaintenanceOrderStatus ?? null };
+                const { error } = await sb.from('work_orders').update({ ...diff, properties: props }).eq('company_id', t.company_id).eq('id', wo.id);
+                if (error) throw new Error(`work_orders update ${wo.wo_number}: ${error.message}`);
+                bump(stats, 'in_applied');
+                if (diff.status) bump(stats, 'in_status_moved');
+            } else if (decision.apply === 'remote') bump(stats, 'in_unchanged');
+            await upsertMap(sb, t, rule.owner, 'work_order', wo.id, 'AUFK', key, etag, 'IN');
+            const { error: obErr } = await sb.from('erp_outbox').insert({ ...rowBase, document_id: wo.id, status: decision.queue ? 'conflict' : 'sent', sent_at: decision.queue ? null : nowIso(), reason: decision.reason?.replace('master data', 'work') ?? null });
+            if (obErr && obErr.code !== '23505') throw new Error(`outbox in: ${obErr.message}`);
+            if (decision.queue) bump(stats, 'in_conflict');
+            continue;
+        }
+
+        // A new order needs its technical object in IREAMS; its notification, if mapped, becomes the request link.
+        const obj = objectRefOf(order);
+        const assetMap = obj ? await mapByExternal(sb, t.company_id, 'asset', obj.type, obj.key) : null;
+        if (!assetMap) {
+            if (!dryRun) {
+                const { error: obErr } = await sb.from('erp_outbox').insert({ ...rowBase, document_id: '00000000-0000-0000-0000-000000000000', status: 'skipped', reason: `SAP order ${key} is on ${obj ? `${obj.type} ${obj.key}` : 'no technical object'}, which IREAMS does not know. Bring that object across first.` });
+                if (obErr && obErr.code !== '23505') throw new Error(`outbox in: ${obErr.message}`);
+            }
+            bump(stats, 'in_object_unknown');
+            continue;
+        }
+        const notif = (order.MaintenanceNotification ?? '').trim();
+        const requestMap = notif ? await mapByExternal(sb, t.company_id, 'request', 'QMEL', notif) : null;
+        if (dryRun) {
+            await sb.from('erp_outbox').insert({ ...rowBase, document_id: '00000000-0000-0000-0000-000000000000', status: 'dry_run', reason: `Would create work order "${(order.MaintenanceOrderDesc ?? '').trim() || key}" (${order.MaintenanceOrderStatus ?? 'CRTD'}) on the mapped asset${requestMap ? ', linked to its request' : ''}.` });
+            bump(stats, 'in_dry_run');
+            continue;
+        }
+        const { data: num, error: numErr } = await sb.rpc('generate_wo_number');
+        if (numErr || !num) throw new Error(`generate_wo_number: ${numErr?.message ?? 'no number'}`);
+        const draft = newWorkOrderFromOrder(order, String(num), assetMap.entity_id, requestMap?.entity_id ?? null);
+        const { data: created, error } = await sb.from('work_orders').insert({ ...draft, company_id: t.company_id }).select('id').single();
+        if (error) throw new Error(`work_orders insert ${key}: ${error.message}`);
+        const woId = (created as { id: string }).id;
+        if (requestMap) {
+            // The request became work — the same status the in-app conversion sets.
+            await sb.from('service_requests').update({ status: 'CONVERTED' }).eq('company_id', t.company_id).eq('id', requestMap.entity_id).neq('status', 'CONVERTED');
+        }
+        await upsertMap(sb, t, rule.owner, 'work_order', woId, 'AUFK', key, etag, 'IN');
+        const { error: obErr } = await sb.from('erp_outbox').insert({ ...rowBase, document_id: woId, status: 'sent', sent_at: nowIso() });
+        if (obErr && obErr.code !== '23505') throw new Error(`outbox in: ${obErr.message}`);
+        bump(stats, 'in_created');
+    }
+    return settleWatermark(wm, processed, []);
+}
+
 // ── One target ───────────────────────────────────────────────────────────────
 
 interface Report { target_id: string; name: string; run_id: string | null; status: 'done' | 'failed' | 'busy' | 'skipped'; dry_run: boolean; stats: Stats; error: string | null }
@@ -725,6 +857,9 @@ async function runTarget(sb: SupabaseClient, t: Target, mode: Mode, direction: D
             const r = await conditionIn(sb, { ...t, watermarks: w }, cd, headers, dryRun, stats);
             w = withWatermark(withWatermark(w, 'condition', 'in', r.points), 'condition', 'docs_in', r.docs);
         }
+        const wk = t.families?.work;
+        if (wk && out && flows(wk, 'out')) w = withWatermark(w, 'work', 'out', await workOut(sb, { ...t, watermarks: w }, wk, headers, dryRun, stats));
+        if (wk && inn && flows(wk, 'in')) w = withWatermark(w, 'work', 'in', await workIn(sb, { ...t, watermarks: w }, wk, headers, dryRun, stats));
         // Watermarks move only after the rows above are committed (they are —
         // every write was its own statement), and never on a dry run.
         if (!dryRun) {

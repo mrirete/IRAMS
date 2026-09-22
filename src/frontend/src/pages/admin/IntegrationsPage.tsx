@@ -26,7 +26,7 @@ import {
     erpLinkService, isMissingTable,
     type ErpTarget, type TargetDraft, type OutboxRow, type ErpRun, type SimEntity, type SyncReport, type AuthMode, type TargetSystem,
 } from '../../eam/services/erpLinkService';
-import { DEFAULT_FAMILIES, FAMILIES, FAMILY_LABELS, FAMILY_PHASE, type Family, type FamilyRule } from '../../lib/erpLink/masterData';
+import { DEFAULT_FAMILIES, FAMILIES, FAMILY_LABELS, FAMILY_LIVE, FAMILY_PHASE, type Family, type FamilyRule } from '../../lib/erpLink/masterData';
 
 const SYSTEM_LABEL: Record<TargetSystem, string> = { sap_s4: 'SAP S/4HANA', sap_sim: 'SAP simulator', generic: 'Other ERP' };
 const AUTH_LABEL: Record<AuthMode, string> = { none: 'No authentication', basic: 'Username and password', bearer: 'Bearer token', oauth2_client_credentials: 'OAuth2 client credentials' };
@@ -66,6 +66,7 @@ const Chip: React.FC<{ status: string }> = ({ status }) => (
 const DOC_WORD: Record<string, string> = {
     equipment: 'Equipment', functional_location: 'Functional location',
     measuring_point: 'Measuring point', measurement_document: 'Reading',
+    notification: 'Request → notification', order: 'SAP order → work order',
 };
 const docWord = (t: string) => DOC_WORD[t] ?? t.replace(/_/g, ' ');
 
@@ -74,6 +75,8 @@ const recordHref = (row: OutboxRow): string => {
     switch (row.document_type) {
         case 'measuring_point': return `/readings?point=${encodeURIComponent(row.document_id)}`;
         case 'measurement_document': return '/readings';
+        case 'notification': return '/requests';
+        case 'order': return `/work-orders/${encodeURIComponent(row.document_id)}`;
         default: return `/assets?id=${encodeURIComponent(row.document_id)}`;
     }
 };
@@ -192,7 +195,7 @@ const TargetForm: React.FC<{ initial: TargetDraft; companyId: string | null; onC
                                 <tbody className="divide-y divide-slate-100">
                                     {FAMILIES.map((f) => {
                                         const rule = d.families[f] ?? DEFAULT_FAMILIES[f];
-                                        const live = FAMILY_PHASE[f] === 1;
+                                        const live = FAMILY_LIVE[f];
                                         return (
                                             <tr key={f}>
                                                 <td className="py-2 pr-3 text-slate-700">{FAMILY_LABELS[f]}</td>
@@ -324,8 +327,11 @@ export const IntegrationsPage: React.FC = () => {
                 if (!Number.isFinite(value)) { showToast('The value must be a number.', 'error'); return; }
                 const now = new Date();
                 edit = { set: simEdit.set, changes: { MeasuringPoint: simEdit.key.trim(), MsmtRdngDate: now.toISOString().slice(0, 10), MsmtRdngTime: now.toISOString().slice(11, 19), MeasurementReadingInEntryUoM: value, MeasurementReadingByUser: 'PLANNER' } };
+            } else if (simEdit.set === 'A_MaintenanceOrder') {
+                // A planner moving an order's system status in SAP (REL, TECO, CLSD …).
+                edit = { set: simEdit.set, key: simEdit.key.trim(), changes: { MaintenanceOrderStatus: simEdit.name.trim().toUpperCase() } };
             } else {
-                const field = simEdit.set === 'A_Equipment' ? 'EquipmentName' : simEdit.set === 'A_MeasuringPoint' ? 'MeasuringPointDescription' : 'FunctionalLocationName';
+                const field = simEdit.set === 'A_Equipment' ? 'EquipmentName' : simEdit.set === 'A_MeasuringPoint' ? 'MeasuringPointDescription' : simEdit.set === 'A_MaintenanceNotification' ? 'NotificationText' : 'FunctionalLocationName';
                 edit = { set: simEdit.set, key: simEdit.key.trim(), changes: { [field]: simEdit.name.trim() } };
             }
             const rs = await erpLinkService.run('sim_edit', simTarget.id, { edit });
@@ -351,7 +357,7 @@ export const IntegrationsPage: React.FC = () => {
         .map((f) => {
             const r = t.families[f]!;
             const arrow = r.direction === 'both' ? <ArrowLeftRight size={11} /> : r.direction === 'out' ? <ArrowRight size={11} /> : <ArrowLeft size={11} />;
-            return <span key={f} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">{arrow}{FAMILY_LABELS[f].split(' — ')[0]} · {r.owner === 'sap' ? 'SAP wins' : 'IREAMS wins'}{FAMILY_PHASE[f] > 1 ? ` · phase ${FAMILY_PHASE[f]}` : ''}</span>;
+            return <span key={f} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">{arrow}{FAMILY_LABELS[f].split(' — ')[0]} · {r.owner === 'sap' ? 'SAP wins' : 'IREAMS wins'}{FAMILY_LIVE[f] ? '' : ` · phase ${FAMILY_PHASE[f]}`}</span>;
         });
 
     return (
@@ -477,12 +483,13 @@ export const IntegrationsPage: React.FC = () => {
                             <select className={input} value={simEdit.set} onChange={(e) => setSimEdit((s) => ({ ...s, set: e.target.value, key: '', name: '' }))}>
                                 <option value="A_Equipment">Equipment</option><option value="A_FunctionalLocation">Functional location</option>
                                 <option value="A_MeasuringPoint">Measuring point</option><option value="A_MeasurementDocument">Reading (new document)</option>
+                                <option value="A_MaintenanceNotification">Notification</option><option value="A_MaintenanceOrder">Order (system status)</option>
                             </select>
                         </div>
                         <div><label className={label}>{simIsDocument ? 'Measuring point number' : 'SAP key'}</label><input className={`${input} font-mono text-xs`} value={simEdit.key} onChange={(e) => setSimEdit((s) => ({ ...s, key: e.target.value }))} placeholder={simIsDocument ? '1000' : '10000001'} list="sim-keys" />
                             <datalist id="sim-keys">{sim.filter((e) => e.entity_set === (simIsDocument ? 'A_MeasuringPoint' : simEdit.set)).map((e) => <option key={e.id} value={e.entity_key} />)}</datalist>
                         </div>
-                        <div><label className={label}>{simIsDocument ? 'Value' : 'New name'}</label><input className={input} value={simEdit.name} onChange={(e) => setSimEdit((s) => ({ ...s, name: e.target.value }))} placeholder={simIsDocument ? '4.2' : 'Renamed in SAP'} /></div>
+                        <div><label className={label}>{simIsDocument ? 'Value' : simEdit.set === 'A_MaintenanceOrder' ? 'New status' : 'New name'}</label><input className={input} value={simEdit.name} onChange={(e) => setSimEdit((s) => ({ ...s, name: e.target.value }))} placeholder={simIsDocument ? '4.2' : simEdit.set === 'A_MaintenanceOrder' ? 'REL, TECO or CLSD' : 'Renamed in SAP'} /></div>
                         <button type="button" className={btnPrimary} onClick={() => void simChange()} disabled={!!busy}>{busy === 'sim_edit' ? <Loader2 size={13} className="animate-spin" /> : <Pencil size={13} />} {simIsDocument ? 'Log a reading in SAP' : 'Change in SAP'}</button>
                     </div>
                     {sim.length > 0 && (
@@ -494,7 +501,7 @@ export const IntegrationsPage: React.FC = () => {
                                         <tr key={e.id}>
                                             <td className="px-3 py-1.5 text-slate-600">{e.entity_set.replace('A_', '').replace(/([a-z])([A-Z])/g, '$1 $2')}</td>
                                             <td className="px-3 py-1.5 font-mono">{e.entity_key}</td>
-                                            <td className="px-3 py-1.5 text-slate-800">{String(e.payload.EquipmentName ?? e.payload.FunctionalLocationName ?? e.payload.MeasuringPointDescription ?? (e.payload.MeasurementReadingInEntryUoM !== undefined ? `${e.payload.MeasurementReadingInEntryUoM} on point ${e.payload.MeasuringPoint}` : ''))}</td>
+                                            <td className="px-3 py-1.5 text-slate-800">{String(e.payload.EquipmentName ?? e.payload.FunctionalLocationName ?? e.payload.MeasuringPointDescription ?? e.payload.NotificationText ?? (e.payload.MaintenanceOrderDesc !== undefined ? `${e.payload.MaintenanceOrderDesc} · ${e.payload.MaintenanceOrderStatus ?? 'CRTD'}` : e.payload.MeasurementReadingInEntryUoM !== undefined ? `${e.payload.MeasurementReadingInEntryUoM} on point ${e.payload.MeasuringPoint}` : ''))}</td>
                                             <td className="px-3 py-1.5 text-slate-500">{when(e.last_change_datetime)}</td>
                                             <td className="px-3 py-1.5 font-mono text-slate-400">W/"{e.etag}"</td>
                                         </tr>
