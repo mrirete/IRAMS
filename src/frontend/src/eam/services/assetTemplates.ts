@@ -537,7 +537,7 @@ export function downloadReadingsTemplate(): void {
         ['• Import your assets FIRST — a reading whose assetTag is unknown is reported as a failed row.'],
         ['• A reading point is created automatically the first time an asset+readingType pair appears.'],
         ['• Alarm limits are NOT set by this import. Add them afterwards on the asset\'s Readings tab.'],
-        ['• This is for HISTORY. Live sensor feeds belong in Admin › Connector Hub.'],
+        ['• This is for HISTORY. Live sensor feeds belong in Admin › Sensor & Data Feeds.'],
     ];
     const instrWs = XLSX.utils.aoa_to_sheet(instrData);
     instrWs['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 60 }, { wch: 45 }];

@@ -121,7 +121,7 @@ const PHASES: Phase[] = [
     {
         n: 10, title: 'Live sensor feeds', icon: <Radio size={18} />,
         blurb: 'Optional — connect a live telemetry source so Predict keeps learning after the migration.',
-        to: '/admin/connectors', toLabel: 'Open the Connector Hub',
+        to: '/admin/connectors', toLabel: 'Open Sensor & Data Feeds',
         count: c => c.connectors, unit: 'connectors',
     },
     {

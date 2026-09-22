@@ -417,7 +417,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                     Invitations
                                 </NavLink>
                                 <NavLink to="/admin/connectors" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Connector Hub
+                                    Sensor &amp; Data Feeds
                                 </NavLink>
                                 <NavLink to="/admin/integrations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Integrations

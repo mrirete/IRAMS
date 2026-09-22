@@ -116,7 +116,7 @@ export const ConnectorDetail: React.FC = () => {
             <div className="flex flex-col items-center justify-center h-64">
                 <p className="text-slate-500 font-medium">Loading or connector not found.</p>
                 <button onClick={() => navigate('/admin/connectors')} className="mt-4 text-primary-600 hover:text-primary-700 font-semibold transition-colors">
-                    Return to Connector Hub
+                    Return to Sensor &amp; Data Feeds
                 </button>
             </div>
         );
