@@ -312,12 +312,15 @@ export const SapLoadCenterPage: React.FC = () => {
                 {cockpit && (
                     <>
                         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {/* One structure per tile — an object's row total would add a plan's
+                                items and object-list rows to the plans and read as three times
+                                the schedules there are. */}
                             {([
-                                ['measuringPoint', 'Measuring points'], ['measurementDocument', 'Readings'],
-                                ['generalTaskList', 'Task-list steps'], ['maintenancePlan', 'PM schedules'],
-                            ] as const).map(([key, name]) => (
-                                <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                    <div className="text-2xl font-bold text-slate-800">{cockpit.counts[key].toLocaleString()}</div>
+                                ['S_HEADER', 'Measuring points'], ['S_MEASUREMENT_DOCU', 'Readings'],
+                                ['S_OPERATIONS', 'Task-list steps'], ['S_MPLA', 'PM schedules'],
+                            ] as const).map(([structure, name]) => (
+                                <div key={structure} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                    <div className="text-2xl font-bold text-slate-800">{(cockpit.files.find(f => f.structure === structure)?.rows ?? 0).toLocaleString()}</div>
                                     <div className="text-xs text-slate-500">{name}</div>
                                 </div>
                             ))}

@@ -8,7 +8,7 @@
  * opens the right importer for each phase.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     Database, Wrench, Users, Package, Building2, CalendarClock, Gauge,
     FileSpreadsheet, Radio, BarChart2, Boxes, CheckCircle2, ArrowRight, ArrowLeft, Loader2,
@@ -27,6 +27,8 @@ import { useToast } from '../../eam/contexts/ToastContext';
 import { useConfirm } from '../../eam/contexts/ConfirmContext';
 import { assessmentService } from '../../eam/services/AssessmentService';
 import type { IntakeDimensionKey } from '../../eam/services/IntakeQuickAnalysis';
+import { studyReadiness, type Ingredient } from '../../lib/migration/studyReadiness';
+import { ErpExportService } from '../../eam/services/ErpExportService';
 
 type Counts = Awaited<ReturnType<DatabaseService['getOnboardingCounts']>>;
 
@@ -148,10 +150,10 @@ export interface MigrationOrigin { to?: string; label?: string }
  * intake exists (the Getting Started checklist sends people to run one).
  */
 const DIMENSION_PHASE_HINT: Partial<Record<IntakeDimensionKey, string>> = {
-    information: 'your quick win here is phases 7–8 — work-order history and failure-code catalogs are what turn the analytics on',
-    decisions: 'export cost columns with your work-order history (phase 7) — money-ranked findings depend on them',
-    people: 'phase 2 (people & crafts) is where your gap closes first',
-    lifecycle: 'get PM schedules & job plans in (phase 6) so the planned-work engine can carry the load',
+    information: 'your quick win is work-order history and the failure-code catalogue — they are what turn the analytics on',
+    decisions: 'export the cost columns with your work-order history — money-ranked findings depend on them',
+    people: 'the people register is where your gap closes first',
+    lifecycle: 'get PM schedules and job plans in so the planned-work engine can carry the load',
 };
 
 const MaturityEmphasisHint: React.FC = () => {
@@ -181,7 +183,12 @@ export const MigrationCenterPage: React.FC = () => {
     const { showToast } = useToast();
     const confirm = useConfirm();
     const { state } = useLocation();
+    const navigate = useNavigate();
     const origin = (state ?? {}) as MigrationOrigin;
+    // Door D: what the financial-document lane is holding for SAP, from the
+    // queue-shaped views the FinOps export reads. Optional — a tenant without
+    // the finance tables simply shows no figure.
+    const [finance, setFinance] = useState<{ unsettled: number; unpostedMovements: number } | null>(null);
     // The page lives under Admin (Sidebar › Admin › Migration Center), so with
     // no origin in the navigation state it returns to Admin — not to the
     // Reliability Specialist workspace. Callers that come from elsewhere
@@ -228,6 +235,9 @@ export const MigrationCenterPage: React.FC = () => {
         ]);
         setCounts(c);
         setBatches(b);
+        ErpExportService.getReconciliationQueues()
+            .then(q => setFinance({ unsettled: q.unsettled.length, unpostedMovements: q.unpostedMovements }))
+            .catch(() => setFinance(null));
     }, []);
 
     useEffect(() => { void refresh(); }, [refresh]);
@@ -395,6 +405,38 @@ export const MigrationCenterPage: React.FC = () => {
 
     const done = (p: Phase) => !!counts && p.count(counts) > 0;
 
+    // ── Study readiness: the purpose of the page ─────────────────────────────
+    // Where each ingredient is fetched from depends on where the files come
+    // from: SAP shops have the cockpit's own files; everyone else has the
+    // wizard and the templates.
+    const isSap = sourceSystem === 'sap_pm';
+    const readiness = counts ? studyReadiness({
+        assets: counts.assets, workOrders: counts.workOrders, workOrdersWithCost: counts.workOrdersWithCost,
+        breakdowns: counts.breakdowns, readings: counts.readings, readingPoints: counts.readingPoints,
+        pms: counts.pms, codes: counts.codes,
+    }, {
+        register: '#import:asset',
+        failures: '/specialist/import',
+        cost: '/specialist/import',
+        condition: isSap ? '/admin/migration/cockpit' : '#import:readings',
+        schedules: isSap ? '/admin/migration/cockpit' : '/recurring-work?action=import',
+        codes: '#import:failurecodes',
+    }) : null;
+    const follow = (i: Ingredient) => {
+        if (i.action.to.startsWith('#import:')) setOpenType(i.action.to.slice('#import:'.length) as ImportType);
+        else navigate(i.action.to, { state: { to: '/admin/migration', label: 'Migration Center' } });
+    };
+    const STATUS_DOT: Record<Ingredient['status'], string> = {
+        ready: 'bg-emerald-500', partial: 'bg-amber-400', missing: 'bg-slate-300',
+    };
+    const SOURCE_KINDS: { id: string; label: string; systems: string[] }[] = [
+        { id: 'sap', label: 'SAP PM', systems: ['sap_pm'] },
+        { id: 'cmms', label: 'Another CMMS', systems: ['maximo', 'maintainx', 'emaint', 'limble', 'fiix', 'upkeep', 'other'] },
+        { id: 'sheets', label: 'Spreadsheets', systems: ['spreadsheet'] },
+    ];
+    const sourceKind = SOURCE_KINDS.find(k => k.systems.includes(sourceSystem))?.id ?? 'sheets';
+    const wizardState = { state: { to: '/admin/migration', label: 'Migration Center' } };
+
     return (
         <div className="ers-page-form space-y-6 pb-24 animate-in fade-in duration-300">
             <div>
@@ -408,80 +450,11 @@ export const MigrationCenterPage: React.FC = () => {
                     <Database size={22} className="text-primary-600" /> Migration Center
                 </h1>
                 <p className="text-slate-500 text-sm mt-1 max-w-2xl">
-                    Moving from SAP PM, Maximo, MaintainX or spreadsheets? Work down this list in order.
-                    Each step feeds the next — the register has to exist before history, schedules or readings can attach to it.
+                    Bring your plant’s data into IREAMS, see what a reliability study can run on, and send the
+                    results back to SAP. Four doors; the register comes first through every one of them.
                 </p>
                 <MaturityEmphasisHint />
-                {/* Which system the files come out of. More than provenance: a
-                    foreign CMMS export carries the ids THEIR system knows these
-                    records by, and naming the source is what lets the import
-                    keep them (erp_object_map) — so a later ERP integration
-                    starts already mapped instead of rediscovering identities
-                    by name. A spreadsheet has no other side, so it maps nothing. */}
-                <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-                    <span className="font-semibold text-slate-700">These files come from:</span>
-                    <select
-                        value={sourceSystem}
-                        onChange={(e) => setSourceSystem(e.target.value)}
-                        className="border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white"
-                    >
-                        <option value="spreadsheet">Spreadsheets / hand-built files</option>
-                        <option value="sap_pm">SAP PM</option>
-                        <option value="maximo">IBM Maximo</option>
-                        <option value="maintainx">MaintainX</option>
-                        <option value="emaint">eMaint</option>
-                        <option value="limble">Limble</option>
-                        <option value="fiix">Fiix</option>
-                        <option value="upkeep">UpKeep</option>
-                        <option value="other">Another system</option>
-                    </select>
-                    {sourceSystem !== 'spreadsheet' && sourceSystem !== 'other' && (
-                        <span className="text-[11px] text-emerald-700">
-                            their record ids will be kept for a future integration
-                        </span>
-                    )}
-                </label>
             </div>
-
-            {/* Straight from the cockpit's own source data, when the plant is
-                coming OFF SAP. Separate from the phases below because it reads
-                SAP's staging structures rather than a spreadsheet: the files
-                arrive as one CSV per structure and have to be read together. */}
-            {sourceSystem === 'sap_pm' && (
-                <Link
-                    to="/admin/migration/cockpit"
-                    className="flex items-start gap-3 rounded-2xl border border-primary-200 bg-primary-50/40 hover:bg-white transition-colors px-5 py-4 text-sm"
-                >
-                    <Database size={18} className="mt-0.5 text-primary-600 shrink-0" />
-                    <span className="flex-1">
-                        <span className="font-semibold text-slate-800">Have the cockpit's source data? Import it directly.</span>
-                        <span className="block text-slate-500 mt-0.5">
-                            The ZIPs from SAP's Migration Cockpit ("Source data for PM - Measuring point",
-                            "PM - Measurement document") load straight in — points become reading points, documents become
-                            readings on them. No re-shaping into a spreadsheet first.
-                        </span>
-                    </span>
-                    <ArrowRight size={16} className="mt-0.5 text-slate-400 shrink-0" />
-                </Link>
-            )}
-
-            {/* The other direction: this register OUT into SAP Migration Cockpit load files. */}
-            <Link
-                to="/admin/migration/sap"
-                className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white hover:border-primary-200 transition-colors px-5 py-4 text-sm"
-            >
-                <FileSpreadsheet size={18} className="mt-0.5 text-primary-600 shrink-0" />
-                <span className="flex-1">
-                    <span className="font-semibold text-slate-800">Export to SAP — moving the other way?</span>
-                    <span className="block text-slate-500 mt-0.5">
-                        Everything above brings data <b>into</b> IREAMS. This is the reverse: it fills SAP's Migration Cockpit
-                        templates (functional locations, equipment, materials, BOMs, measuring points, readings, source lists,
-                        opening stock, open work as notifications) from this register, hands closed history over as a reference
-                        extract, and runs a readiness check per object. Only needed if this register is going into SAP PM / MM.
-                    </span>
-                </span>
-                <ArrowRight size={16} className="mt-0.5 text-slate-400 shrink-0" />
-            </Link>
 
             {/* Order warning — the failure mode this page exists to prevent */}
             {counts && counts.assets === 0 && counts.workOrders > 0 && (
@@ -495,6 +468,123 @@ export const MigrationCenterPage: React.FC = () => {
                 </div>
             )}
 
+            {/* ── Door B first: ready for a study? — the reason to import anything ── */}
+            <section className="rounded-2xl border border-primary-200 bg-primary-50/40 p-5">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                        <h2 className="font-semibold text-slate-800 flex items-center gap-2"><BarChart2 size={17} className="text-primary-600" /> Ready for a reliability study?</h2>
+                        <p className="text-sm text-slate-600 mt-1">{readiness ? readiness.verdict : 'Reading the register…'}</p>
+                    </div>
+                    {readiness && readiness.canRun.length > 0 && (
+                        <Link to="/specialist/assessment" state={wizardState.state}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2">
+                            Run the assessment <ArrowRight size={14} />
+                        </Link>
+                    )}
+                </div>
+
+                {readiness && (
+                    <>
+                        <ul className="mt-4 divide-y divide-primary-100 rounded-xl border border-primary-100 bg-white">
+                            {readiness.ingredients.map(i => (
+                                <li key={i.key} className="px-4 py-3 flex flex-wrap items-start gap-x-4 gap-y-1">
+                                    <span className={`mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ${STATUS_DOT[i.status]}`} aria-label={i.status} />
+                                    <div className="min-w-[12rem] flex-1">
+                                        <div className="text-sm text-slate-800"><span className="font-semibold">{i.label}</span> <span className="text-slate-500">— {i.have}</span></div>
+                                        <div className="text-xs text-slate-500 mt-0.5">{i.unlocks}</div>
+                                        {i.because && <div className={`text-xs mt-0.5 ${i.status === 'missing' ? 'text-slate-600' : 'text-amber-700'}`}>{i.because}</div>}
+                                    </div>
+                                    {i.status !== 'ready' && (
+                                        <button onClick={() => follow(i)}
+                                            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-2.5 py-1.5">
+                                            {i.action.label} <ArrowRight size={12} />
+                                        </button>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                            {readiness.canRun.map(x => <span key={x} className="text-emerald-700"><CheckCircle2 size={12} className="inline mr-1 -mt-0.5" />{x}</span>)}
+                            {readiness.blocked.map(x => <span key={x.study} className="text-slate-500"><Lock size={11} className="inline mr-1 -mt-0.5" />{x.study} — needs {x.needs}</span>)}
+                        </div>
+                    </>
+                )}
+            </section>
+
+            {/* ── Door A: bring data in — by what you have ── */}
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                        <h2 className="font-semibold text-slate-800 flex items-center gap-2"><FileUp size={17} className="text-slate-400" /> Bring data in</h2>
+                        <p className="text-sm text-slate-500 mt-1">Start from what you have. Naming the source keeps its record ids, so a later integration starts already mapped.</p>
+                    </div>
+                    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                        {SOURCE_KINDS.map(k => (
+                            <button key={k.id} onClick={() => setSourceSystem(k.systems[0])}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${sourceKind === k.id ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>
+                                {k.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {sourceKind === 'cmms' && (
+                    <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                        <span>Which one?</span>
+                        <select value={sourceSystem} onChange={e => setSourceSystem(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white">
+                            <option value="maximo">IBM Maximo</option><option value="maintainx">MaintainX</option><option value="emaint">eMaint</option>
+                            <option value="limble">Limble</option><option value="fiix">Fiix</option><option value="upkeep">UpKeep</option><option value="other">Another system</option>
+                        </select>
+                    </label>
+                )}
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {sourceKind === 'sap' && (
+                        <>
+                            <Link to="/admin/migration/cockpit" className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
+                                <div className="text-sm font-semibold text-slate-800">Migration Cockpit source data</div>
+                                <div className="text-xs text-slate-500 mt-1">The ZIPs SAP’s cockpit downloads: measuring points, readings, task lists, maintenance items and plans. Drop the folders — no reshaping.</div>
+                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: condition history and the current PM programme →</div>
+                            </Link>
+                            <Link to="/specialist/import" state={wizardState.state} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
+                                <div className="text-sm font-semibold text-slate-800">Order history (IW38 / IW39 export)</div>
+                                <div className="text-xs text-slate-500 mt-1">Orders and notifications as a spreadsheet export. Columns are mapped for you, quality-checked, and the batch can be rolled back.</div>
+                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: failure history and cost — export the cost columns →</div>
+                            </Link>
+                            <div className="rounded-xl border border-slate-200 p-4">
+                                <div className="text-sm font-semibold text-slate-800">Consultant workbook (E82 layout)</div>
+                                <div className="text-xs text-slate-500 mt-1">Functional locations, equipment, materials, BOMs, stock and source lists, one sheet per object. Drop the whole workbook on the matching step below.</div>
+                                <div className="text-[11px] text-slate-500 mt-2">Gives a study: the register, and the finance master data (materials, valuation, cost centres).</div>
+                            </div>
+                        </>
+                    )}
+                    {sourceKind === 'cmms' && (
+                        <>
+                            <Link to="/specialist/import" state={wizardState.state} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block md:col-span-2">
+                                <div className="text-sm font-semibold text-slate-800">{sourceLabel} exports — register and work-order history</div>
+                                <div className="text-xs text-slate-500 mt-1">Upload the export as it comes out of {sourceLabel}; the wizard proposes the column mapping, you confirm it, and the batch can be rolled back.</div>
+                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: the register, failure history and cost →</div>
+                            </Link>
+                            <div className="rounded-xl border border-slate-200 p-4">
+                                <div className="text-sm font-semibold text-slate-800">Everything else</div>
+                                <div className="text-xs text-slate-500 mt-1">Readings, schedules, parts, people: IREAMS’s own templates, on the steps below.</div>
+                            </div>
+                        </>
+                    )}
+                    {sourceKind === 'sheets' && (
+                        <div className="rounded-xl border border-slate-200 p-4 md:col-span-3">
+                            <div className="text-sm font-semibold text-slate-800">IREAMS’s own templates</div>
+                            <div className="text-xs text-slate-500 mt-1">One template per step below, with a Read-me sheet and example rows. The register first; everything else names an asset tag from it.</div>
+                        </div>
+                    )}
+                </div>
+
+                <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60">
+                    <summary className="cursor-pointer select-none px-4 py-3 text-sm">
+                        <span className="font-semibold text-slate-800">All import steps, in order</span>
+                        <span className="text-xs text-slate-500 ml-2">assets · people · inventory · BOMs · vendors · schedules · history · codes · readings · sensors · assess</span>
+                    </summary>
+                    <div className="px-4 pb-4">
             <div className="space-y-3">
                 {PHASES.map((p) => {
                     const complete = done(p);
@@ -629,6 +719,35 @@ export const MigrationCenterPage: React.FC = () => {
                         </div>
                     );
                 })}
+            </div>
+                    </div>
+                </details>
+            </section>
+
+            {/* ── Doors C and D: the way back to SAP ── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Link to="/admin/migration/sap" className="rounded-2xl border border-slate-200 bg-white hover:border-primary-300 p-5 block">
+                    <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Send size={16} className="text-slate-400" /> Send strategy back to SAP</h2>
+                    <p className="text-sm text-slate-500 mt-1">After a study: new plans, task lists and points go out in the cockpit’s own files; changes to plans SAP already has go to the planner with what SAP holds and what IREAMS now says.</p>
+                    <span className="text-[11px] text-primary-700 mt-2 inline-block">Send to SAP →</span>
+                </Link>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Building2 size={16} className="text-slate-400" /> Finance &amp; materials with SAP</h2>
+                    <ul className="mt-2 space-y-2 text-sm">
+                        <li>
+                            <Link to="/admin/migration/sap" className="text-slate-800 hover:text-primary-700 font-medium">Master data and opening balances →</Link>
+                            <div className="text-xs text-slate-500">Materials with valuation class and price control, source lists, opening stock as a 561 movement, cost centres — through the cockpit. Works today.</div>
+                        </li>
+                        <li>
+                            <Link to="/finops" className="text-slate-800 hover:text-primary-700 font-medium">Financial documents →</Link>
+                            <div className="text-xs text-slate-500">
+                                Cost postings, goods movements, receipts, PO lines and invoices as a hand-over file, exactly once.
+                                {finance ? ` Waiting now: ${finance.unsettled} unsettled order(s), ${finance.unpostedMovements} unposted movement(s).` : ''}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">IREAMS does not post to SAP FI today. The live link carries these when a client system is connected.</div>
+                        </li>
+                    </ul>
+                </div>
             </div>
 
             {/* Provenance — what came in, and the way back out */}

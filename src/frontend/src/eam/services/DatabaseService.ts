@@ -2715,20 +2715,34 @@ export class DatabaseService {
         assets: number; pms: number; workOrders: number; people: number;
         inventory: number; vendors: number; readings: number; batches: number; connectors: number; codes: number;
         bom: number; maturity: number;
+        /** Study readiness reads these: what the analysis tools can actually use, not just what landed. */
+        workOrdersWithCost: number; breakdowns: number; readingPoints: number;
     }> {
         const head = async (table: string) => {
             const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
             return error ? 0 : (count || 0);
         };
-        const [assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom, maturity] = await Promise.all([
+        // A filtered head count — the query is built by the caller so the
+        // builder keeps its own type instead of being threaded through one.
+        const headWhere = async (build: () => PromiseLike<{ count: number | null; error: unknown }>) => {
+            const { count, error } = await build();
+            return error ? 0 : (count || 0);
+        };
+        const [assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom, maturity, workOrdersWithCost, breakdowns, readingPoints] = await Promise.all([
             head('assets'), head('recurring_work'), head('work_orders'), head('contacts'),
             head('inventory_items'), head('vendors'), head('reading_logs'),
             head('import_batches'), head('connectors'), head('reference_codes'),
             head('asset_bom'),
             // Audit-first onboarding (RF-01/AU): a maturity intake exists?
             head('audit_assessments'),
+            // Orders carrying any cost — money-ranked findings depend on them.
+            headWhere(() => supabase.from('work_orders').select('id', { count: 'exact', head: true })
+                .or('total_actual_cost.gt.0,frozen_labor_cost.gt.0,frozen_material_cost.gt.0')),
+            // The breakdown indicator the failure predicate prefers over the work type.
+            headWhere(() => supabase.from('work_orders').select('id', { count: 'exact', head: true }).eq('breakdown', true)),
+            head('reading_definitions'),
         ]);
-        return { assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom, maturity };
+        return { assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom, maturity, workOrdersWithCost, breakdowns, readingPoints };
     }
 
     /**
