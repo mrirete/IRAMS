@@ -55,7 +55,7 @@ describe('ready for a study?', () => {
     it('no breakdown flag is ready but says MTBF is inferred', () => {
         const r = studyReadiness({ ...full, breakdowns: 0 });
         expect(byKey(r).failures.status).toBe('ready');
-        expect(byKey(r).failures.because).toMatch(/breakdown indicator \(SAP MSAUS\)/);
+        expect(byKey(r).failures.because).toMatch(/breakdown indicator with the history \(SAP PM: MSAUS; Maximo: failure class\)/);
     });
 
     it('points without readings are partial', () => {

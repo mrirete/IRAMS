@@ -82,7 +82,7 @@ export function studyReadiness(c: ReadinessCounts, routes: Partial<Record<Ingred
             unlocks: 'Weibull fits, MTBF and MTTR, Monte Carlo, PM optimisation, bad-actor ranking.',
             because: c.workOrders === 0 ? 'The failure-analysis tools read work orders — with none loaded they have nothing to fit.'
                 : c.workOrders < MIN_FAILURES_FOR_FIT ? `Fewer than ${MIN_FAILURES_FOR_FIT} events: a fit will run but its confidence bounds will be wide.`
-                : c.breakdowns === 0 ? 'No order carries a breakdown flag, so failures are inferred from the work type. Exporting the breakdown indicator (SAP MSAUS) makes MTBF exact.' : undefined,
+                : c.breakdowns === 0 ? 'No order carries a breakdown flag, so failures are inferred from the work type. Export the breakdown indicator with the history (SAP PM: MSAUS; Maximo: failure class) and MTBF becomes exact.' : undefined,
             action: { label: 'Import work-order history', to: to('failures', '/specialist/import') },
         },
         {
@@ -91,7 +91,7 @@ export function studyReadiness(c: ReadinessCounts, routes: Partial<Record<Ingred
             status: c.workOrders === 0 ? 'missing' : costShare >= MIN_COST_COVERAGE ? 'ready' : c.workOrdersWithCost > 0 ? 'partial' : 'missing',
             unlocks: 'Money-ranked findings, cost of unreliability, the value case for each recommendation.',
             because: c.workOrders > 0 && costShare < MIN_COST_COVERAGE
-                ? 'Export the cost columns with the history (SAP: actual costs on the order) — findings are ranked by money, and orders without cost rank as free.'
+                ? 'Export the cost columns with the history (the actual labour and material cost on each order) — findings are ranked by money, and orders without cost rank as free.'
                 : undefined,
             action: { label: 'Re-import history with cost columns', to: to('cost', '/specialist/import') },
         },
@@ -108,7 +108,7 @@ export function studyReadiness(c: ReadinessCounts, routes: Partial<Record<Ingred
             key: 'schedules', label: 'Current PM programme',
             have: c.pms > 0 ? `${n(c.pms)} schedules` : 'no schedules',
             status: c.pms > 0 ? 'ready' : 'missing',
-            unlocks: 'What the plant does today — the baseline every study compares against, and what Send to SAP changes.',
+            unlocks: 'What the plant does today — the baseline every study compares against, and what a sent-back strategy changes.',
             because: c.pms > 0 ? undefined : 'Without it a study can say what to do, but not what to stop doing.',
             action: { label: 'Import plans and task lists', to: to('schedules', '/admin/migration/cockpit') },
         },

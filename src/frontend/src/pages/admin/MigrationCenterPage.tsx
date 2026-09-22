@@ -451,8 +451,8 @@ export const MigrationCenterPage: React.FC = () => {
                     <Database size={22} className="text-primary-600" /> Migration Center
                 </h1>
                 <p className="text-slate-500 text-sm mt-1 max-w-2xl">
-                    Bring your plant’s data into IREAMS, see what a reliability study can run on, and send the
-                    results back to SAP. Four doors; the register comes first through every one of them.
+                    Bring your plant’s data in, see what a reliability study can run on, and send the finished
+                    strategy back to your maintenance system. The register comes first.
                 </p>
                 <div className="mt-2"><LookingFor here="migration" /></div>
                 <MaturityEmphasisHint />
