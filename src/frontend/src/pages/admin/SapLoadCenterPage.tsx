@@ -29,7 +29,7 @@ import { loadSapSource } from '../../lib/sapLoad/source';
 import { saveAs } from 'file-saver';
 import { buildCockpitExport, exportZipEntries, type CockpitExportParams } from '../../lib/sapCockpit/outbound';
 import { buildZip } from '../../lib/sapCockpit/zip';
-import { COCKPIT_OBJECTS } from '../../lib/sapCockpit/structures';
+import { readinessView, type ViewItem, type ReadinessView } from '../../lib/sapCockpit/readinessView';
 
 const STORAGE_KEY = 'ireams.sapLoad.params.v1';
 
@@ -67,6 +67,64 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
 );
 
 const inputCls = 'mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-200';
+
+/** One readiness item: plain name first, SAP code as a tag, what to do underneath. */
+const IssueLine: React.FC<{ item: ViewItem }> = ({ item }) => {
+    const icon = item.level === 'error'
+        ? <AlertOctagon size={15} className="text-rose-600 mt-0.5 shrink-0" />
+        : item.level === 'warn' ? <AlertTriangle size={15} className="text-amber-600 mt-0.5 shrink-0" /> : <Info size={15} className="text-slate-400 mt-0.5 shrink-0" />;
+    return (
+        <li className="flex items-start gap-2.5 py-2.5">
+            {icon}
+            <div className="min-w-0 flex-1">
+                <div className="text-sm text-slate-800 flex items-start gap-2 flex-wrap">
+                    <span>{item.title}</span>
+                    {item.code && <span className="text-[10px] font-mono text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 mt-0.5">{item.code}</span>}
+                    {item.rows && item.rows > 1 && <span className="text-xs text-slate-400 mt-0.5">{item.rows.toLocaleString()} rows</span>}
+                </div>
+                {item.action && <div className="text-xs text-slate-500 mt-0.5">{item.action}</div>}
+                {item.details && item.details.length > 0 && (
+                    <details className="mt-1">
+                        <summary className="text-xs text-primary-700 cursor-pointer select-none">Which fields ({item.details.length})</summary>
+                        <ul className="mt-1 text-xs text-slate-500 list-disc pl-4 space-y-0.5">{item.details.map((d, i) => <li key={i}>{d}</li>)}</ul>
+                    </details>
+                )}
+            </div>
+        </li>
+    );
+};
+
+/** The three groups a person acts on, in order. Empty groups are not shown. */
+const ReadinessGroups: React.FC<{ view: ReadinessView }> = ({ view }) => {
+    const group = (title: string, hint: string, items: ViewItem[], tone: string, open: boolean) => items.length === 0 ? null : (
+        <details open={open} className="rounded-xl border border-slate-200 bg-white">
+            <summary className="cursor-pointer select-none px-4 py-3 flex items-center gap-2 text-sm">
+                <span className={`font-semibold ${tone}`}>{title}</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">{items.length} item{items.length === 1 ? '' : 's'}</span>
+                <span className="text-xs text-slate-400 ml-1 hidden md:inline">— {hint}</span>
+            </summary>
+            <ul className="px-4 pb-2 divide-y divide-slate-100 border-t border-slate-100">{items.map((it, i) => <IssueLine key={i} item={it} />)}</ul>
+        </details>
+    );
+    return (
+        <div className="space-y-2">
+            {group('Must fix before loading', 'SAP will reject these rows', view.mustFix, 'text-rose-700', true)}
+            {group('Worth a look', 'loads, but something was changed or left out', view.check, 'text-amber-700', view.mustFix.length === 0)}
+            {group('Good to know', 'how the file was built', view.notes, 'text-slate-700', false)}
+        </div>
+    );
+};
+
+const Step: React.FC<{ n: number; title: string; children: React.ReactNode }> = ({ n, title, children }) => (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="flex items-center gap-3 mb-3">
+            <span className="w-7 h-7 rounded-full bg-primary-600 text-white text-xs font-bold flex items-center justify-center shrink-0">{n}</span>
+            <h3 className="font-semibold text-slate-800">{title}</h3>
+        </div>
+        {children}
+    </section>
+);
 
 export const SapLoadCenterPage: React.FC = () => {
     const { showToast } = useToast();
@@ -130,8 +188,6 @@ export const SapLoadCenterPage: React.FC = () => {
     };
 
     const errors = result?.issues.filter(i => i.level === 'error') ?? [];
-    const warnings = result?.issues.filter(i => i.level === 'warn') ?? [];
-    const infos = result?.issues.filter(i => i.level === 'info') ?? [];
     const totalRows = result ? SAP_OBJECTS.reduce((n, o) => n + result.objects[o.key].length, 0) : 0;
 
     // ── Migration Cockpit source data: the cockpit's own shape ───────────────
@@ -150,7 +206,7 @@ export const SapLoadCenterPage: React.FC = () => {
     }), [cockpitMode, params]);
     const cockpit = useMemo(() => (source ? buildCockpitExport(source, cockpitParams) : null), [source, cockpitParams]);
     const cockpitRows = cockpit ? cockpit.files.reduce((n, f) => n + f.rows, 0) : 0;
-    const cockpitErrors = cockpit?.issues.filter(i => i.level === 'error') ?? [];
+    const cockpitView = cockpit ? readinessView(cockpit.issues, cockpitRows) : null;
 
     const downloadCockpit = () => {
         if (!cockpit) return;
@@ -168,71 +224,98 @@ export const SapLoadCenterPage: React.FC = () => {
                     <ArrowLeft size={14} strokeWidth={2.5} /> Back to Migration Center
                 </Link>
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <Database size={22} className="text-primary-600" /> SAP Load Center
+                    <Database size={22} className="text-primary-600" /> Send to SAP
                 </h1>
                 <p className="text-slate-500 text-sm mt-1 max-w-2xl">
-                    Moving this register into SAP PM / MM? These are the Migration Cockpit load files — one sheet per object,
-                    SAP field names on row 4, filled from what IREAMS holds today. Load them in order in the Fiori app
-                    <em> Migrate Your Data</em> (LTMC); simulate first, and run ten rows end to end before the full file.
+                    Move what IREAMS knows — measuring points, readings, task lists and PM schedules — into SAP Plant Maintenance.
+                    Nothing is written to SAP from here: you download one file and load it in SAP's own tool,
+                    <em> Migrate Your Data</em>, which simulates the load before it commits anything.
                 </p>
+                <ol className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+                    <li><b className="text-slate-700">1</b> Choose what to send</li>
+                    <li><b className="text-slate-700">2</b> Fix anything SAP would reject</li>
+                    <li><b className="text-slate-700">3</b> Download the file</li>
+                    <li><b className="text-slate-700">4</b> Upload it in SAP and simulate</li>
+                </ol>
             </div>
 
-            {/* Migration Cockpit source data — SAP's own shape, one ZIP */}
-            <div className="rounded-2xl border border-primary-200 bg-primary-50/40 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Database size={16} className="text-primary-600" /> Send to SAP — Migration Cockpit source data</h3>
-                        <p className="text-sm text-slate-600 mt-1 max-w-2xl">
-                            The cockpit's own staging files, laid out exactly as it downloads them: one folder per object, headers
-                            as SAP wrote them. Unzip and upload in <em>Migrate Your Data</em>. Measuring points and readings,
-                            task lists, maintenance items and plans.
-                        </p>
-                    </div>
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                        <span className="font-semibold">Load</span>
-                        <select value={cockpitMode} onChange={e => setCockpitMode(e.target.value as CockpitExportParams['mode'])} className="border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white">
-                            <option value="delta">only what SAP does not have (delta)</option>
-                            <option value="full">everything (new SAP system)</option>
+            {/* Step 1 — what goes */}
+            <Step n={1} title="Choose what to send">
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <label className="flex items-center gap-2 text-slate-700">
+                        <span>Send</span>
+                        <select value={cockpitMode} onChange={e => setCockpitMode(e.target.value as CockpitExportParams['mode'])} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                            <option value="delta">only what SAP does not have yet (recommended)</option>
+                            <option value="full">everything — this is a new SAP system</option>
                         </select>
                     </label>
                 </div>
-
+                {loading && <p className="text-sm text-slate-500 mt-3 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Reading the register…</p>}
+                {loadError && <p className="text-sm text-rose-700 mt-3">{loadError}</p>}
                 {cockpit && (
                     <>
-                        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
-                            {COCKPIT_OBJECTS.map(o => (
-                                <span key={o.key} className="text-slate-600">
-                                    <b className="text-slate-900">{cockpit.counts[o.key].toLocaleString()}</b> {o.name.replace('PM - ', '').toLowerCase()} row(s)
-                                </span>
+                        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {([
+                                ['measuringPoint', 'Measuring points'], ['measurementDocument', 'Readings'],
+                                ['generalTaskList', 'Task-list steps'], ['maintenancePlan', 'PM schedules'],
+                            ] as const).map(([key, name]) => (
+                                <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                    <div className="text-2xl font-bold text-slate-800">{cockpit.counts[key].toLocaleString()}</div>
+                                    <div className="text-xs text-slate-500">{name}</div>
+                                </div>
                             ))}
-                            {cockpit.handover && <span className="text-amber-700"><b>{cockpit.handover.rows}</b> schedule(s) SAP already has — on the hand-over sheet</span>}
-                            {cockpitMode === 'delta' && (cockpit.alreadyInSap.points > 0 || cockpit.alreadyInSap.readings > 0) && (
-                                <span className="text-slate-400">{cockpit.alreadyInSap.points} point(s), {cockpit.alreadyInSap.readings} reading(s) already in SAP — not loaded again</span>
-                            )}
                         </div>
-
-                        {cockpit.issues.length > 0 && (
-                            <ul className="mt-3 divide-y divide-slate-100">
-                                {cockpit.issues.map((i, n) => (
-                                    <li key={n} className="flex items-start gap-2 py-1.5 text-sm text-slate-700">
-                                        {i.level === 'error' ? <AlertOctagon size={14} className="text-rose-600 mt-0.5 shrink-0" /> : i.level === 'warn' ? <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" /> : <Info size={14} className="text-slate-400 mt-0.5 shrink-0" />}
-                                        <span>{i.message}{i.count && i.count > 1 ? <span className="ml-1.5 text-xs text-slate-400">({i.count} rows)</span> : null}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                        {(cockpit.handover || cockpit.alreadyInSap.points > 0 || cockpit.alreadyInSap.readings > 0) && cockpitMode === 'delta' && (
+                            <p className="text-xs text-slate-500 mt-3">
+                                Not sent because SAP already has them: {cockpit.alreadyInSap.points} point(s), {cockpit.alreadyInSap.readings} reading(s)
+                                {cockpit.handover ? `, ${cockpit.handover.rows} schedule(s)` : ''}.
+                                {cockpit.handover ? ' The schedules IREAMS changed are listed on a hand-over sheet in the file, with their SAP numbers, for the planner to update in SAP.' : ''}
+                            </p>
                         )}
-
-                        <div className="mt-4 flex items-center gap-3 flex-wrap">
-                            <button onClick={downloadCockpit} disabled={cockpitRows === 0 && !cockpit.handover}
-                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2.5 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed">
-                                <Download size={15} /> Download for the cockpit (.zip)
-                            </button>
-                            {cockpitErrors.length > 0 && <span className="text-xs text-rose-700">Rows with errors above will be rejected by SAP — fix them, or accept them knowingly.</span>}
-                        </div>
                     </>
                 )}
-            </div>
+            </Step>
 
+            {/* Step 2 — readiness, grouped by what to do */}
+            {cockpit && cockpitView && (
+                <Step n={2} title="Fix anything SAP would reject">
+                    {cockpitView.verdict === 'empty' && <p className="text-sm text-slate-500">Nothing to send: SAP already has everything IREAMS holds.</p>}
+                    {cockpitView.verdict === 'ready' && <p className="text-sm text-emerald-700 flex items-center gap-2"><CheckCircle2 size={16} /> Ready to load — nothing SAP would reject.</p>}
+                    {cockpitView.verdict === 'attention' && <p className="text-sm text-amber-700 mb-3">Loads as it is. A few things are worth a look first.</p>}
+                    {cockpitView.verdict === 'blocked' && <p className="text-sm text-rose-700 mb-3">SAP will reject some rows until the items under <b>Must fix</b> are dealt with — in IREAMS, or in the cockpit’s value mapping.</p>}
+                    <ReadinessGroups view={cockpitView} />
+                </Step>
+            )}
+
+            {/* Step 3 — the file */}
+            {cockpit && (
+                <Step n={3} title="Download, then upload in SAP">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <button onClick={downloadCockpit} disabled={cockpitRows === 0 && !cockpit.handover}
+                            className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2.5 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed">
+                            <Download size={15} /> Download for SAP (.zip)
+                        </button>
+                        <span className="text-xs text-slate-500">One ZIP, one folder per object, exactly as SAP’s Migration Cockpit lays its own files out.</span>
+                    </div>
+                    <ol className="mt-4 text-sm text-slate-600 space-y-1 list-decimal pl-5">
+                        <li>In SAP, open <em>Migrate Your Data</em> and your migration project (staging tables).</li>
+                        <li>Unzip the download and upload each <em>Source data for …</em> folder to its object, in this order: measuring points, measurement documents, task lists, then maintenance plans.</li>
+                        <li>Run <em>Simulate</em>. The items under <b>Must fix</b> above are what it will report; the cockpit’s value mapping resolves IREAMS ids to SAP numbers.</li>
+                        <li>Migrate ten rows end to end before the full file.</li>
+                    </ol>
+                </Step>
+            )}
+
+            {/* Everything below is for consultants: SAP configuration values and
+                the consultant's E82 workbook (one sheet per object, SAP field
+                names on row 4) with its own readiness and per-sheet downloads.
+                A planner sending a strategy back never needs it. */}
+            <details className="rounded-2xl border border-slate-200 bg-slate-50/60">
+            <summary className="cursor-pointer select-none px-5 py-4 text-sm">
+                <span className="font-semibold text-slate-800">Advanced — SAP configuration values and the consultant workbook</span>
+                <span className="block text-xs text-slate-500 mt-0.5">Company code, plants, valuation classes; and the alternative E82 workbook format (functional locations, equipment, materials, BOMs, stock, open work) for consultants who load with LTMC sheets.</span>
+            </summary>
+            <div className="px-5 pb-5 space-y-6">
             {/* Target system */}
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -347,50 +430,17 @@ export const SapLoadCenterPage: React.FC = () => {
 
             {/* Readiness */}
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <h3 className="font-semibold text-slate-800">Readiness</h3>
-                    <button onClick={() => void refresh()} disabled={loading} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2 disabled:opacity-50">
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                    <div>
+                        <h3 className="font-semibold text-slate-800">Readiness — consultant workbook</h3>
+                        {result && <p className="text-xs text-slate-500 mt-0.5">{totalRows.toLocaleString()} rows across {SAP_OBJECTS.filter(o => result.objects[o.key].length > 0).length} sheets</p>}
+                    </div>
+                    <button onClick={() => void refresh()} disabled={loading} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 disabled:opacity-50">
                         {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Re-read the register
                     </button>
                 </div>
-                {loadError && (
-                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                        <AlertOctagon size={16} className="mt-0.5 shrink-0" /> <span>Could not read the register: {loadError}</span>
-                    </div>
-                )}
-                {loading && !source && <p className="text-sm text-slate-400 mt-3 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Reading assets, materials, BOMs, measuring points, readings and stock…</p>}
-                {result && (
-                    <>
-                        <div className="mt-3 flex items-center gap-4 text-sm flex-wrap">
-                            <span className="text-slate-600"><b>{totalRows.toLocaleString()}</b> load rows across {SAP_OBJECTS.filter(o => result.objects[o.key].length > 0).length} objects</span>
-                            <span className={`flex items-center gap-1 ${errors.length ? 'text-rose-700' : 'text-emerald-700'}`}>
-                                {errors.length ? <AlertOctagon size={14} /> : <CheckCircle2 size={14} />} {errors.length} error{errors.length === 1 ? '' : 's'}
-                            </span>
-                            <span className="flex items-center gap-1 text-amber-700"><AlertTriangle size={14} /> {warnings.length} warning{warnings.length === 1 ? '' : 's'}</span>
-                            <span className="flex items-center gap-1 text-slate-500"><Info size={14} /> {infos.length} note{infos.length === 1 ? '' : 's'}</span>
-                        </div>
-                        {result.issues.length > 0 && (
-                            <ul className="mt-3 divide-y divide-slate-100">
-                                {result.issues.map((i, idx) => (
-                                    <li key={idx} className="py-2 flex items-start gap-2 text-sm">
-                                        {i.level === 'error' ? <AlertOctagon size={14} className="mt-0.5 shrink-0 text-rose-600" />
-                                            : i.level === 'warn' ? <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
-                                                : <Info size={14} className="mt-0.5 shrink-0 text-slate-400" />}
-                                        <span className="text-slate-700">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-2">
-                                                {i.object === 'general' ? 'General' : SAP_OBJECTS.find(o => o.key === i.object)?.label}
-                                            </span>
-                                            {i.message}{i.count && i.count > 1 ? ` (${i.count.toLocaleString()} rows)` : ''}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                        {errors.length === 0 && result.issues.length === 0 && (
-                            <p className="mt-3 text-sm text-emerald-700 flex items-center gap-1.5"><CheckCircle2 size={14} /> Nothing to fix — the workbook is load-ready.</p>
-                        )}
-                    </>
-                )}
+                {loadError && <p className="text-sm text-rose-700">{loadError}</p>}
+                {result && <ReadinessGroups view={readinessView(result.issues, totalRows)} />}
             </div>
 
             {/* Downloads */}
@@ -462,6 +512,8 @@ export const SapLoadCenterPage: React.FC = () => {
                     distorts cost and status reporting. The reliability history, and everything computed from it, stays in IREAMS.
                 </p>
             </div>
+            </div>
+            </details>
         </div>
     );
 };
