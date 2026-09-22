@@ -55,8 +55,11 @@ if (-not (Test-Path $cli)) { throw "vercel CLI not found at $cli" }
 $env:NO_UPDATE_NOTIFIER = '1'
 $out = & $cli deploy --prod --yes --archive=tgz | ForEach-Object { "$_" }
 $out | Write-Host
-$prod = $out | Where-Object { $_ -match 'Production:\s+https://\S+' } | Select-Object -First 1
-if (-not $prod) { throw "vercel deploy produced no Production URL (exit $LASTEXITCODE) — nothing was deployed" }
+# The CLI prints its Inspect / Production / Aliased lines to STDERR; the only
+# thing on stdout is the deployment URL, once it is ready. That URL, or a zero
+# exit, is the verdict — and the served-chunk check below is the real one.
+$deployed = $out | Where-Object { $_ -match 'https://\S+\.vercel\.app' } | Select-Object -First 1
+if (-not $deployed -and $LASTEXITCODE -ne 0) { throw "vercel deploy produced no deployment URL and exited $LASTEXITCODE — nothing was deployed" }
 if ($LASTEXITCODE -ne 0) { Write-Host "CLI exited $LASTEXITCODE after the deploy (its self-upgrade prompt); the deploy itself succeeded." -ForegroundColor Yellow }
 }
 finally {
