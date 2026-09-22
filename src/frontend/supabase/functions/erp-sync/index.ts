@@ -57,6 +57,8 @@ const BATCH = 500;
 const FAMILY = 'master_data' as const;
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 1000);
+/** Timestamps arrive with varying fraction lengths and offsets; compare instants, never strings. */
+const instant = (ts: string | null | undefined): number => (ts ? new Date(ts).getTime() : Number.NEGATIVE_INFINITY);
 const bump = (s: Stats, k: string, n = 1) => { s[k] = (s[k] ?? 0) + n; };
 
 // ── HTTP to the target ───────────────────────────────────────────────────────
@@ -266,6 +268,10 @@ async function outbound(sb: SupabaseClient, t: Target, rule: FamilyRule, headers
     for (const a of assets) {
         processed.push(a.updated_at);
         const map = maps.get(a.id);
+        // Already in step: nothing changed here since the last exchange with
+        // SAP in either direction (an inbound apply bumps updated_at, then
+        // the map records the moment). Sending it back would only echo.
+        if (map?.last_synced_at && instant(a.updated_at) <= instant(map.last_synced_at)) { bump(stats, 'out_in_sync'); continue; }
         const pm = a.parent_id ? maps.get(a.parent_id) : undefined;
         const parent: ParentRef | null = a.parent_id
             ? (sentThisRun.get(a.parent_id) ?? (pm?.external_type && pm.external_key ? { type: pm.external_type, key: pm.external_key } : null))
@@ -374,7 +380,7 @@ async function inbound(sb: SupabaseClient, t: Target, rule: FamilyRule, headers:
                 const asset = await assetById(sb, t.company_id, map.entity_id);
                 if (!asset) { bump(stats, 'in_orphan_map'); continue; }
                 const diff = patchDiff(asset, patch);
-                const localChanged = !!map.last_synced_at && asset.updated_at > map.last_synced_at;
+                const localChanged = !!map.last_synced_at && instant(asset.updated_at) > instant(map.last_synced_at);
                 const decision = resolveInbound(rule.owner, localChanged && Object.keys(diff).length > 0, Object.keys(diff));
 
                 if (dryRun) {
@@ -561,7 +567,14 @@ Deno.serve(async (req: Request) => {
         if (uErr || !u?.user) return json({ error: 'Unauthorized' }, 401);
         const { data: isAdmin } = await asUser.rpc('is_admin');
         if (!isAdmin) return json({ error: 'Administrators only.' }, 403);
-        scopeCompany = (u.user.app_metadata?.company_id as string | undefined) ?? null;
+        // The tenant claim lives in the JWT (custom access-token hook, 0258);
+        // the user object getUser() returns does not carry it. Decode the
+        // token we just validated rather than trust the profile.
+        try {
+            const payload = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+            scopeCompany = (payload?.app_metadata?.company_id as string | undefined) ?? null;
+        } catch { scopeCompany = null; }
+        scopeCompany = scopeCompany ?? (u.user.app_metadata?.company_id as string | undefined) ?? null;
         if (!scopeCompany) return json({ error: 'Your login has no tenant claim.' }, 403);
         worker = `user:${u.user.id}`;
     }

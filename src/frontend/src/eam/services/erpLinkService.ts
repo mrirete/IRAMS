@@ -103,8 +103,21 @@ export const isMissingTable = (e: { code?: string; message?: string } | null | u
 const fail = (ctx: string, e: { message: string } | null) => { if (e) throw new Error(`${ctx}: ${e.message}`); };
 
 export const erpLinkService = {
+    /**
+     * The tenant, from the access token's claim — the same place RLS reads it.
+     * The custom access-token hook (0258) puts company_id into the JWT; the
+     * session's user object does not necessarily carry it, so decode locally.
+     */
     async companyId(): Promise<string | null> {
         const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+                const claim = payload?.app_metadata?.company_id;
+                if (typeof claim === 'string' && claim) return claim;
+            } catch { /* fall through to the user object */ }
+        }
         return (data.session?.user.app_metadata?.company_id as string | undefined) ?? null;
     },
 
