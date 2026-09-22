@@ -21,7 +21,7 @@ const appDir = resolve(__dirname);
 const normalise = (src: string): string => src.replace(/from '(\.\/[A-Za-z]+)\.ts'/g, "from '$1'");
 
 describe.each([
-    ['erp-sync', 'odata'], ['erp-sync', 'masterData'], ['erp-sync', 'condition'], ['erp-sync', 'work'], ['sap-sim', 'odata'],
+    ['erp-sync', 'odata'], ['erp-sync', 'masterData'], ['erp-sync', 'condition'], ['erp-sync', 'work'], ['erp-sync', 'reliability'], ['sap-sim', 'odata'],
 ])('%s/lib/%s.ts', (fn, name) => {
     it('is byte-identical to the app library (imports aside)', () => {
         const app = readFileSync(resolve(appDir, `${name}.ts`), 'utf8');

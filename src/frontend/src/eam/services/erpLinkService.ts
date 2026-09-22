@@ -159,14 +159,23 @@ export const erpLinkService = {
         fail('delete target', error);
     },
 
+    /** What needs a person: failed sends, conflicts, and reliability documents waiting for approval. */
     async listQueue(): Promise<OutboxRow[]> {
         const { data, error } = await supabase
             .from('erp_outbox').select('*')
-            .in('status', ['failed', 'conflict'])
+            .or('status.in.(failed,conflict),and(status.eq.pending,family.eq.reliability,approved_at.is.null)')
             .is('resolved_at', null)
             .order('created_at', { ascending: false }).limit(200);
         fail('queue', error);
         return (data ?? []) as OutboxRow[];
+    },
+
+    /** A person approves a reliability document (an interval change to a live plan); the next run sends it. */
+    async approve(row: OutboxRow, byUserId: string | null): Promise<void> {
+        const { error } = await supabase.from('erp_outbox').update({
+            approved_by: byUserId, approved_at: new Date().toISOString(),
+        }).eq('id', row.id).eq('status', 'pending');
+        fail('approve', error);
     },
 
     async listRecentDocuments(limit = 50): Promise<OutboxRow[]> {

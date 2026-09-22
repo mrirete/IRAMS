@@ -71,6 +71,10 @@ const GENERATED: Partial<Record<EntitySet, number>> = {
     A_MeasurementDocument: 1,
     A_MaintenanceNotification: 10000000,
     A_MaintenanceOrder: 4000000,
+    A_MaintenancePlan: 100000,
+    A_MaterialDocumentHeader: 4900000000,
+    A_SupplierInvoice: 5100000000,
+    A_JournalEntry: 100000000,
 };
 
 /** The body's own fields, without OData annotations or the key (the key is the path). */

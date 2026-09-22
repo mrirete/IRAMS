@@ -67,6 +67,7 @@ const DOC_WORD: Record<string, string> = {
     equipment: 'Equipment', functional_location: 'Functional location',
     measuring_point: 'Measuring point', measurement_document: 'Reading',
     notification: 'Request → notification', order: 'SAP order → work order',
+    pm_cycle_revision: 'PM cycle → maintenance plan',
 };
 const docWord = (t: string) => DOC_WORD[t] ?? t.replace(/_/g, ' ');
 
@@ -77,6 +78,7 @@ const recordHref = (row: OutboxRow): string => {
         case 'measurement_document': return '/readings';
         case 'notification': return '/requests';
         case 'order': return `/work-orders/${encodeURIComponent(row.document_id)}`;
+        case 'pm_cycle_revision': return '/recurring-work';
         default: return `/assets?id=${encodeURIComponent(row.document_id)}`;
     }
 };
@@ -90,6 +92,10 @@ const STAT_WORDS: [string, string][] = [
     ['out_object_unlinked', 'points held (object not in SAP yet)'], ['out_point_unlinked', 'readings held (point not in SAP yet)'],
     ['out_reading_not_logged', 'machine readings kept back'], ['in_object_unknown', 'SAP points on unknown objects'],
     ['in_point_unknown', 'SAP readings on unknown points'], ['in_no_value', 'SAP documents without a value'],
+    ['out_request_not_sent', 'requests kept back'], ['in_status_moved', 'order statuses moved'],
+    ['out_awaiting_approval', 'cycle changes awaiting approval'], ['out_superseded', 'waiting changes superseded'],
+    ['out_strategy_plan_skipped', 'strategy plans (change in IP11)'], ['out_meter_cycle_skipped', 'counter plans not carried'],
+    ['out_plan_created_in_sim', 'plans created in the simulator'],
     ['equipment_seen', 'equipment visible'], ['deleted', 'removed'],
 ];
 const statsText = (s: Record<string, number> | null | undefined): string => {
@@ -309,6 +315,19 @@ export const IntegrationsPage: React.FC = () => {
         try { await erpLinkService.skip(row, user?.id ?? null, ''); await load(); }
         catch (e) { showToast(e instanceof Error ? e.message : 'Could not skip.', 'error'); }
     };
+    /** Approve an interval change to a live plan, then run the target so it goes now rather than on the next tick. */
+    const approve = async (row: OutboxRow) => {
+        if (!(await confirm({ title: 'Send this cycle change to SAP?', message: `${row.reason ?? ''} Approving sends it now; SAP's plan is changed.`, confirmLabel: 'Approve & send' }))) return;
+        setBusy(`${row.target_id}:sync`);
+        try {
+            await erpLinkService.approve(row, user?.id ?? null);
+            const t = targets.find((x) => x.id === row.target_id) ?? null;
+            const rs = await erpLinkService.run('sync', t?.id, { direction: 'OUT' });
+            report(rs, 'sent');
+            await load();
+        } catch (e) { showToast(e instanceof Error ? e.message : 'Could not approve.', 'error', 6000); }
+        finally { setBusy(null); }
+    };
     const acknowledge = async (row: OutboxRow) => {
         try { await erpLinkService.acknowledge(row, user?.id ?? null); await load(); }
         catch (e) { showToast(e instanceof Error ? e.message : 'Could not acknowledge.', 'error'); }
@@ -456,7 +475,10 @@ export const IntegrationsPage: React.FC = () => {
                                         <div className="text-[11px] text-slate-400 mt-1">{row.attempts} attempt{row.attempts === 1 ? '' : 's'}{row.http_status ? ` · HTTP ${row.http_status}` : ''} · {when(row.updated_at)}{row.next_attempt_at && row.status === 'failed' ? ` · retries ${ago(row.next_attempt_at) === 'just now' ? 'on the next run' : when(row.next_attempt_at)}` : ''}</div>
                                     </div>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {row.direction === 'OUT' && <button type="button" className={btnQuiet} onClick={() => void retry(row)}><RotateCcw size={13} /> Retry</button>}
+                                        {row.status === 'pending' && row.family === 'reliability' && !row.approved_at && (
+                                            <button type="button" className={btnPrimary} onClick={() => void approve(row)} disabled={!!busy}><CheckCircle2 size={13} /> Approve & send</button>
+                                        )}
+                                        {row.direction === 'OUT' && row.status !== 'pending' && <button type="button" className={btnQuiet} onClick={() => void retry(row)}><RotateCcw size={13} /> Retry</button>}
                                         {row.direction === 'IN' && row.status === 'conflict' && <button type="button" className={btnQuiet} onClick={() => void acknowledge(row)}><CheckCircle2 size={13} /> Acknowledge</button>}
                                         <button type="button" className={btnQuiet} onClick={() => void skip(row)}><SkipForward size={13} /> Skip</button>
                                         <button type="button" className={btnQuiet} onClick={() => openRecord(row)}><ExternalLink size={13} /> Open record</button>

@@ -50,6 +50,7 @@ import {
     newWorkOrderFromOrder, objectRefOf, orderPatch, requestGoesOut, toNotificationDoc, workOrderDiff,
     type LinkRequest, type OrderDoc,
 } from './lib/work.ts';
+import { decide as decideCycle, sentStamp, toMaintenancePlanDoc, type LinkSchedule, type SapCycle } from './lib/reliability.ts';
 
 type Json = Record<string, unknown>;
 type Mode = 'sync' | 'dry_run' | 'test' | 'sim_edit' | 'sim_reset';
@@ -62,8 +63,8 @@ interface Target {
     dry_run: boolean; is_active: boolean; watermarks: Watermarks | null; last_run_at: string | null;
 }
 /** External object types the link maps: SAP's own table names, so a planner recognises them. */
-type ExternalType = SapObjectType | 'IMPT' | 'IMRG' | 'QMEL' | 'AUFK';
-type EntityType = 'asset' | 'reading_definition' | 'reading_log' | 'request' | 'work_order';
+type ExternalType = SapObjectType | 'IMPT' | 'IMRG' | 'QMEL' | 'AUFK' | 'MPLA';
+type EntityType = 'asset' | 'reading_definition' | 'reading_log' | 'request' | 'work_order' | 'recurring_work';
 interface MapRow { id: string; entity_id: string; external_key: string; external_type: ExternalType | null; etag: string | null; last_synced_at: string | null }
 interface Stats { [k: string]: number }
 
@@ -189,7 +190,7 @@ interface SendSpec {
 }
 
 /** Exactly-once, before the wire. Returns the live row to send, or null when this version is done or waiting. */
-async function liveRow(sb: SupabaseClient, t: Target, family: Family, docType: string, docId: string, version: string, key: string, payload: Json, stats: Stats): Promise<OutboxRow | null> {
+async function liveRow(sb: SupabaseClient, t: Target, family: Family, docType: string, docId: string, version: string, key: string, payload: Json, stats: Stats, reason: string | null = null): Promise<OutboxRow | null> {
     const { data: existing } = await sb
         .from('erp_outbox').select(OUTBOX_COLS)
         .eq('target_id', t.id).eq('family', family).eq('document_id', docId).eq('document_version', version)
@@ -202,7 +203,7 @@ async function liveRow(sb: SupabaseClient, t: Target, family: Family, docType: s
     const { data: ins, error } = await sb.from('erp_outbox').insert({
         company_id: t.company_id, target_id: t.id, family, direction: 'OUT',
         document_type: docType, document_id: docId, document_version: version, document_key: key,
-        status: 'pending', payload,
+        status: 'pending', payload, reason,
     }).select(OUTBOX_COLS).single();
     if (error) {
         if (error.code === '23505') { bump(stats, 'out_raced'); return null; }
@@ -307,6 +308,12 @@ async function specFor(sb: SupabaseClient, t: Target, row: OutboxRow): Promise<S
             if (!data) return null;
             const r = data as { id: string; request_number: string };
             return { set: 'A_MaintenanceNotification', entityType: 'request', externalType: 'QMEL', entityId: r.id, label: r.request_number, map: (await mapsFor(sb, co, 'request', [r.id])).get(r.id) };
+        }
+        case 'pm_cycle_revision': {
+            const { data } = await sb.from('recurring_work').select('id, code, origin').eq('company_id', co).eq('id', row.document_id).maybeSingle();
+            if (!data) return null;
+            const p = data as { id: string; code: string | null; origin: Json | null };
+            return planSpec(sb, t, p);
         }
         default: return null;
     }
@@ -812,6 +819,118 @@ async function workIn(sb: SupabaseClient, t: Target, rule: FamilyRule, headers: 
     return settleWatermark(wm, processed, []);
 }
 
+// ── Reliability: PM cycle revisions to maintenance plans, with a person's approval ──
+
+const SCHEDULE_COLS = 'id, code, title, description, frequency_interval, frequency_unit, schedule_type, active, origin, updated_at';
+
+/** The send spec for a schedule: the SAP plan it came from is the key; the map is created on first send. */
+async function planSpec(sb: SupabaseClient, t: Target, p: { id: string; code: string | null; origin: Json | null }): Promise<SendSpec | null> {
+    const plan = String(p.origin?.plan ?? '').trim();
+    if (!plan) return null;
+    const map = (await mapsFor(sb, t.company_id, 'recurring_work', [p.id])).get(p.id)
+        // Not mapped yet: the plan number came with the import. Behave as mapped
+        // (PATCH the plan); the map row is written after the first success.
+        ?? { id: '', entity_id: p.id, external_key: plan, external_type: 'MPLA' as const, etag: null, last_synced_at: null };
+    return { set: 'A_MaintenancePlan', entityType: 'recurring_work', externalType: 'MPLA', entityId: p.id, label: `${p.code ?? p.id} (plan ${plan})`, map };
+}
+
+/**
+ * Send an approved cycle revision. Against a real S/4 the plan exists (it
+ * came from there) and is PATCHed; against the simulator it may not exist
+ * yet, so a 404 creates it with the same number — the demo needs somewhere
+ * for the change to land. On success the schedule's origin.sap_sync is
+ * stamped (sent_at, sent_cycle), which is what the Migration Center's
+ * hand-over view and the next run's in-sync test read.
+ */
+async function sendPlan(sb: SupabaseClient, t: Target, owner: Owner, headers: Record<string, string>, row: OutboxRow, spec: SendSpec, stats: Stats): Promise<void> {
+    const exists = await call(headers, 'GET', keyUrl(t.base_url, 'A_MaintenancePlan', spec.map!.external_key));
+    if (exists.status === 404) {
+        bump(stats, 'out_plan_created_in_sim');
+        const created = await call(headers, 'POST', setUrl(t.base_url, 'A_MaintenancePlan'), row.payload);
+        if (!created.ok) {
+            await sb.from('erp_outbox').update({ status: 'failed', http_status: created.status, response: created.body, attempts: row.attempts + 1, error: created.text.slice(0, 1000), next_attempt_at: new Date(Date.now() + backoffMinutes(row.attempts + 1) * 60_000).toISOString() }).eq('id', row.id);
+            bump(stats, 'out_failed');
+            return;
+        }
+        // Now it exists; fall through to the ordinary PATCH path with its ETag.
+        spec.map = { ...spec.map!, etag: created.etag };
+    } else if (exists.ok && exists.etag) {
+        spec.map = { ...spec.map!, etag: spec.map!.etag ?? exists.etag };
+    }
+    const key = await send(sb, t, owner, headers, row, spec, stats);
+    if (!key) return;
+    const { data: cur } = await sb.from('recurring_work').select('origin').eq('company_id', t.company_id).eq('id', spec.entityId).maybeSingle();
+    const cycle: SapCycle = { MaintPlanCycle: Number(row.payload.MaintPlanCycle), MaintPlanCycleUnit: String(row.payload.MaintPlanCycleUnit) as SapCycle['MaintPlanCycleUnit'] };
+    const { error } = await sb.from('recurring_work')
+        .update({ origin: sentStamp(((cur as { origin: Json | null } | null)?.origin) ?? null, cycle, `live link · ${t.name}`, nowIso()) })
+        .eq('company_id', t.company_id).eq('id', spec.entityId);
+    if (error) throw new Error(`recurring_work stamp ${spec.label}: ${error.message}`);
+}
+
+async function reliabilityOut(sb: SupabaseClient, t: Target, rule: FamilyRule, headers: Record<string, string>, dryRun: boolean, stats: Stats): Promise<string | null> {
+    const wm = watermarkOf(t.watermarks, 'reliability', 'out');
+
+    // 1. What a person approved since the last run goes first.
+    if (!dryRun) {
+        const { data: approved, error } = await sb
+            .from('erp_outbox').select(OUTBOX_COLS)
+            .eq('company_id', t.company_id).eq('target_id', t.id).eq('family', 'reliability').eq('direction', 'OUT')
+            .eq('status', 'pending').not('approved_at', 'is', null)
+            .order('approved_at').limit(100);
+        if (error) throw new Error(`outbox approved: ${error.message}`);
+        for (const r of (approved ?? []) as OutboxRow[]) {
+            const spec = await specFor(sb, t, r);
+            if (!spec) {
+                await sb.from('erp_outbox').update({ status: 'skipped', reason: 'The schedule no longer exists in IREAMS, or lost its SAP plan number.' }).eq('id', r.id);
+                bump(stats, 'out_skipped');
+                continue;
+            }
+            await sendPlan(sb, t, rule.owner, headers, r, spec, stats);
+        }
+        await retryDue(sb, t, 'reliability', rule.owner, headers, stats);
+    }
+
+    // 2. Schedules changed since the watermark: queue for approval, superseding a waiting document.
+    const processed: string[] = [];
+    let q = sb.from('recurring_work').select(SCHEDULE_COLS).eq('company_id', t.company_id).order('updated_at').limit(BATCH);
+    if (wm) q = q.gt('updated_at', wm);
+    const { data, error } = await q;
+    if (error) throw new Error(`recurring_work: ${error.message}`);
+    for (const sch of (data ?? []) as LinkSchedule[]) {
+        processed.push(sch.updated_at);
+        const d = decideCycle(sch);
+        if (d.kind === 'in_sync') { bump(stats, 'out_in_sync'); continue; }
+        if (d.kind === 'skip') {
+            // Not-from-SAP is the common case for a native schedule: no row, just a count.
+            if (d.stat !== 'out_not_from_sap' && !dryRun) {
+                await sb.from('erp_outbox').insert({
+                    company_id: t.company_id, target_id: t.id, family: 'reliability', direction: 'OUT', document_type: 'pm_cycle_revision',
+                    document_id: sch.id, document_version: sch.updated_at, document_key: sch.code ?? sch.id, status: 'skipped', payload: { schedule: sch.code ?? sch.id }, reason: d.reason,
+                }).then(({ error: e }) => { if (e && e.code !== '23505') throw new Error(`outbox skip: ${e.message}`); });
+            }
+            bump(stats, d.stat);
+            continue;
+        }
+        const doc = toMaintenancePlanDoc(sch, d.plan, d.cycle) as unknown as Json;
+        // Supersession: a waiting, unapproved document for this schedule is replaced, not joined.
+        const { data: waiting } = await sb.from('erp_outbox').select('id')
+            .eq('target_id', t.id).eq('family', 'reliability').eq('document_id', sch.id).eq('status', 'pending').is('approved_at', null).limit(1);
+        if ((waiting ?? []).length) {
+            const { error: upErr } = await sb.from('erp_outbox').update({ payload: doc, document_version: sch.updated_at, reason: d.reason }).eq('id', (waiting as { id: string }[])[0].id);
+            if (upErr) throw new Error(`outbox supersede: ${upErr.message}`);
+            bump(stats, 'out_superseded');
+            bump(stats, 'out_awaiting_approval');
+            continue;
+        }
+        const row = await liveRow(sb, t, 'reliability', 'pm_cycle_revision', sch.id, sch.updated_at, sch.code ?? sch.id, doc, stats, d.reason);
+        if (!row) continue;
+        if (dryRun) { await markDryRun(sb, row, stats); continue; }
+        // Queued. It leaves here only when a person approves it (constraint erp_outbox_reliability_needs_approval).
+        bump(stats, 'out_awaiting_approval');
+    }
+    return settleWatermark(wm, processed, []);
+}
+
 // ── One target ───────────────────────────────────────────────────────────────
 
 interface Report { target_id: string; name: string; run_id: string | null; status: 'done' | 'failed' | 'busy' | 'skipped'; dry_run: boolean; stats: Stats; error: string | null }
@@ -860,6 +979,8 @@ async function runTarget(sb: SupabaseClient, t: Target, mode: Mode, direction: D
         const wk = t.families?.work;
         if (wk && out && flows(wk, 'out')) w = withWatermark(w, 'work', 'out', await workOut(sb, { ...t, watermarks: w }, wk, headers, dryRun, stats));
         if (wk && inn && flows(wk, 'in')) w = withWatermark(w, 'work', 'in', await workIn(sb, { ...t, watermarks: w }, wk, headers, dryRun, stats));
+        const rl = t.families?.reliability;
+        if (rl && out && flows(rl, 'out')) w = withWatermark(w, 'reliability', 'out', await reliabilityOut(sb, { ...t, watermarks: w }, rl, headers, dryRun, stats));
         // Watermarks move only after the rows above are committed (they are —
         // every write was its own statement), and never on a dry run.
         if (!dryRun) {

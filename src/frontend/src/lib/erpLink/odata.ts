@@ -21,11 +21,16 @@ export type EntitySet =
     | 'A_MeasuringPoint'
     | 'A_MeasurementDocument'
     | 'A_MaintenanceNotification'
-    | 'A_MaintenanceOrder';
+    | 'A_MaintenanceOrder'
+    | 'A_MaintenancePlan'
+    | 'A_MaterialDocumentHeader'
+    | 'A_SupplierInvoice'
+    | 'A_JournalEntry';
 
 export const ENTITY_SETS: EntitySet[] = [
     'A_Equipment', 'A_FunctionalLocation', 'A_MeasuringPoint',
     'A_MeasurementDocument', 'A_MaintenanceNotification', 'A_MaintenanceOrder',
+    'A_MaintenancePlan', 'A_MaterialDocumentHeader', 'A_SupplierInvoice', 'A_JournalEntry',
 ];
 
 /** The key property of each entity set — what goes inside the parentheses. */
@@ -36,6 +41,10 @@ export const KEY_PROPERTY: Record<EntitySet, string> = {
     A_MeasurementDocument: 'MeasurementDocument',
     A_MaintenanceNotification: 'MaintenanceNotification',
     A_MaintenanceOrder: 'MaintenanceOrder',
+    A_MaintenancePlan: 'MaintenancePlan',
+    A_MaterialDocumentHeader: 'MaterialDocument',
+    A_SupplierInvoice: 'SupplierInvoice',
+    A_JournalEntry: 'AccountingDocument',
 };
 
 export const isEntitySet = (s: string): s is EntitySet => (ENTITY_SETS as string[]).includes(s);
