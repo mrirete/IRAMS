@@ -416,14 +416,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 <NavLink to="/admin/invitations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Invitations
                                 </NavLink>
-                                <NavLink to="/admin/connectors" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Sensor &amp; Data Feeds
-                                </NavLink>
+                                {/* One door for everything continuous. Feeds (/admin/connectors) and
+                                    Inbound APIs (/admin/api-keys) are its parts, reached from the strip
+                                    at the top of the page — their routes and permissions are unchanged. */}
                                 <NavLink to="/admin/integrations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Integrations
-                                </NavLink>
-                                <NavLink to="/admin/api-keys" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    API Keys
                                 </NavLink>
                                 <NavLink to="/admin/settings" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Global Settings

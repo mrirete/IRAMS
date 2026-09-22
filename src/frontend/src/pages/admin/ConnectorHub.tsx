@@ -5,6 +5,7 @@ import { useConnectors } from '../../hooks/useConnectors';
 import { ConnectorCard } from '../../components/connectors/ConnectorCard';
 import { ImportReadingsModal } from '../../components/connectors/ImportReadingsModal';
 import type { ConnectorStatus } from '../../types/connectors';
+import { IntegrationStrip } from '../../components/admin/DataDoors';
 
 type SortKey = 'name' | 'dqs' | 'last_sync' | 'status';
 type ViewMode = 'grid' | 'list';
@@ -90,7 +91,8 @@ export const ConnectorHub: React.FC = () => {
                     </div>
                     <div>
                         <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sensor &amp; Data Feeds</h1>
-                        <p className="text-slate-500 text-sm font-medium">Historians, sensors and other feeds that keep reading points current — and how healthy each feed is. Files go through the Migration Center; ERP systems through Integrations.</p>
+                        <p className="text-slate-500 text-sm font-medium">Historians, sensors and other feeds that keep reading points current — and how healthy each feed is. Files go through the Migration Center.</p>
+                        <div className="mt-2"><IntegrationStrip active="feeds" /></div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 w-fit">

@@ -28,6 +28,7 @@ import { useConfirm } from '../../eam/contexts/ConfirmContext';
 import { assessmentService } from '../../eam/services/AssessmentService';
 import type { IntakeDimensionKey } from '../../eam/services/IntakeQuickAnalysis';
 import { studyReadiness, type Ingredient } from '../../lib/migration/studyReadiness';
+import { LookingFor } from '../../components/admin/DataDoors';
 import { ErpExportService } from '../../eam/services/ErpExportService';
 
 type Counts = Awaited<ReturnType<DatabaseService['getOnboardingCounts']>>;
@@ -100,7 +101,7 @@ const PHASES: Phase[] = [
     {
         n: 7, title: 'Work-order history', icon: <FileSpreadsheet size={18} />,
         blurb: 'Your maintenance history from SAP PM, Maximo or MaintainX — column-mapped, quality-checked and reversible.',
-        to: '/specialist/import', toLabel: 'Open the CMMS Import Wizard',
+        to: '/specialist/import', toLabel: 'Open Import Work History',
         count: c => c.workOrders, unit: 'work orders',
         note: 'History imported without a register creates flat, unlevelled assets the hierarchy can never absorb.',
         requires: [NEEDS_REGISTER],
@@ -453,6 +454,7 @@ export const MigrationCenterPage: React.FC = () => {
                     Bring your plant’s data into IREAMS, see what a reliability study can run on, and send the
                     results back to SAP. Four doors; the register comes first through every one of them.
                 </p>
+                <div className="mt-2"><LookingFor here="migration" /></div>
                 <MaturityEmphasisHint />
             </div>
 
@@ -744,7 +746,7 @@ export const MigrationCenterPage: React.FC = () => {
                                 Cost postings, goods movements, receipts, PO lines and invoices as a hand-over file, exactly once.
                                 {finance ? ` Waiting now: ${finance.unsettled} unsettled order(s), ${finance.unpostedMovements} unposted movement(s).` : ''}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">IREAMS does not post to SAP FI today. The live link carries these when a client system is connected.</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">Sent automatically by Integrations once a system is connected (proven against the simulator; a real SAP FI is a client-connect step). This file remains the fallback.</div>
                         </li>
                     </ul>
                 </div>

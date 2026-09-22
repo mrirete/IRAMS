@@ -20,6 +20,7 @@ import {
     RotateCcw, SkipForward, ExternalLink, Info, ArrowLeftRight, ArrowRight, ArrowLeft, Database, Wand2,
 } from 'lucide-react';
 import { useToast } from '../../eam/contexts/ToastContext';
+import { IntegrationStrip, LookingFor } from '../../components/admin/DataDoors';
 import { useConfirm } from '../../eam/contexts/ConfirmContext';
 import { useAuth } from '../../eam/contexts/AuthContext';
 import {
@@ -387,7 +388,11 @@ export const IntegrationsPage: React.FC = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2"><Plug size={22} className="text-primary-600" /> Integrations</h1>
-                    <p className="text-slate-500 text-sm mt-1 max-w-2xl">Connected systems, what flows which way, and what needs a person. Every document sent or received is kept verbatim.</p>
+                    <p className="text-slate-500 text-sm mt-1 max-w-2xl">Systems kept in step with IREAMS continuously: what flows which way, and what needs a person. Every document sent or received is kept verbatim.</p>
+                    <div className="mt-3 space-y-2">
+                        <IntegrationStrip active="systems" />
+                        <LookingFor here="integrations" />
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <button type="button" className={btnQuiet} onClick={() => void load()} disabled={loading}><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh</button>

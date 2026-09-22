@@ -20,6 +20,7 @@ import {
     type AppliedImport, type DqReport, type ImportMapping, type AssetField, type WoField,
 } from '../../lib/importPipeline';
 import { templatesForSource, downloadCmmsTemplate } from './cmmsTemplates';
+import { LookingFor } from '../../components/admin/DataDoors';
 import { supabase } from '../../eam/lib/supabase';
 
 type Step = 'upload' | 'map' | 'review' | 'done';
@@ -251,18 +252,19 @@ export const ImportWizardPage: React.FC = () => {
                 {canCommit && (
                     <Link
                         to="/admin/migration"
-                        state={{ to: '/specialist/import', label: 'Import wizard' }}
+                        state={{ to: '/specialist/import', label: 'Import Work History' }}
                         className="inline-flex items-center gap-1.5 mb-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit py-0.5"
                     >
                         <ArrowLeft size={14} strokeWidth={2.5} /> Back to Migration Center
                     </Link>
                 )}
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <Database size={22} className="text-primary-600" /> Import CMMS Data
+                    <Database size={22} className="text-primary-600" /> Import Work History
                 </h1>
                 <p className="text-slate-500 text-sm mt-1">
-                    Send your Specialist a maintenance-history export — SAP PM, Maximo, MaintainX or any spreadsheet.
+                    One work-order history export — SAP PM, Maximo, MaintainX or any spreadsheet — so a reliability study has failures, downtime and costs to work from. Also step 7 of the Migration Center.
                 </p>
+                <div className="mt-2"><LookingFor here="history" /></div>
                 <div className="flex items-center gap-2 mt-4">
                     {['Upload', 'Map columns', 'Review quality', 'Done'].map((label, i) => (
                         <React.Fragment key={label}>
@@ -303,7 +305,7 @@ export const ImportWizardPage: React.FC = () => {
                         are flat — no hierarchy, no levels.{' '}
                         {canCommit ? (
                             <>If you have an equipment list, load it first in the{' '}
-                                <Link to="/admin/migration" state={{ to: '/specialist/import', label: 'Import wizard' }}
+                                <Link to="/admin/migration" state={{ to: '/specialist/import', label: 'Import Work History' }}
                                     className="font-semibold underline underline-offset-2">Migration Center</Link>{' '}
                                 (phase 1), then come back.</>
                         ) : (
@@ -545,7 +547,7 @@ export const ImportWizardPage: React.FC = () => {
                         {/* History was phase 7 of the migration checklist — the next
                             phase (failure-code catalogs) lives back in the Center. */}
                         {canCommit && (
-                            <button onClick={() => navigate('/admin/migration', { state: { to: '/specialist/import', label: 'Import wizard' } })}
+                            <button onClick={() => navigate('/admin/migration', { state: { to: '/specialist/import', label: 'Import Work History' } })}
                                 className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-medium px-4 py-2.5">
                                 <ArrowLeft size={14} /> Continue the migration
                             </button>

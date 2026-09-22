@@ -18,6 +18,7 @@ import {
     Satellite, ArrowRightLeft,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
+import { IntegrationStrip } from '../../components/admin/DataDoors';
 
 interface CollectorKeyRow {
     id: string;
@@ -176,6 +177,7 @@ export const ApiKeysPage: React.FC = () => {
                         Credentials for pushing data into IREAMS from outside — each integration gets its own key,
                         so one can be revoked without cutting off the rest, and every push is attributable.
                     </p>
+                    <div className="mt-3"><IntegrationStrip active="apis" /></div>
                 </div>
                 <button onClick={() => { setShowMint((v) => !v); setMintedKey(null); }}
                     className="flex items-center gap-1.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2.5 transition-colors">

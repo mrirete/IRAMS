@@ -131,7 +131,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         tier: 'intelligence', icon: BrainCircuit, path: null,
         children: [
             { id: 'specialist-home', label: 'Workspace', path: '/specialist' },
-            { id: 'specialist-import', label: 'Import CMMS Data', path: '/specialist/import' },
+            { id: 'specialist-import', label: 'Import Work History', path: '/specialist/import' },
             { id: 'specialist-assessment', label: 'Assessment Report', path: '/specialist/assessment' },
             { id: 'specialist-deliver', label: 'Deliver Work', path: '/specialist/deliver' },
             { id: 'specialist-manuals', label: 'Manuals', path: '/specialist/manuals' },
