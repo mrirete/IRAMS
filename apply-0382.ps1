@@ -1,4 +1,4 @@
-# Apply migration 0382 (reading POINT source identity) to production
+﻿# Apply migration 0382 (reading POINT source identity) to production
 # hacrebcfvyqdnjvilhqc with the tenant runner, which keeps the schema_migrations
 # ledger and wraps each file in a transaction.
 #

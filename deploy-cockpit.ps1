@@ -1,4 +1,4 @@
-# Deploy committed HEAD to production (irams.vercel.app) — the archive recipe.
+﻿# Deploy committed HEAD to production (irams.vercel.app) — the archive recipe.
 #
 # Run from any PowerShell window:
 #   & 'C:\Users\Cainergy\.gemini\antigravity\scratch\ERS\deploy-cockpit.ps1'
@@ -16,8 +16,14 @@ Set-Location $repo
 $head = (git rev-parse --short HEAD).Trim()
 Write-Host "`n=== Archive HEAD $head into $dst ===" -ForegroundColor Cyan
 New-Item -ItemType Directory -Path $dst | Out-Null
-git archive --format=tar HEAD | tar -x -C $dst
+# Never pipe git's binary output through PowerShell — the pipeline turns it
+# into text and tar sees garbage. Write the tar to a file, then extract it.
+$tar = Join-Path $env:TEMP ('ireams-head-' + $head + '.tar')
+git archive --format=tar --output="$tar" HEAD
 if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
+tar -xf "$tar" -C "$dst"
+if ($LASTEXITCODE -ne 0) { throw 'tar extract failed' }
+Remove-Item $tar
 
 $copyCount = (Get-ChildItem (Join-Path $dst 'src\frontend\src') -Recurse -File).Count
 $treeCount = (Get-ChildItem (Join-Path $repo 'src\frontend\src') -Recurse -File).Count
