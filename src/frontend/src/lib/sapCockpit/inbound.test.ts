@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
     readCockpitSet, toReadingRows, objectOfFile, fromSapDate, fromSapTime,
     fromSapNumber, isAmbiguousNumber, assetTagOf, pointKeyOf, unitOf,
-    readingTypeOf, type CockpitFile,
+    readingTypeOf, isStrategyPackageFile, strategyPackageOf, type CockpitFile,
 } from './inbound';
 import { renderCsv } from './dialect';
 import { structureSpec, fileNameOf, type CockpitObjectKey } from './structures';
@@ -134,6 +134,33 @@ describe('finding the object a file belongs to', () => {
     it('takes a bare file when only one object claims the structure', () => {
         expect(objectOfFile('S_HEADER#FreeText_Mandatory.csv').object).toBe('measuringPoint');
         expect(objectOfFile('notes.txt')).toEqual({ object: null, ambiguous: false });
+    });
+});
+
+describe('the strategy-package file', () => {
+    it('is told apart from a cockpit structure by its columns', () => {
+        expect(isStrategyPackageFile(['STRAT', 'PAKET', 'ZYKL1', 'ZEIEH'])).toBe(true);
+        expect(isStrategyPackageFile(['MANDT', 'STRAT', 'ZAEHL', 'ZEIEH', 'ZYKZT'])).toBe(true);
+        expect(isStrategyPackageFile(['STRAT', 'PAKET', 'ZEIEH', 'KTEX1'])).toBe(true);
+        expect(isStrategyPackageFile(['STRAT', 'PAKET'])).toBe(false);                 // no unit, no cycle
+        expect(isStrategyPackageFile(['PLNNR', 'PLNAL', 'VORNR', 'STRAT', 'PAKET'])).toBe(false);   // S_MPACK: no cycle
+    });
+
+    it('takes the cycle as displayed, as stored in seconds, or from the text — in that order', () => {
+        expect(strategyPackageOf({ STRAT: 'MONWOH', PAKET: '1', ZYKL1: '1', ZEIEH: 'MON' })).toMatchObject({ cadence: { interval: 1, unit: 'Months' }, from: 'cycle' });
+        expect(strategyPackageOf({ STRAT: 'MONWOH', ZAEHL: '02', ZEIEH: 'MON', ZYKZT: '7776000' })).toMatchObject({ paket: '2', cadence: { interval: 90, unit: 'Days' }, from: 'seconds' });
+        expect(strategyPackageOf({ STRAT: 'MONWOH', PAKET: '3', ZEIEH: 'MON', KTEX1: '12 MONTH/ 1 YEAR' })).toMatchObject({ cadence: { interval: 12, unit: 'Months' }, from: 'text' });
+        expect(strategyPackageOf({ STRAT: 'MONWOH', PAKET: '4', ZEIEH: 'MON' })).toMatchObject({ cadence: null, from: 'none' });
+        expect(strategyPackageOf({ STRAT: '', PAKET: '1', ZYKL1: '1', ZEIEH: 'MON' })).toBeNull();
+    });
+
+    it('is read out of a set and counted, and a cycle-less package is warned about', () => {
+        const s = readCockpitSet([{ name: 'packages.csv', text: 'STRAT,PAKET,ZYKL1,ZEIEH\r\nA,1,1,MON\r\nA,2,,' }]);
+        expect(s.strategyPackages).toHaveLength(2);
+        expect(s.issues.some(i => /2 strategy package\(s\) read from packages\.csv/.test(i.message))).toBe(true);
+        expect(s.issues.some(i => i.level === 'warn' && /1 strategy package\(s\) carry no readable cycle/.test(i.message))).toBe(true);
+        // It is not a cockpit structure and must not be reported as unknown.
+        expect(s.issues.some(i => /not a migration-cockpit source file/.test(i.message))).toBe(false);
     });
 });
 

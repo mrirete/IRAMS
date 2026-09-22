@@ -164,8 +164,18 @@ export const CockpitImportPage: React.FC = () => {
                     onChange={e => { void take(e.target.files); e.target.value = ''; }}
                 />
 
-                {set.sheets.length > 0 && (
+                {(set.sheets.length > 0 || set.strategyPackages.length > 0) && (
                     <ul className="mt-4 space-y-1.5">
+                        {set.strategyPackages.length > 0 && (
+                            <li className="flex items-center gap-2 text-sm">
+                                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                                <span className="font-mono text-xs text-slate-700">strategy packages</span>
+                                <span className="text-slate-400 text-xs">IP11 / T351P export — the cycles the cockpit cannot carry</span>
+                                <span className="ml-auto text-xs text-slate-500">
+                                    {set.strategyPackages.length.toLocaleString()} package{set.strategyPackages.length === 1 ? '' : 's'}
+                                </span>
+                            </li>
+                        )}
                         {set.sheets.map(s => (
                             <li key={s.file} className="flex items-center gap-2 text-sm">
                                 <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />

@@ -110,7 +110,7 @@ describe('task lists become job plans', () => {
         // S_MPACK has no cycle and no package text — the interval is in MMPT,
         // which no PM migration object carries.
         expect(jobplan[1].frequencyinterval).toBeUndefined();
-        expect(issues.some(i => i.level === 'warn' && /MMPT/.test(i.message))).toBe(true);
+        expect(issues.some(i => i.level === 'warn' && /taken from the Maintenance Strategy object/.test(i.message))).toBe(true);
     });
 
     it('warns when steps arrive with no schedules to attach to', () => {
@@ -162,7 +162,7 @@ describe('maintenance items become schedules', () => {
         const { recurring, skipped, issues } = toStrategyRows(set(plan, ITEM));
         expect(recurring).toHaveLength(0);
         expect(skipped).toBe(1);
-        expect(issues.some(i => i.level === 'error' && /strategy MONWOH/.test(i.message) && /MMPT/.test(i.message))).toBe(true);
+        expect(issues.some(i => i.level === 'error' && /strategy MONWOH/.test(i.message) && /no PM migration object/.test(i.message))).toBe(true);
     });
 
     it('reports an item whose plan is missing from the set', () => {
@@ -206,6 +206,77 @@ describe('maintenance items become schedules', () => {
     it('flags a task list the schedule needs but the set does not have', () => {
         const { issues } = toStrategyRows(set(PLAN, ITEM));
         expect(issues.some(i => /task list 30009001\/01, which is not in this set/.test(i.message))).toBe(true);
+    });
+});
+
+describe('the strategy file closes the cadence gap', () => {
+    // As IP11 shows the strategy: one row per package, cycle as displayed.
+    const IP11 = (): CockpitFile => ({
+        name: 'MONWOH strategy packages.csv',
+        text: ['STRAT,PAKET,ZYKL1,ZEIEH,KTEX1', 'MONWOH,1,1,MON,1 MONTH', 'MONWOH,2,3,MON,3 MONTH', 'MONWOH,3,12,MON,12 MONTH/ 1 YEAR'].join('\r\n'),
+    });
+    // As table T351P stores it: ZAEHL for the package, ZYKZT in seconds.
+    const T351P = (): CockpitFile => ({
+        name: 'T351P.csv',
+        text: ['MANDT,STRAT,ZAEHL,ZEIEH,ZYKZT,HIERA', '100,MONWOH,01,MON,2592000,01', '100,MONWOH,02,MON,7776000,02'].join('\r\n'),
+    });
+    const STRATEGY_PLAN = file('maintenancePlan', 'S_MPLA', [
+        { WARPL: '1000', MPTYP: '2', WPTXT: 'Pump strategy plan', STRAT: 'MONWOH', STADT: '01.02.2026' },
+    ]);
+    const PACKS = file('generalTaskList', 'S_MPACK', [
+        { PLNNR: '30009001', PLNAL: '01', VORNR: '0010', STRAT: 'MONWOH', PAKET: '1' },
+        { PLNNR: '30009001', PLNAL: '01', VORNR: '0020', STRAT: 'MONWOH', PAKET: '3' },
+    ]);
+
+    it('is recognised by its columns, whatever the file is called', () => {
+        const s = set(IP11());
+        expect(s.strategyPackages).toHaveLength(3);
+        expect(s.strategyPackages[2]).toMatchObject({ strat: 'MONWOH', paket: '3', cadence: { interval: 12, unit: 'Months' }, from: 'cycle' });
+        expect(s.issues.some(i => /3 strategy package\(s\) read from MONWOH strategy packages\.csv/.test(i.message))).toBe(true);
+    });
+
+    it('reads a raw T351P export, in days — never a guessed month', () => {
+        const s = set(T351P());
+        expect(s.strategyPackages.map(p => [p.paket, p.cadence, p.from])).toEqual([
+            ['1', { interval: 30, unit: 'Days' }, 'seconds'],
+            ['2', { interval: 90, unit: 'Days' }, 'seconds'],
+        ]);
+    });
+
+    it('gives every step its package’s cycle', () => {
+        const { jobplan, issues } = toStrategyRows(set(TASKLIST, OPS, PACKS, IP11()));
+        expect(jobplan[0]).toMatchObject({ package: '1', frequencyinterval: '1', frequencyunit: 'Months' });
+        expect(jobplan[1]).toMatchObject({ package: '3', frequencyinterval: '12', frequencyunit: 'Months' });
+        expect(issues.some(i => /taken from the Maintenance Strategy object/.test(i.message))).toBe(false);
+    });
+
+    it('schedules a strategy plan on the shortest package of its task list', () => {
+        const { recurring, skipped, issues } = toStrategyRows(set(STRATEGY_PLAN, ITEM, TASKLIST, OPS, PACKS, IP11()));
+        expect(skipped).toBe(0);
+        expect(recurring[0]).toMatchObject({ code: '1000/0010', frequencyinterval: '1', frequencyunit: 'Months', strategy: 'MONWOH', nextduedate: '2026-03-01' });
+        expect(issues.some(i => /shortest package on task list 30009001\/01/.test(i.message))).toBe(true);
+    });
+
+    it('falls back to the shortest package of the strategy when the list is not in the set', () => {
+        const { recurring, issues } = toStrategyRows(set(STRATEGY_PLAN, ITEM, IP11()));
+        expect(recurring[0]).toMatchObject({ frequencyinterval: '1', frequencyunit: 'Months' });
+        expect(issues.some(i => /shortest package of strategy MONWOH/.test(i.message))).toBe(true);
+    });
+
+    it('still refuses when the file has nothing for the item’s strategy', () => {
+        const other: CockpitFile = { name: 'x.csv', text: 'STRAT,PAKET,ZYKL1,ZEIEH\r\nWEEKLY,1,1,WCH' };
+        const { recurring, skipped, issues } = toStrategyRows(set(STRATEGY_PLAN, ITEM, other));
+        expect(recurring).toHaveLength(0);
+        expect(skipped).toBe(1);
+        expect(issues.some(i => /no readable package for it/.test(i.message))).toBe(true);
+    });
+
+    it('names a package the steps use that the file does not carry', () => {
+        const partial: CockpitFile = { name: 'x.csv', text: 'STRAT,PAKET,ZYKL1,ZEIEH\r\nMONWOH,1,1,MON' };
+        const { jobplan, issues } = toStrategyRows(set(TASKLIST, OPS, PACKS, partial));
+        expect(jobplan[0].frequencyinterval).toBe('1');
+        expect(jobplan[1].frequencyinterval).toBeUndefined();
+        expect(issues.some(i => /package 3 of strategy MONWOH, which the strategy file does not carry/.test(i.message))).toBe(true);
     });
 });
 

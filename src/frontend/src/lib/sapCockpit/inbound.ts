@@ -19,10 +19,11 @@
  */
 
 import {
-    parseCockpitCsv, parseCockpitFileName, cockpitFolderName, missingMandatory,
+    parseCsv, parseCockpitCsv, parseCockpitFileName, cockpitFolderName, missingMandatory,
     type CockpitSheet,
 } from './dialect';
 import { COCKPIT_OBJECTS, structureSpec, findStructures, type CockpitObjectKey } from './structures';
+import { parseSapCycle, parseSapCycleText, type Cadence } from '../../eam/lib/sapCycles';
 
 // -- Files in, sheets out ---------------------------------------------------
 
@@ -80,19 +81,108 @@ export function objectOfFile(fileName: string): { object: CockpitObjectKey | nul
     return { object: null, ambiguous: matches.length > 1 };
 }
 
+/**
+ * One maintenance package of a strategy, with its cycle.
+ *
+ * This is the one thing the five PM migration objects do NOT carry. SAP's own
+ * documentation for PM - Maintenance plan lists "cycle information for
+ * strategy plans" as out of scope — "this is taken from the Maintenance
+ * Strategy object" — and there is no migration object for strategies: they
+ * are configuration (IP11), created on the target before plans are loaded.
+ * So a strategy plan's cadence has to come from the SOURCE system's strategy
+ * configuration, as a file of its own alongside the cockpit downloads.
+ */
+export interface StrategyPackage {
+    strat: string;
+    /** PAKET (as displayed) or ZAEHL (as stored in T351P) — the package number. */
+    paket: string;
+    cadence: Cadence | null;
+    /** Package short text, when the file carries it (T351X.KTEX1). */
+    text: string;
+    /** Where the cycle came from — a display value, raw seconds, or the text. */
+    from: 'cycle' | 'seconds' | 'text' | 'none';
+}
+
 export interface CockpitSet {
     sheets: CockpitSheetRead[];
+    /** Strategy packages from a sidecar file (IP11 / T351P export), if one came with the set. */
+    strategyPackages: StrategyPackage[];
     issues: CockpitIssue[];
+}
+
+/**
+ * A file of strategy packages, recognised by its columns rather than its
+ * name: STRAT and ZEIEH, a package number (PAKET as IP11 shows it, ZAEHL as
+ * table T351P stores it) and a cycle (ZYKL1 as displayed, ZYKZT as T351P
+ * stores it — a float in SECONDS). Any export of the strategy from the source
+ * system fits, whatever it was called.
+ */
+export function isStrategyPackageFile(columns: string[]): boolean {
+    const c = new Set(columns.map(x => x.trim().toUpperCase()));
+    return c.has('STRAT') && c.has('ZEIEH')
+        && (c.has('PAKET') || c.has('ZAEHL'))
+        && (c.has('ZYKL1') || c.has('ZYKZT') || c.has('KTEX1'));
+}
+
+const SECONDS_PER_DAY = 86400;
+
+/** One package row -> its cadence, and where that cadence came from. */
+export function strategyPackageOf(r: Record<string, string>): StrategyPackage | null {
+    const strat = (r.STRAT ?? '').trim();
+    const paket = (r.PAKET ?? r.ZAEHL ?? '').trim().replace(/^0+(?=\d)/, '');
+    if (!strat || !paket) return null;
+    const text = (r.KTEX1 ?? '').trim();
+
+    // As IP11 displays it: "1" + "MON".
+    const shown = parseSapCycle(r.ZYKL1, r.ZEIEH);
+    if (shown) return { strat, paket, cadence: shown, text, from: 'cycle' };
+
+    // As T351P stores it: a float in seconds. Expressed in DAYS, exactly,
+    // rather than converted to a month or a year with a constant this module
+    // would have to assume — 30 days is not "1 month" in SAP's own arithmetic
+    // and a wrong constant would drift every schedule by days per year.
+    const secs = Number(String(r.ZYKZT ?? '').replace(',', '.'));
+    if (Number.isFinite(secs) && secs > 0) {
+        const days = secs / SECONDS_PER_DAY;
+        return { strat, paket, cadence: { interval: Math.round(days), unit: 'Days' }, text, from: 'seconds' };
+    }
+
+    // As the package text says it: "12 MONTH/ 1 YEAR".
+    const fromText = parseSapCycleText(text);
+    if (fromText) return { strat, paket, cadence: fromText, text, from: 'text' };
+
+    return { strat, paket, cadence: null, text, from: 'none' };
 }
 
 /** Read a downloaded set — the CSVs of one or more objects — into sheets. */
 export function readCockpitSet(files: CockpitFile[]): CockpitSet {
     const issues = new Issues();
     const sheets: CockpitSheetRead[] = [];
+    const strategyPackages: StrategyPackage[] = [];
     for (const f of files) {
         const named = parseCockpitFileName(f.name);
         const { object, ambiguous } = objectOfFile(f.name);
         if (!named || !object) {
+            // Not a cockpit structure — but it may be the strategy export the
+            // cockpit cannot provide, in which case it is the most valuable
+            // file in the set.
+            const probe = /\.csv$/i.test(f.name) ? parseCsv(f.text) : [];
+            if (probe.length > 0 && isStrategyPackageFile(probe[0])) {
+                const cols = probe[0].map(c => c.trim().toUpperCase());
+                let unreadable = 0;
+                for (const row of probe.slice(1)) {
+                    if (!row.some(c => c.trim())) continue;
+                    const rec: Record<string, string> = {};
+                    cols.forEach((c, i) => { rec[c] = (row[i] ?? '').trim(); });
+                    const pkg = strategyPackageOf(rec);
+                    if (!pkg) continue;
+                    if (!pkg.cadence) unreadable += 1;
+                    strategyPackages.push(pkg);
+                }
+                issues.add('info', `${strategyPackages.length} strategy package(s) read from ${f.name.split(/[\\/]/).pop()} — the cycles the cockpit download cannot carry`, false);
+                if (unreadable) issues.add('warn', `${unreadable} strategy package(s) carry no readable cycle (no ZYKL1/ZEIEH, no ZYKZT, no cycle in KTEX1) — steps in those packages import with no cadence`, false);
+                continue;
+            }
             issues.add('warn', ambiguous
                 ? `${named?.structure} belongs to more than one migration object — keep the file in its "Source data for ..." folder so it can be told apart; skipped`
                 : `${f.name} is not a migration-cockpit source file — skipped`, false);
@@ -114,7 +204,7 @@ export function readCockpitSet(files: CockpitFile[]): CockpitSet {
 
         sheets.push({ ...sheet, object, file: f.name });
     }
-    return { sheets, issues: issues.list() };
+    return { sheets, strategyPackages, issues: issues.list() };
 }
 
 // -- Values -----------------------------------------------------------------
