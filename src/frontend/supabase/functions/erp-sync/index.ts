@@ -84,6 +84,32 @@ const instant = (ts: string | null | undefined): number => (ts ? new Date(ts).ge
 const bump = (s: Stats, k: string, n = 1) => { s[k] = (s[k] ?? 0) + n; };
 const nowIso = () => new Date().toISOString();
 
+const isUuid = (s: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+/**
+ * erp_outbox.document_id and erp_object_map.entity_id are UUIDs; recurring_work.id
+ * is text and 5 of 12 rows on production are not UUID-shaped ("RCM-…"). A
+ * schedule's link identity is therefore its id when that is a UUID, else a
+ * deterministic UUID v5 of it — the same text always yields the same id, so
+ * the trail and the map stay stable. specFor() reverses it by scanning the
+ * few non-UUID rows.
+ */
+const LINK_NAMESPACE = '4c1e9a2e-7b3d-5f6a-9c8d-2e1f0a3b4c5d';
+async function uuid5(name: string): Promise<string> {
+    const ns = LINK_NAMESPACE.replace(/-/g, '');
+    const nsBytes = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) nsBytes[i] = parseInt(ns.slice(i * 2, i * 2 + 2), 16);
+    const nameBytes = new TextEncoder().encode(name);
+    const input = new Uint8Array(nsBytes.length + nameBytes.length);
+    input.set(nsBytes); input.set(nameBytes, nsBytes.length);
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-1', input)).slice(0, 16);
+    hash[6] = (hash[6] & 0x0f) | 0x50;
+    hash[8] = (hash[8] & 0x3f) | 0x80;
+    const hex = Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+const linkIdOf = async (rowId: string): Promise<string> => (isUuid(rowId) ? rowId.toLowerCase() : uuid5(`recurring_work:${rowId}`));
+
 // ── HTTP to the target ───────────────────────────────────────────────────────
 
 const tokenCache = new Map<string, string>();
@@ -191,6 +217,7 @@ interface SendSpec {
     label: string;                 // what a person calls it: the tag, the point name
     map: MapRow | undefined;       // existing mapping → PATCH; none → POST
     createOnly?: boolean;          // documents: never PATCH, once created they are done
+    rowId?: string;                // the table's own id when it is not the link id (recurring_work text ids)
 }
 
 /** Exactly-once, before the wire. Returns the live row to send, or null when this version is done or waiting. */
@@ -314,10 +341,16 @@ async function specFor(sb: SupabaseClient, t: Target, row: OutboxRow): Promise<S
             return { set: 'A_MaintenanceNotification', entityType: 'request', externalType: 'QMEL', entityId: r.id, label: r.request_number, map: (await mapsFor(sb, co, 'request', [r.id])).get(r.id) };
         }
         case 'pm_cycle_revision': {
+            type P = { id: string; code: string | null; origin: Json | null };
             const { data } = await sb.from('recurring_work').select('id, code, origin').eq('company_id', co).eq('id', row.document_id).maybeSingle();
-            if (!data) return null;
-            const p = data as { id: string; code: string | null; origin: Json | null };
-            return planSpec(sb, t, p);
+            let p = (data as P | null) ?? null;
+            if (!p) {
+                // A text id: find the row whose derived link id is this document.
+                const { data: texts } = await sb.from('recurring_work').select('id, code, origin').eq('company_id', co).not('id', 'ilike', '________-____-____-____-____________');
+                for (const cand of (texts ?? []) as P[]) { if ((await linkIdOf(cand.id)) === row.document_id) { p = cand; break; } }
+            }
+            if (!p) return null;
+            return planSpec(sb, t, p, row.document_id);
         }
         default: return null;
     }
@@ -828,14 +861,14 @@ async function workIn(sb: SupabaseClient, t: Target, rule: FamilyRule, headers: 
 const SCHEDULE_COLS = 'id, code, title, description, frequency_interval, frequency_unit, schedule_type, active, origin, updated_at';
 
 /** The send spec for a schedule: the SAP plan it came from is the key; the map is created on first send. */
-async function planSpec(sb: SupabaseClient, t: Target, p: { id: string; code: string | null; origin: Json | null }): Promise<SendSpec | null> {
+async function planSpec(sb: SupabaseClient, t: Target, p: { id: string; code: string | null; origin: Json | null }, linkId: string): Promise<SendSpec | null> {
     const plan = String(p.origin?.plan ?? '').trim();
     if (!plan) return null;
-    const map = (await mapsFor(sb, t.company_id, 'recurring_work', [p.id])).get(p.id)
+    const map = (await mapsFor(sb, t.company_id, 'recurring_work', [linkId])).get(linkId)
         // Not mapped yet: the plan number came with the import. Behave as mapped
         // (PATCH the plan); the map row is written after the first success.
-        ?? { id: '', entity_id: p.id, external_key: plan, external_type: 'MPLA' as const, etag: null, last_synced_at: null };
-    return { set: 'A_MaintenancePlan', entityType: 'recurring_work', externalType: 'MPLA', entityId: p.id, label: `${p.code ?? p.id} (plan ${plan})`, map };
+        ?? { id: '', entity_id: linkId, external_key: plan, external_type: 'MPLA' as const, etag: null, last_synced_at: null };
+    return { set: 'A_MaintenancePlan', entityType: 'recurring_work', externalType: 'MPLA', entityId: linkId, rowId: p.id, label: `${p.code ?? p.id} (plan ${plan})`, map };
 }
 
 /**
@@ -863,11 +896,12 @@ async function sendPlan(sb: SupabaseClient, t: Target, owner: Owner, headers: Re
     }
     const key = await send(sb, t, owner, headers, row, spec, stats);
     if (!key) return;
-    const { data: cur } = await sb.from('recurring_work').select('origin').eq('company_id', t.company_id).eq('id', spec.entityId).maybeSingle();
+    const rowId = spec.rowId ?? spec.entityId;
+    const { data: cur } = await sb.from('recurring_work').select('origin').eq('company_id', t.company_id).eq('id', rowId).maybeSingle();
     const cycle: SapCycle = { MaintPlanCycle: Number(row.payload.MaintPlanCycle), MaintPlanCycleUnit: String(row.payload.MaintPlanCycleUnit) as SapCycle['MaintPlanCycleUnit'] };
     const { error } = await sb.from('recurring_work')
         .update({ origin: sentStamp(((cur as { origin: Json | null } | null)?.origin) ?? null, cycle, `live link · ${t.name}`, nowIso()) })
-        .eq('company_id', t.company_id).eq('id', spec.entityId);
+        .eq('company_id', t.company_id).eq('id', rowId);
     if (error) throw new Error(`recurring_work stamp ${spec.label}: ${error.message}`);
 }
 
@@ -904,13 +938,15 @@ async function reliabilityOut(sb: SupabaseClient, t: Target, rule: FamilyRule, h
         processed.push(sch.updated_at);
         const d = decideCycle(sch);
         if (d.kind === 'in_sync') { bump(stats, 'out_in_sync'); continue; }
+        if (d.kind === 'skip' && d.stat === 'out_not_from_sap') { bump(stats, d.stat); continue; }   // a native schedule: not SAP's business
+        const lid = await linkIdOf(sch.id);
         if (d.kind === 'skip') {
-            // Not-from-SAP is the common case for a native schedule: no row, just a count.
-            if (d.stat !== 'out_not_from_sap' && !dryRun) {
-                await sb.from('erp_outbox').insert({
+            if (!dryRun) {
+                const { error: e } = await sb.from('erp_outbox').insert({
                     company_id: t.company_id, target_id: t.id, family: 'reliability', direction: 'OUT', document_type: 'pm_cycle_revision',
-                    document_id: sch.id, document_version: sch.updated_at, document_key: sch.code ?? sch.id, status: 'skipped', payload: { schedule: sch.code ?? sch.id }, reason: d.reason,
-                }).then(({ error: e }) => { if (e && e.code !== '23505') throw new Error(`outbox skip: ${e.message}`); });
+                    document_id: lid, document_version: sch.updated_at, document_key: sch.code ?? sch.id, status: 'skipped', payload: { schedule: sch.code ?? sch.id }, reason: d.reason,
+                });
+                if (e && e.code !== '23505') throw new Error(`outbox skip: ${e.message}`);
             }
             bump(stats, d.stat);
             continue;
@@ -918,7 +954,7 @@ async function reliabilityOut(sb: SupabaseClient, t: Target, rule: FamilyRule, h
         const doc = toMaintenancePlanDoc(sch, d.plan, d.cycle) as unknown as Json;
         // Supersession: a waiting, unapproved document for this schedule is replaced, not joined.
         const { data: waiting } = await sb.from('erp_outbox').select('id')
-            .eq('target_id', t.id).eq('family', 'reliability').eq('document_id', sch.id).eq('status', 'pending').is('approved_at', null).limit(1);
+            .eq('target_id', t.id).eq('family', 'reliability').eq('document_id', lid).eq('status', 'pending').is('approved_at', null).limit(1);
         if ((waiting ?? []).length) {
             const { error: upErr } = await sb.from('erp_outbox').update({ payload: doc, document_version: sch.updated_at, reason: d.reason }).eq('id', (waiting as { id: string }[])[0].id);
             if (upErr) throw new Error(`outbox supersede: ${upErr.message}`);
@@ -926,7 +962,7 @@ async function reliabilityOut(sb: SupabaseClient, t: Target, rule: FamilyRule, h
             bump(stats, 'out_awaiting_approval');
             continue;
         }
-        const row = await liveRow(sb, t, 'reliability', 'pm_cycle_revision', sch.id, sch.updated_at, sch.code ?? sch.id, doc, stats, d.reason);
+        const row = await liveRow(sb, t, 'reliability', 'pm_cycle_revision', lid, sch.updated_at, sch.code ?? sch.id, doc, stats, d.reason);
         if (!row) continue;
         if (dryRun) { await markDryRun(sb, row, stats); continue; }
         // Queued. It leaves here only when a person approves it (constraint erp_outbox_reliability_needs_approval).
