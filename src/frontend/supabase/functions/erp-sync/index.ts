@@ -51,6 +51,9 @@ import {
     type LinkRequest, type OrderDoc,
 } from './lib/work.ts';
 import { decide as decideCycle, sentStamp, toMaintenancePlanDoc, type LinkSchedule, type SapCycle } from './lib/reliability.ts';
+import { mapCostPosting, mapGoodsMovement, mapGoodsReceipt, mapSupplierInvoice, type Mapped } from './lib/mapToCanonical.ts';
+import type { CanonicalDocument } from './lib/canonical.ts';
+import { FINANCE_ROUTE, toFinancePayload, type FinanceKind } from './lib/financeLink.ts';
 
 type Json = Record<string, unknown>;
 type Mode = 'sync' | 'dry_run' | 'test' | 'sim_edit' | 'sim_reset';
@@ -63,8 +66,9 @@ interface Target {
     dry_run: boolean; is_active: boolean; watermarks: Watermarks | null; last_run_at: string | null;
 }
 /** External object types the link maps: SAP's own table names, so a planner recognises them. */
-type ExternalType = SapObjectType | 'IMPT' | 'IMRG' | 'QMEL' | 'AUFK' | 'MPLA';
-type EntityType = 'asset' | 'reading_definition' | 'reading_log' | 'request' | 'work_order' | 'recurring_work';
+type ExternalType = SapObjectType | 'IMPT' | 'IMRG' | 'QMEL' | 'AUFK' | 'MPLA' | 'BKPF' | 'MKPF' | 'RBKP';
+type EntityType = 'asset' | 'reading_definition' | 'reading_log' | 'request' | 'work_order' | 'recurring_work'
+    | 'cost_allocation' | 'inventory_transaction' | 'goods_receipt' | 'supplier_invoice';
 interface MapRow { id: string; entity_id: string; external_key: string; external_type: ExternalType | null; etag: string | null; last_synced_at: string | null }
 interface Stats { [k: string]: number }
 
@@ -931,6 +935,115 @@ async function reliabilityOut(sb: SupabaseClient, t: Target, rule: FamilyRule, h
     return settleWatermark(wm, processed, []);
 }
 
+// ── Finance: the canonical documents, exactly once, on the same outbox ───────
+
+const collect = (results: Mapped<CanonicalDocument>[], docs: CanonicalDocument[], skipped: { document_id: string; reason: string }[]) => {
+    for (const r of results) { if ('doc' in r) docs.push(r.doc); else skipped.push({ document_id: r.skipped.document_id, reason: r.skipped.reason }); }
+};
+
+/**
+ * Four streams, each with its own watermark on the instant the fact was
+ * recorded: cost postings (created_at), stock movements (moved_at), goods
+ * receipts (created_at), supplier invoices (created_at). The documents are
+ * the same canonical ones the nightly file lane renders (mapToCanonical);
+ * here each is sent once (the finance index) as an S/4 document.
+ */
+async function financeOut(sb: SupabaseClient, t: Target, rule: FamilyRule, headers: Record<string, string>, dryRun: boolean, stats: Stats): Promise<Partial<Record<'out' | 'movements_out' | 'receipts_out' | 'invoices_out', string | null>>> {
+    if (!dryRun) await retryDue(sb, t, 'finance', rule.owner, headers, stats);
+    const { data: company } = await sb.from('companies').select('code, app_settings').eq('id', t.company_id).maybeSingle();
+    const currency = ((company as { app_settings?: Record<string, string> } | null)?.app_settings?.currency) || 'USD';
+    const companyMap = await mapByExternalAny(sb, t.company_id, 'company');
+    const companyCode = companyMap?.external_key ?? String((company as { code?: string } | null)?.code ?? '');
+
+    const streams: { key: 'out' | 'movements_out' | 'receipts_out' | 'invoices_out'; ts: string; load: (since: string | null) => Promise<{ docs: CanonicalDocument[]; skipped: { document_id: string; reason: string }[]; stamps: string[] }> }[] = [
+        {
+            key: 'out', ts: 'created_at', load: async (since) => {
+                let q = sb.from('cost_allocations').select('*, work_orders(wo_number), assets(tag), cost_centers(code, gl_account)').eq('company_id', t.company_id).order('created_at').limit(BATCH);
+                if (since) q = q.gt('created_at', since);
+                const { data, error } = await q; if (error) throw new Error(`cost postings: ${error.message}`);
+                const rows = (data ?? []) as Record<string, unknown>[];
+                const docs: CanonicalDocument[] = []; const skipped: { document_id: string; reason: string }[] = [];
+                collect(rows.map((r) => mapCostPosting(r, currency)), docs, skipped);
+                return { docs, skipped, stamps: rows.map((r) => String(r.created_at)) };
+            },
+        },
+        {
+            key: 'movements_out', ts: 'moved_at', load: async (since) => {
+                let q = sb.from('sem_stock_movements').select('*').eq('company_id', t.company_id).order('moved_at').limit(BATCH);
+                if (since) q = q.gt('moved_at', since);
+                const { data, error } = await q; if (error) throw new Error(`goods movements: ${error.message}`);
+                const rows = (data ?? []) as Record<string, unknown>[];
+                const docs: CanonicalDocument[] = []; const skipped: { document_id: string; reason: string }[] = [];
+                collect(rows.map(mapGoodsMovement), docs, skipped);
+                return { docs, skipped, stamps: rows.map((r) => String(r.moved_at)) };
+            },
+        },
+        {
+            key: 'receipts_out', ts: 'created_at', load: async (since) => {
+                let q = sb.from('goods_receipts').select('*, purchase_orders(po_code), purchase_order_lines(line_no), inventory_items(material_number, part_number)').eq('company_id', t.company_id).order('created_at').limit(BATCH);
+                if (since) q = q.gt('created_at', since);
+                const { data, error } = await q; if (error) throw new Error(`goods receipts: ${error.message}`);
+                const rows = (data ?? []) as Record<string, unknown>[];
+                const docs: CanonicalDocument[] = []; const skipped: { document_id: string; reason: string }[] = [];
+                collect(rows.map(mapGoodsReceipt), docs, skipped);
+                return { docs, skipped, stamps: rows.map((r) => String(r.created_at)) };
+            },
+        },
+        {
+            key: 'invoices_out', ts: 'created_at', load: async (since) => {
+                let q = sb.from('invoice_matches').select('id, created_at').eq('company_id', t.company_id).order('created_at').limit(BATCH);
+                if (since) q = q.gt('created_at', since);
+                const { data, error } = await q; if (error) throw new Error(`supplier invoices: ${error.message}`);
+                const heads = (data ?? []) as { id: string; created_at: string }[];
+                const docs: CanonicalDocument[] = []; const skipped: { document_id: string; reason: string }[] = [];
+                if (heads.length) {
+                    const { data: sem, error: semErr } = await sb.from('sem_invoice_matches').select('*').eq('company_id', t.company_id).in('invoice_id', heads.map((h) => h.id));
+                    if (semErr) throw new Error(`supplier invoices (semantic): ${semErr.message}`);
+                    collect(((sem ?? []) as Record<string, unknown>[]).map(mapSupplierInvoice), docs, skipped);
+                }
+                return { docs, skipped, stamps: heads.map((h) => h.created_at) };
+            },
+        },
+    ];
+
+    const out: Partial<Record<'out' | 'movements_out' | 'receipts_out' | 'invoices_out', string | null>> = {};
+    for (const s of streams) {
+        const wm = watermarkOf(t.watermarks, 'finance', s.key);
+        const { docs, skipped, stamps } = await s.load(wm);
+        for (const sk of skipped) {
+            bump(stats, 'out_not_postable');
+            if (!dryRun && /^[0-9a-f-]{36}$/i.test(sk.document_id)) {
+                const { error } = await sb.from('erp_outbox').insert({
+                    company_id: t.company_id, target_id: t.id, family: 'finance', direction: 'OUT', document_type: 'finance_document',
+                    document_id: sk.document_id, document_version: nowIso(), document_key: sk.document_id.slice(0, 8), status: 'skipped', payload: {}, reason: `Not postable: ${sk.reason}.`,
+                });
+                if (error && error.code !== '23505') throw new Error(`outbox skip: ${error.message}`);
+            }
+        }
+        for (const d of docs) {
+            if (d.kind === 'purchase_order_line') continue;
+            const kind = d.kind as FinanceKind;
+            const route = FINANCE_ROUTE[kind];
+            const payload = toFinancePayload(d, companyCode);
+            if (!payload) continue;
+            const key = d.external_key ?? ('receipt_number' in d ? d.receipt_number : 'invoice_number' in d ? d.invoice_number : d.document_id.slice(0, 8));
+            // Exactly-once is per document for finance (the index ignores the version); the version is still the fact's date.
+            const row = await liveRow(sb, t, 'finance', kind, d.document_id, `${d.document_date}T00:00:00.000Z`, key, payload.body, stats);
+            if (!row) continue;
+            if (dryRun) { await markDryRun(sb, row, stats); continue; }
+            await send(sb, t, rule.owner, headers, row, { set: payload.set, entityType: route.entityType, externalType: route.externalType, entityId: d.document_id, label: `${kind.replace(/_/g, ' ')} ${key}`, map: undefined, createOnly: true }, stats);
+        }
+        out[s.key] = settleWatermark(wm, stamps, []);
+    }
+    return out;
+}
+
+/** The tenant's own external key for an entity type with a single row (the company code). */
+async function mapByExternalAny(sb: SupabaseClient, companyId: string, entityType: string): Promise<{ external_key: string } | null> {
+    const { data } = await sb.from('erp_object_map').select('external_key').eq('company_id', companyId).eq('system', 'SAP').eq('entity_type', entityType).eq('active', true).limit(1).maybeSingle();
+    return (data as { external_key: string } | null) ?? null;
+}
+
 // ── One target ───────────────────────────────────────────────────────────────
 
 interface Report { target_id: string; name: string; run_id: string | null; status: 'done' | 'failed' | 'busy' | 'skipped'; dry_run: boolean; stats: Stats; error: string | null }
@@ -981,6 +1094,11 @@ async function runTarget(sb: SupabaseClient, t: Target, mode: Mode, direction: D
         if (wk && inn && flows(wk, 'in')) w = withWatermark(w, 'work', 'in', await workIn(sb, { ...t, watermarks: w }, wk, headers, dryRun, stats));
         const rl = t.families?.reliability;
         if (rl && out && flows(rl, 'out')) w = withWatermark(w, 'reliability', 'out', await reliabilityOut(sb, { ...t, watermarks: w }, rl, headers, dryRun, stats));
+        const fi = t.families?.finance;
+        if (fi && out && flows(fi, 'out')) {
+            const r = await financeOut(sb, { ...t, watermarks: w }, fi, headers, dryRun, stats);
+            for (const k of ['out', 'movements_out', 'receipts_out', 'invoices_out'] as const) if (k in r) w = withWatermark(w, 'finance', k, r[k] ?? null);
+        }
         // Watermarks move only after the rows above are committed (they are —
         // every write was its own statement), and never on a dry run.
         if (!dryRun) {

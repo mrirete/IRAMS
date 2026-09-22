@@ -36,7 +36,7 @@ export const FAMILY_PHASE: Record<Family, 1 | 2 | 3> = {
 
 /** Which families the worker actually carries today. The rule is saved for all of them; only these flow. */
 export const FAMILY_LIVE: Record<Family, boolean> = {
-    master_data: true, condition: true, work: true, reliability: false, finance: false,
+    master_data: true, condition: true, work: true, reliability: true, finance: true,
 };
 
 /**
@@ -318,7 +318,7 @@ export function backoffMinutes(attempts: number): number {
  * points (by updated_at) and documents (by created_at), each with its own
  * high-water mark. `in`/`out` are the family's main stream.
  */
-export type WatermarkKey = 'in' | 'out' | 'docs_in' | 'docs_out';
+export type WatermarkKey = 'in' | 'out' | 'docs_in' | 'docs_out' | 'movements_out' | 'receipts_out' | 'invoices_out';
 export type FamilyState = Partial<Record<WatermarkKey, string | null>>;
 export type Watermarks = Partial<Record<Family, FamilyState>>;
 

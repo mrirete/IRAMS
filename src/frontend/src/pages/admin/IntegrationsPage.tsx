@@ -68,6 +68,8 @@ const DOC_WORD: Record<string, string> = {
     measuring_point: 'Measuring point', measurement_document: 'Reading',
     notification: 'Request → notification', order: 'SAP order → work order',
     pm_cycle_revision: 'PM cycle → maintenance plan',
+    cost_posting: 'Cost posting → journal entry', goods_movement: 'Goods movement → material document',
+    goods_receipt: 'Goods receipt → material document', supplier_invoice: 'Supplier invoice', finance_document: 'Finance document',
 };
 const docWord = (t: string) => DOC_WORD[t] ?? t.replace(/_/g, ' ');
 
@@ -79,6 +81,7 @@ const recordHref = (row: OutboxRow): string => {
         case 'notification': return '/requests';
         case 'order': return `/work-orders/${encodeURIComponent(row.document_id)}`;
         case 'pm_cycle_revision': return '/recurring-work';
+        case 'cost_posting': case 'goods_movement': case 'goods_receipt': case 'supplier_invoice': case 'finance_document': return '/finops';
         default: return `/assets?id=${encodeURIComponent(row.document_id)}`;
     }
 };
@@ -95,7 +98,7 @@ const STAT_WORDS: [string, string][] = [
     ['out_request_not_sent', 'requests kept back'], ['in_status_moved', 'order statuses moved'],
     ['out_awaiting_approval', 'cycle changes awaiting approval'], ['out_superseded', 'waiting changes superseded'],
     ['out_strategy_plan_skipped', 'strategy plans (change in IP11)'], ['out_meter_cycle_skipped', 'counter plans not carried'],
-    ['out_plan_created_in_sim', 'plans created in the simulator'],
+    ['out_plan_created_in_sim', 'plans created in the simulator'], ['out_not_postable', 'documents not postable (see trail)'],
     ['equipment_seen', 'equipment visible'], ['deleted', 'removed'],
 ];
 const statsText = (s: Record<string, number> | null | undefined): string => {
