@@ -43,12 +43,12 @@ describe('ready for a study?', () => {
         expect(r.canRun).toContain('Weibull and MTBF');   // runs, with the caveat stated
     });
 
-    it('cost coverage below half is partial, with the SAP columns named', () => {
+    it('cost coverage below half is partial, with the cost columns named', () => {
         const r = studyReadiness({ ...empty, assets: 10, workOrders: 66, workOrdersWithCost: 20 });
         const c = byKey(r).cost;
         expect(c.status).toBe('partial');
         expect(c.have).toBe('20 of 66 orders carry cost');
-        expect(c.because).toMatch(/actual costs on the order/);
+        expect(c.because).toMatch(/actual labour and material cost on each order/);
         expect(r.blocked.find(b => b.study === 'Money-ranked findings')!.needs).toBe('cost on work orders');
     });
 
