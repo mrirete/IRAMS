@@ -182,8 +182,12 @@ export const MigrationCenterPage: React.FC = () => {
     const confirm = useConfirm();
     const { state } = useLocation();
     const origin = (state ?? {}) as MigrationOrigin;
-    const backTo = origin.to ?? '/specialist';
-    const backLabel = origin.label ?? 'Workspace';
+    // The page lives under Admin (Sidebar › Admin › Migration Center), so with
+    // no origin in the navigation state it returns to Admin — not to the
+    // Reliability Specialist workspace. Callers that come from elsewhere
+    // (Dashboard, Import wizard, Specialist) pass their own { to, label }.
+    const backTo = origin.to ?? '/eam-admin';
+    const backLabel = origin.label ?? 'Admin';
     const [counts, setCounts] = useState<Counts | null>(null);
     const [openType, setOpenType] = useState<ImportType | null>(null);
     const [pidOpen, setPidOpen] = useState(false);

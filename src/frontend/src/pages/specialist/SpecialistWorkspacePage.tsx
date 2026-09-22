@@ -390,7 +390,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         title="One CMMS export file — mapped by the Specialist, assessment in minutes">
                         <UploadCloud size={14} /> Quick import
                     </button>
-                    <button onClick={() => navigate('/admin/migration')}
+                    <button onClick={() => navigate('/admin/migration', { state: { to: '/specialist', label: 'Specialist workspace' } })}
                         title="Register, people, stock, schedules and history — moved across in the right order"
                         className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary-300 bg-white px-3.5 h-10 sm:h-9 text-[13px] font-semibold text-primary-700 transition-colors hover:bg-primary-50 flex-1 sm:flex-none">
                         Full migration
