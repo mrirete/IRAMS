@@ -83,7 +83,8 @@ const chunk = <T,>(arr: T[], size: number): T[][] => {
  * SAP MM is on ONE system as far as an adapter is concerned, and splitting
  * them would mean two mappings for one vendor.
  */
-const EXTERNAL_SYSTEM: Record<string, string> = {
+/** The name erp_object_map records a source system under. Shared with the Specialist's history importer so both doors map identically. */
+export const EXTERNAL_SYSTEM: Record<string, string> = {
     sap_pm: 'SAP',
     maximo: 'MAXIMO',
     maintainx: 'MAINTAINX',

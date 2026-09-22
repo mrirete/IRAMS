@@ -13,6 +13,7 @@
  */
 import { supabase } from '../lib/supabase';
 import type { AppliedImport, DqReport, ImportMapping, WoDraft } from '../../lib/importPipeline';
+import { EXTERNAL_SYSTEM } from './bulkImportService';
 
 export interface ImportBatch {
     id: string;
@@ -178,6 +179,29 @@ class ImportService {
         const unplaced = newAssets.filter((a) => !a.parent_tag).length;
         if (unplaced > 0) {
             notes.push(`${unplaced} asset(s) were created from history without a parent — they sit at the top of the register flagged "placement needed". Import the register through Assets › Import (hierarchyLevel + parentTag), or set parents in the Asset Register, to place them.`);
+        }
+
+        // Keep their ids (0275/0388) — the same rule as the Asset Register
+        // importer: a SAP or Maximo export carries the numbers THEIR system
+        // knows these assets by. Recorded now, the live link (Integrations)
+        // finds them already mapped instead of creating them a second time.
+        // A spreadsheet has no stable identity on the other side and is skipped.
+        const { data: batch } = await supabase.from('import_batches').select('source_system').eq('id', batchId).maybeSingle();
+        const sourceSystem = String((batch as { source_system?: string } | null)?.source_system ?? '');
+        if (sourceSystem && sourceSystem !== 'spreadsheet' && sourceSystem !== 'unknown') {
+            const pairs = applied.assets
+                .map((a) => ({ entity_id: idByTag.get(a.tag), external_key: (a.equipment_number ?? '').trim() }))
+                .filter((p) => p.entity_id && p.external_key);
+            if (pairs.length > 0) {
+                const { data: mapped, error } = await supabase.rpc('ers_map_external_ids', {
+                    p_entity_type: 'asset',
+                    p_system: EXTERNAL_SYSTEM[sourceSystem] ?? sourceSystem.toUpperCase(),
+                    p_pairs: pairs,
+                });
+                // Advisory: the history is imported either way, and the mapping can be rebuilt from the same file.
+                if (error) notes.push(`External ids not recorded (${error.message}) — the import itself is unaffected.`);
+                else if (mapped) notes.push(`${mapped} equipment number(s) recorded as ${EXTERNAL_SYSTEM[sourceSystem] ?? sourceSystem} identities — Integrations will recognise these assets as SAP's.`);
+            }
         }
 
         // 2b. Parent links (B9) — second pass, after every row exists, so a
