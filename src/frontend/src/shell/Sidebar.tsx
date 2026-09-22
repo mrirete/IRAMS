@@ -67,6 +67,7 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     '/eam-admin': 'admin',
     '/admin/connectors': 'admin',
     '/admin/connectors/new': 'admin',
+    '/admin/integrations': 'admin',
     '/admin/api-keys': 'admin',
     '/admin/settings': 'admin',
     '/admin/hierarchy': 'admin',
@@ -417,6 +418,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 </NavLink>
                                 <NavLink to="/admin/connectors" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Connector Hub
+                                </NavLink>
+                                <NavLink to="/admin/integrations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                                    Integrations
                                 </NavLink>
                                 <NavLink to="/admin/api-keys" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     API Keys

@@ -21,3 +21,9 @@ verify_jwt = false
 
 [functions.ingest-work-orders]
 verify_jwt = false
+
+[functions.erp-sync]
+verify_jwt = false
+
+[functions.sap-sim]
+verify_jwt = false

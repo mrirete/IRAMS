@@ -383,6 +383,19 @@ COMMENT ON COLUMN public.erp_object_map.etag IS
 COMMENT ON COLUMN public.erp_object_map.external_type IS
     'The external system''s object type where entity_type is not enough: an IREAMS asset maps to EQUI (equipment) or IFLOT (functional location); a recurring_work row to MPLA (plan) or MPOS (item).';
 
+-- An equipment number and a functional-location label can be the same string
+-- ('1000' is a valid key for both), and both map to an IREAMS asset. The
+-- external-key uniqueness (0262) therefore has to include the external type.
+-- NULLS NOT DISTINCT keeps the 0250 rows (external_type NULL) as they were:
+-- still one mapping per external key per tenant among themselves.
+ALTER TABLE public.erp_object_map
+    DROP CONSTRAINT IF EXISTS erp_object_map_tenant_external_uq;
+ALTER TABLE public.erp_object_map
+    ADD CONSTRAINT erp_object_map_tenant_external_uq
+        UNIQUE NULLS NOT DISTINCT (company_id, system, entity_type, external_type, external_key);
+COMMENT ON CONSTRAINT erp_object_map_tenant_external_uq ON public.erp_object_map IS
+    'One mapping per external object PER TENANT, per external type: EQUI 1000 and IFLOT 1000 are different objects. Two customers may both use SAP vendor 100234; neither can see the other''s row.';
+
 -- The CHECK was created inline in 0250, so its name is the generated one;
 -- look it up rather than assume, then widen it to the PM objects.
 DO $$

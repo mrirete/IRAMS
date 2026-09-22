@@ -37,6 +37,7 @@ const MigrationCenterPage = lazyWithReload(() => import('./pages/admin/Migration
 const SapLoadCenterPage = lazyWithReload(() => import('./pages/admin/SapLoadCenterPage').then(m => ({ default: m.SapLoadCenterPage })));
 const CockpitImportPage = lazyWithReload(() => import('./pages/admin/CockpitImportPage').then(m => ({ default: m.CockpitImportPage })));
 const ApiKeysPage = lazyWithReload(() => import('./pages/admin/ApiKeysPage').then(m => ({ default: m.ApiKeysPage })));
+const IntegrationsPage = lazyWithReload(() => import('./pages/admin/IntegrationsPage').then(m => ({ default: m.IntegrationsPage })));
 const SpecialistWorkspacePage = lazyWithReload(() => import('./pages/specialist/SpecialistWorkspacePage').then(m => ({ default: m.SpecialistWorkspacePage })));
 const ImportWizardPage = lazyWithReload(() => import('./pages/specialist/ImportWizardPage').then(m => ({ default: m.ImportWizardPage })));
 const AssessmentReportPage = lazyWithReload(() => import('./pages/specialist/AssessmentReportPage').then(m => ({ default: m.AssessmentReportPage })));
@@ -297,6 +298,8 @@ function App() {
                                 {/* Inbound: SAP Migration Cockpit source data → IREAMS. */}
                                 <Route path="/admin/migration/cockpit" element={<PermissionGate module="admin"><CockpitImportPage /></PermissionGate>} />
                                 <Route path="/admin/invitations" element={<PermissionGate module="admin"><InvitationsPage /></PermissionGate>} />
+                                {/* The live link: connected ERPs, dry-run/sync, the exception queue (0383). */}
+                                <Route path="/admin/integrations" element={<PermissionGate module="admin"><IntegrationsPage /></PermissionGate>} />
                                 <Route path="/admin/connectors" element={<PermissionGate module="admin"><ConnectorHub /></PermissionGate>} />
                                 <Route path="/admin/api-keys" element={<PermissionGate module="admin"><ApiKeysPage /></PermissionGate>} />
                                 <Route path="/admin/connectors/new" element={<PermissionGate module="admin"><ConnectorWizard /></PermissionGate>} />
