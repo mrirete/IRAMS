@@ -200,7 +200,12 @@ describe('points and documents together', () => {
     it('turns a point into a definition row — no date, no value', () => {
         const { rows } = toReadingRows(readCockpitSet([points]));
         expect(rows).toHaveLength(3);
-        expect(rows[0]).toEqual({ assettag: '10004711', readingtype: 'VIBRATION', pointname: 'DE bearing horizontal' });
+        expect(rows[0]).toEqual({
+            assettag: '10004711', readingtype: 'VIBRATION', pointname: 'DE bearing horizontal',
+            // SAP's number for the point travels with it (0382), so an export
+            // back names it rather than creating it again.
+            sourceref: '10000001', sourcesystem: 'sap_pm',
+        });
         expect(rows[0].date).toBeUndefined();
         expect(rows[0].value).toBeUndefined();
         expect(rows[2]).toMatchObject({ assettag: 'GT-301', readingtype: 'HOURS', counter: 'X' });
@@ -312,7 +317,7 @@ describe('what the import will not pretend to know', () => {
         ]);
         const { rows, skipped, issues } = toReadingRows(readCockpitSet([points]));
         expect(skipped).toBe(2);
-        expect(rows).toEqual([{ assettag: '4711', readingtype: 'BEARING_TEMP' }]);
+        expect(rows).toEqual([{ assettag: '4711', readingtype: 'BEARING_TEMP', sourceref: '3', sourcesystem: 'sap_pm' }]);
         expect(issues.filter(i => i.level === 'error')).toHaveLength(2);
     });
 
@@ -365,8 +370,8 @@ describe('what the import will not pretend to know', () => {
         const docs = file('measurementDocument', 'S_MEASUREMENT_DOCU', [doc({ id: '4711003', point: '1', reading: '4.2' })]);
         const { rows, issues } = toReadingRows(readCockpitSet([points, docs]));
         expect(rows.find(r => r.value)).toMatchObject({ sourceref: '4711003', sourcesystem: 'sap_pm' });
-        // A point row is not a reading and needs no source key.
-        expect(rows.find(r => !r.value)!.sourceref).toBeUndefined();
+        // The point carries SAP's own number as its source key (0382).
+        expect(rows.find(r => !r.value)).toMatchObject({ sourceref: '1', sourcesystem: 'sap_pm' });
         expect(issues.some(i => /importing this download again inserts nothing/.test(i.message))).toBe(true);
     });
 

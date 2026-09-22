@@ -755,6 +755,13 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
 
     const assets = await fetchAssetsByTag(rows.map(r => r['assettag'] || ''));
 
+    // 0382 may not be applied on this tenant: probe once, and only write the
+    // point's source identity when the columns are there.
+    const pointIdentityColumns = !(await supabase.from('reading_definitions').select('source_ref').limit(1)).error;
+    if (!pointIdentityColumns && rows.some(r => !r['date'] && !r['value'] && (r['sourceref'] || '').trim())) {
+        res.notes!.push('Reading points were created without their source-system id — this database has not been given migration 0382. An export back to that system will not recognise them.');
+    }
+
     // Existing reading points, keyed asset+type (first one wins — where the
     // logs land) and asset+type+name (a pump carries eight VIBRATION points:
     // DE/NDE × horizontal/vertical/axial; they must not collapse into one).
@@ -803,6 +810,14 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
             if (r['unit']) patch.unit = r['unit'];
             if (num(r['minwarning']) !== null) patch.min_warning = num(r['minwarning']);
             if (num(r['maxwarning']) !== null) patch.max_warning = num(r['maxwarning']);
+            // 0382: the source system's id for the point, so an export back to
+            // that system names it rather than creating it again. Written only
+            // when the column exists (stripped on a tenant without 0382).
+            const defRef = (r['sourceref'] || '').trim();
+            if (defRef && pointIdentityColumns) {
+                patch.source_ref = defRef;
+                patch.source_system = (r['sourcesystem'] || '').trim() || 'import';
+            }
             const dk0 = `${asset.id}::${type}`;
             // A named point matches by name; an unnamed one falls back to the
             // asset's first point of that type (the cockpit sheets carry a

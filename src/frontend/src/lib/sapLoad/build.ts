@@ -114,6 +114,9 @@ export interface SrcReadingDefinition {
     min_critical?: number | string | null;
     max_critical?: number | string | null;
     is_active?: boolean | null;
+    /** 0382: the system this point was imported from, and its id there. */
+    source_system?: string | null;
+    source_ref?: string | null;
 }
 
 export interface SrcReadingLog {
@@ -128,6 +131,35 @@ export interface SrcReadingLog {
     entered_by?: string | null;
     comments?: string | null;
     is_active?: boolean | null;
+    valuation_code?: string | null;
+    /** 0381: the system this reading was imported from, and its id there. */
+    source_system?: string | null;
+    source_ref?: string | null;
+}
+
+/** A PM schedule as recurring_work holds it — the cockpit export's plan, item and task list. */
+export interface SrcSchedule {
+    id: string;
+    code?: string | null;
+    title?: string | null;
+    description?: string | null;
+    status?: string | null;
+    active?: boolean | null;
+    asset_id?: string | null;
+    assigned_assets?: { assetId?: string }[] | null;
+    schedule_type?: string | null;
+    frequency_interval?: number | string | null;
+    frequency_unit?: string | null;
+    next_due_date?: string | null;
+    last_generated_date?: string | null;
+    job_type?: string | null;
+    priority_code?: string | null;
+    work_center_id?: string | null;
+    strategy_package?: string | null;
+    origin?: Record<string, unknown> | null;
+    templates?: { tasks?: Record<string, unknown>[]; inventory?: Record<string, unknown>[] } | null;
+    parent_pm_id?: string | null;
+    nesting_mode?: string | null;
 }
 
 export interface SrcVendor { id: string; code?: string | null; name: string }
@@ -189,6 +221,8 @@ export interface SapLoadSource {
     workOrders: SrcWorkOrder[];
     woFailureData: SrcWoFailure[];
     users: SrcUser[];
+    /** Loaded optionally — the cockpit export reads it; the E82 workbook builder does not. */
+    schedules?: SrcSchedule[];
 }
 
 // ── Target-system parameters ────────────────────────────────────────────────

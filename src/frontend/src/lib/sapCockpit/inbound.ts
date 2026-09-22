@@ -368,6 +368,9 @@ export function toReadingRows(set: CockpitSet): ReadingImport {
         const row: Record<string, string> = { assettag: assetTag, readingtype: readingType };
         if (ref.pointName) row.pointname = ref.pointName;
         if (ref.isCounter) row.counter = 'X';
+        // SAP's number for the point (0382): what the export names it by, so
+        // SAP never gets the same point created twice.
+        if (key) { row.sourceref = key; row.sourcesystem = 'sap_pm'; }
         // MRNGU only appears in the FreeText (all fields) download; the
         // mandatory subset has no unit at all.
         const unit = unitOf(r.MRNGU || r.MSEHI || '');

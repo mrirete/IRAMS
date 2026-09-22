@@ -7,7 +7,7 @@
  * tenant's rows and nothing else.
  */
 import { supabase } from '../../eam/lib/supabase';
-import type { SapLoadSource } from './build';
+import type { SapLoadSource, SrcSchedule } from './build';
 
 const PAGE = 1000;
 
@@ -32,11 +32,27 @@ async function fetchOptional<T>(table: string, select: string, order: string): P
     try { return await fetchAll<T>(table, select, order); } catch { return []; }
 }
 
+/**
+ * Columns added by a later migration (0381 / 0382 source identity) may not
+ * exist on every tenant. PostgREST rejects the WHOLE select for one unknown
+ * column, which would take the entire export down for a missing nice-to-have;
+ * so the select is retried without them and the rows come back without those
+ * fields.
+ */
+async function fetchWithOptionalColumns<T>(table: string, select: string, optional: string, order: string): Promise<T[]> {
+    try {
+        return await fetchAll<T>(table, `${select}, ${optional}`, order);
+    } catch (e) {
+        if (!/column|does not exist|PGRST/i.test(e instanceof Error ? e.message : String(e))) throw e;
+        return fetchAll<T>(table, select, order);
+    }
+}
+
 export async function loadSapSource(): Promise<SapLoadSource> {
     const [
         assets, assetFinancials, inventoryItems, stock, stores, bomLines,
         readingDefinitions, readingLogs, vendors, costCenters, companies, workCenters,
-        workOrders, woFailureData, users,
+        workOrders, woFailureData, users, schedules,
     ] = await Promise.all([
         fetchAll<SapLoadSource['assets'][number]>('assets',
             'id, tag, name, parent_id, hierarchy_level, criticality, equipment_number, company_id, cost_center_id, responsible_work_center_id, manufacturer, model, serial_number, asset_class, asset_type_code, status_code, properties',
@@ -50,11 +66,13 @@ export async function loadSapSource(): Promise<SapLoadSource> {
         fetchAll<SapLoadSource['bomLines'][number]>('asset_bom',
             'id, asset_id, inventory_item_id, part_number, description, quantity, uom, is_critical, notes, created_at',
             'asset_id'),
-        fetchAll<SapLoadSource['readingDefinitions'][number]>('reading_definitions',
+        fetchWithOptionalColumns<SapLoadSource['readingDefinitions'][number]>('reading_definitions',
             'id, asset_id, reading_type_code, name, unit, category, min_warning, max_warning, min_critical, max_critical, is_active',
+            'source_system, source_ref',
             'asset_id'),
-        fetchAll<SapLoadSource['readingLogs'][number]>('reading_logs',
+        fetchWithOptionalColumns<SapLoadSource['readingLogs'][number]>('reading_logs',
             'id, definition_id, asset_id, reading_type_code, reading_date, reading_time, reading_value, delta, entered_by, comments, is_active',
+            'valuation_code, source_system, source_ref',
             'reading_date'),
         fetchOptional<SapLoadSource['vendors'][number]>('vendors', 'id, code, name', 'name'),
         fetchOptional<SapLoadSource['costCenters'][number]>('cost_centers', 'id, code, company_code, controlling_area', 'code'),
@@ -66,11 +84,16 @@ export async function loadSapSource(): Promise<SapLoadSource> {
         fetchOptional<SapLoadSource['woFailureData'][number]>('wo_failure_data', 'wo_id, failure_mode_code, failure_cause_code, remedy_code, object_part, caused_by_wo_id', 'wo_id'),
         // Names for "reported by". RLS may hide other users from a non-admin; the field then stays blank.
         fetchOptional<SapLoadSource['users'][number]>('users', 'id, username, email', 'username'),
+        // PM schedules with their step templates — what the cockpit export turns
+        // into maintenance plans, items and task lists.
+        fetchOptional<SrcSchedule>('recurring_work',
+            'id, code, title, description, status, active, asset_id, assigned_assets, schedule_type, frequency_interval, frequency_unit, next_due_date, last_generated_date, job_type, priority_code, work_center_id, strategy_package, origin, templates, parent_pm_id, nesting_mode',
+            'code'),
     ]);
 
     return {
         assets, assetFinancials, inventoryItems, stock, stores, bomLines,
         readingDefinitions, readingLogs, vendors, costCenters, companies, workCenters,
-        workOrders, woFailureData, users,
+        workOrders, woFailureData, users, schedules,
     };
 }

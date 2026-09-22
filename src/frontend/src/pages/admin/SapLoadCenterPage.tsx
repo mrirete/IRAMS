@@ -26,6 +26,10 @@ import {
     type SapLoadResult, type SapLoadSource, type SapTargetParams, type MaterialBucket,
 } from '../../lib/sapLoad/build';
 import { loadSapSource } from '../../lib/sapLoad/source';
+import { saveAs } from 'file-saver';
+import { buildCockpitExport, exportZipEntries, type CockpitExportParams } from '../../lib/sapCockpit/outbound';
+import { buildZip } from '../../lib/sapCockpit/zip';
+import { COCKPIT_OBJECTS } from '../../lib/sapCockpit/structures';
 
 const STORAGE_KEY = 'ireams.sapLoad.params.v1';
 
@@ -130,6 +134,33 @@ export const SapLoadCenterPage: React.FC = () => {
     const infos = result?.issues.filter(i => i.level === 'info') ?? [];
     const totalRows = result ? SAP_OBJECTS.reduce((n, o) => n + result.objects[o.key].length, 0) : 0;
 
+    // ── Migration Cockpit source data: the cockpit's own shape ───────────────
+    // Delta by identity: what came from SAP is not loaded again; what IREAMS
+    // changed on a SAP schedule goes to the hand-over sheet. Full mode is for
+    // a plant moving to a NEW SAP system.
+    const [cockpitMode, setCockpitMode] = useState<CockpitExportParams['mode']>('delta');
+    const cockpitParams = useMemo<CockpitExportParams>(() => ({
+        mode: cockpitMode,
+        planningPlant: params.planningPlant || params.maintenancePlant,
+        plant: params.maintenancePlant || params.planningPlant,
+        // Maintenance plans generate preventive orders — the target's preventive order type.
+        orderType: params.orderTypes?.preventive || 'PM02',
+        numbering: params.numbering,
+        sourceSystem: 'sap_pm',
+    }), [cockpitMode, params]);
+    const cockpit = useMemo(() => (source ? buildCockpitExport(source, cockpitParams) : null), [source, cockpitParams]);
+    const cockpitRows = cockpit ? cockpit.files.reduce((n, f) => n + f.rows, 0) : 0;
+    const cockpitErrors = cockpit?.issues.filter(i => i.level === 'error') ?? [];
+
+    const downloadCockpit = () => {
+        if (!cockpit) return;
+        const entries = exportZipEntries(cockpit);
+        if (entries.length === 0) { showToast('Nothing to export — SAP already has everything IREAMS holds.', 'info'); return; }
+        const bytes = buildZip(entries);
+        saveAs(new Blob([bytes as BlobPart], { type: 'application/zip' }), `IREAMS_cockpit_source_data_${new Date().toISOString().slice(0, 10)}.zip`);
+        showToast(`${entries.length} file(s) zipped in the cockpit’s own layout — upload in Migrate Your Data.`, 'success');
+    };
+
     return (
         <div className="ers-page-form space-y-6 pb-24 animate-in fade-in duration-300">
             <div>
@@ -144,6 +175,62 @@ export const SapLoadCenterPage: React.FC = () => {
                     SAP field names on row 4, filled from what IREAMS holds today. Load them in order in the Fiori app
                     <em> Migrate Your Data</em> (LTMC); simulate first, and run ten rows end to end before the full file.
                 </p>
+            </div>
+
+            {/* Migration Cockpit source data — SAP's own shape, one ZIP */}
+            <div className="rounded-2xl border border-primary-200 bg-primary-50/40 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Database size={16} className="text-primary-600" /> Send to SAP — Migration Cockpit source data</h3>
+                        <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+                            The cockpit's own staging files, laid out exactly as it downloads them: one folder per object, headers
+                            as SAP wrote them. Unzip and upload in <em>Migrate Your Data</em>. Measuring points and readings,
+                            task lists, maintenance items and plans.
+                        </p>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <span className="font-semibold">Load</span>
+                        <select value={cockpitMode} onChange={e => setCockpitMode(e.target.value as CockpitExportParams['mode'])} className="border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white">
+                            <option value="delta">only what SAP does not have (delta)</option>
+                            <option value="full">everything (new SAP system)</option>
+                        </select>
+                    </label>
+                </div>
+
+                {cockpit && (
+                    <>
+                        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+                            {COCKPIT_OBJECTS.map(o => (
+                                <span key={o.key} className="text-slate-600">
+                                    <b className="text-slate-900">{cockpit.counts[o.key].toLocaleString()}</b> {o.name.replace('PM - ', '').toLowerCase()} row(s)
+                                </span>
+                            ))}
+                            {cockpit.handover && <span className="text-amber-700"><b>{cockpit.handover.rows}</b> schedule(s) SAP already has — on the hand-over sheet</span>}
+                            {cockpitMode === 'delta' && (cockpit.alreadyInSap.points > 0 || cockpit.alreadyInSap.readings > 0) && (
+                                <span className="text-slate-400">{cockpit.alreadyInSap.points} point(s), {cockpit.alreadyInSap.readings} reading(s) already in SAP — not loaded again</span>
+                            )}
+                        </div>
+
+                        {cockpit.issues.length > 0 && (
+                            <ul className="mt-3 divide-y divide-slate-100">
+                                {cockpit.issues.map((i, n) => (
+                                    <li key={n} className="flex items-start gap-2 py-1.5 text-sm text-slate-700">
+                                        {i.level === 'error' ? <AlertOctagon size={14} className="text-rose-600 mt-0.5 shrink-0" /> : i.level === 'warn' ? <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" /> : <Info size={14} className="text-slate-400 mt-0.5 shrink-0" />}
+                                        <span>{i.message}{i.count && i.count > 1 ? <span className="ml-1.5 text-xs text-slate-400">({i.count} rows)</span> : null}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+
+                        <div className="mt-4 flex items-center gap-3 flex-wrap">
+                            <button onClick={downloadCockpit} disabled={cockpitRows === 0 && !cockpit.handover}
+                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2.5 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed">
+                                <Download size={15} /> Download for the cockpit (.zip)
+                            </button>
+                            {cockpitErrors.length > 0 && <span className="text-xs text-rose-700">Rows with errors above will be rejected by SAP — fix them, or accept them knowingly.</span>}
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Target system */}

@@ -53,6 +53,7 @@ function makeQuery(table: string) {
 
     const builder: Record<string, unknown> = {
         select: () => builder,
+        limit: () => builder,
         eq: (col: string, val: unknown) => { eqFilter = { col, val }; return builder; },
         order: () => builder,
         // Records the patch and applies it on await, so sync-mode updates are
