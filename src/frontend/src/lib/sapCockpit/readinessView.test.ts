@@ -36,7 +36,9 @@ describe('readiness for people', () => {
         ], 40);
         expect(v.mustFix).toHaveLength(2);
         expect(v.mustFix[0]).toMatchObject({ title: 'Measuring-point category is missing on measuring points — SAP will reject those rows', code: 'MEASUREMENT_POINT_TYPE', rows: 35 });
-        expect(v.mustFix[0].action).toMatch(/value mapping/);
+        // SAP configuration IREAMS has no field for: the action says where it is set, not "fill it in IREAMS".
+        expect(v.mustFix[0].action).toMatch(/once under SAP values/);
+        expect(v.mustFix[1].action).toMatch(/how SAP tells the rows apart/);
         expect(v.mustFix[1]).toMatchObject({ rows: 1, code: 'VORNR' });
         expect(v.verdict).toBe('blocked');
     });

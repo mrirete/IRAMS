@@ -27,7 +27,7 @@ import {
 } from '../../lib/sapLoad/build';
 import { loadSapSource } from '../../lib/sapLoad/source';
 import { saveAs } from 'file-saver';
-import { buildCockpitExport, exportZipEntries, type CockpitExportParams } from '../../lib/sapCockpit/outbound';
+import { buildCockpitExport, exportZipEntries, studiesIn, type CockpitExportParams } from '../../lib/sapCockpit/outbound';
 import { buildZip } from '../../lib/sapCockpit/zip';
 import { readinessView, type ViewItem, type ReadinessView } from '../../lib/sapCockpit/readinessView';
 
@@ -194,7 +194,11 @@ export const SapLoadCenterPage: React.FC = () => {
     // Delta by identity: what came from SAP is not loaded again; what IREAMS
     // changed on a SAP schedule goes to the hand-over sheet. Full mode is for
     // a plant moving to a NEW SAP system.
-    const [cockpitMode, setCockpitMode] = useState<CockpitExportParams['mode']>('delta');
+    // What to send: "delta", "full", or one study's outcome ("study:<id>" /
+    // "source:<name>", from the schedules' own provenance).
+    const [cockpitScope, setCockpitScope] = useState<string>('delta');
+    const studies = useMemo(() => (source ? studiesIn(source) : []), [source]);
+    const cockpitMode: CockpitExportParams['mode'] = cockpitScope === 'full' ? 'full' : 'delta';
     const cockpitParams = useMemo<CockpitExportParams>(() => ({
         mode: cockpitMode,
         planningPlant: params.planningPlant || params.maintenancePlant,
@@ -202,8 +206,10 @@ export const SapLoadCenterPage: React.FC = () => {
         // Maintenance plans generate preventive orders — the target's preventive order type.
         orderType: params.orderTypes?.preventive || 'PM02',
         numbering: params.numbering,
+        measuringPointCategory: params.measuringPointCategory ?? '',
         sourceSystem: 'sap_pm',
-    }), [cockpitMode, params]);
+        scope: studies.find(g => g.key === cockpitScope)?.scope,
+    }), [cockpitMode, cockpitScope, params, studies]);
     const cockpit = useMemo(() => (source ? buildCockpitExport(source, cockpitParams) : null), [source, cockpitParams]);
     const cockpitRows = cockpit ? cockpit.files.reduce((n, f) => n + f.rows, 0) : 0;
     const cockpitView = cockpit ? readinessView(cockpit.issues, cockpitRows) : null;
@@ -244,11 +250,35 @@ export const SapLoadCenterPage: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-3 text-sm">
                     <label className="flex items-center gap-2 text-slate-700">
                         <span>Send</span>
-                        <select value={cockpitMode} onChange={e => setCockpitMode(e.target.value as CockpitExportParams['mode'])} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                        <select value={cockpitScope} onChange={e => setCockpitScope(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
                             <option value="delta">only what SAP does not have yet (recommended)</option>
                             <option value="full">everything — this is a new SAP system</option>
+                            {studies.length > 0 && (
+                                <optgroup label="One study’s outcome — its schedules only">
+                                    {studies.map(g => <option key={g.key} value={g.key}>{g.label} — {g.schedules} schedule{g.schedules === 1 ? '' : 's'}</option>)}
+                                </optgroup>
+                            )}
                         </select>
                     </label>
+                </div>
+                {cockpitScope.startsWith('study:') || cockpitScope.startsWith('source:') ? (
+                    <p className="text-xs text-slate-500 mt-2">Only the schedules this study created (or changed) are sent. Points and readings are condition data, not a study’s output, and stay out of a study send.</p>
+                ) : null}
+
+                {/* SAP configuration the file needs and IREAMS has no field for — set once, applied to every row. */}
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">SAP values the file needs</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <Field label="Planning plant (IWERK)" hint="Mandatory on every maintenance item">
+                            <input className={inputCls} value={params.planningPlant} onChange={e => set('planningPlant', e.target.value)} placeholder="e.g. 102A" />
+                        </Field>
+                        <Field label="Measuring-point category" hint="MEASUREMENT_POINT_TYPE — mandatory on every point; ask your SAP team for the code">
+                            <input className={inputCls} value={params.measuringPointCategory ?? ''} onChange={e => set('measuringPointCategory', e.target.value)} placeholder="e.g. M" />
+                        </Field>
+                        <Field label="Preventive order type (AUART)" hint="Client configuration; PM02 in a vanilla system">
+                            <input className={inputCls} value={params.orderTypes.preventive} onChange={e => set('orderTypes', { ...params.orderTypes, preventive: e.target.value })} />
+                        </Field>
+                    </div>
                 </div>
                 {loading && <p className="text-sm text-slate-500 mt-3 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Reading the register…</p>}
                 {loadError && <p className="text-sm text-rose-700 mt-3">{loadError}</p>}

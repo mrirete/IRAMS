@@ -261,6 +261,8 @@ export interface SapTargetParams {
     sourceListValidFrom: string;
     /** SAP order types (AUART) the IREAMS work types map onto. */
     orderTypes: Record<WorkBucket, string>;
+    /** Cockpit export: SAP's measuring-point category (MEASUREMENT_POINT_TYPE), one value for every point. */
+    measuringPointCategory?: string;
     /** Notification types for open work: corrective → malfunction report, preventive → request. */
     notificationTypes: { corrective: string; preventive: string };
     /** Catalog code groups the IREAMS failure codes are filed under in SAP (QPGR). */
@@ -322,6 +324,7 @@ export function defaultParams(): SapTargetParams {
         postingDate: todaySapDate(),
         sourceListValidFrom: todaySapDate(),
         orderTypes: { corrective: 'PM01', preventive: 'PM02', predictive: 'PM03' },
+        measuringPointCategory: '',
         notificationTypes: { corrective: 'M2', preventive: 'M1' },
         codeGroups: { damage: 'YB-DAM', objectPart: 'YB-OBJ', cause: 'YB-CAU', activity: 'YB-ACT' },
     };

@@ -7,7 +7,7 @@
  * test is where it shows.
  */
 import { describe, it, expect } from 'vitest';
-import { buildCockpitExport, defaultExportParams, exportZipEntries, type CockpitExportParams } from './outbound';
+import { buildCockpitExport, defaultExportParams, exportZipEntries, studiesIn, type CockpitExportParams } from './outbound';
 import { readCockpitSet, toReadingRows } from './inbound';
 import { toStrategyRows } from './strategy';
 import { buildZip, readZip } from './zip';
@@ -161,12 +161,53 @@ describe('delta by identity', () => {
     });
 });
 
+describe('sending one study’s outcome', () => {
+    const withStudies = (): SapLoadSource => {
+        const src = fixture();
+        src.schedules = [
+            { ...src.schedules![0], id: 'pm-rcm-1', code: 'PM-RCM-1', origin: { source: 'rcm', study_id: 'st-1', study_title: 'K-601 compressor RCM', study_revision: 2 } },
+            { ...src.schedules![0], id: 'pm-rcm-2', code: 'PM-RCM-2', origin: { source: 'rcm', study_id: 'st-1', study_title: 'K-601 compressor RCM', study_revision: 2 } },
+            { ...src.schedules![0], id: 'pm-wb', code: 'PM-WB', origin: { source: 'weibull_analysis', beta: 2.1 } },
+            src.schedules![1],   // came from SAP
+        ];
+        return src;
+    };
+
+    it('lists the studies from the schedules’ own provenance', () => {
+        expect(studiesIn(withStudies())).toEqual([
+            { key: 'study:st-1', label: 'K-601 compressor RCM (rev 2)', schedules: 2, scope: { studyId: 'st-1' } },
+            { key: 'source:weibull_analysis', label: 'Weibull analyses (schedules created from fits)', schedules: 1, scope: { source: 'weibull_analysis' } },
+        ]);
+    });
+
+    it('sends only that study’s schedules, and no condition data', () => {
+        const x = buildCockpitExport(withStudies(), { ...PARAMS, scope: { studyId: 'st-1' } });
+        expect(rowsOf(fileOf(x, 'S_MPLA')!.text).map(r => r.split(',')[0])).toEqual(['PM-RCM-1', 'PM-RCM-2']);
+        expect(fileOf(x, 'S_HEADER')).toBeUndefined();
+        expect(fileOf(x, 'S_MEASUREMENT_DOCU')).toBeUndefined();
+        expect(x.handover).toBeNull();                 // the SAP-origin schedule is outside the study
+    });
+
+    it('a Weibull-derived group is a scope too', () => {
+        const x = buildCockpitExport(withStudies(), { ...PARAMS, scope: { source: 'weibull_analysis' } });
+        expect(rowsOf(fileOf(x, 'S_MPLA')!.text).map(r => r.split(',')[0])).toEqual(['PM-WB']);
+    });
+});
+
 describe('readiness, from the header SAP wrote', () => {
     it('reports the mandatory fields it cannot fill and the ones the client must configure', () => {
         const x = buildCockpitExport(fixture(), PARAMS);
         // MEASUREMENT_POINT_TYPE is mandatory and client configuration.
         expect(x.issues.some(i => i.level === 'error' && /S_HEADER\.MEASUREMENT_POINT_TYPE is mandatory and is blank/.test(i.message))).toBe(true);
         expect(x.issues.some(i => /measuring-point category/.test(i.message))).toBe(true);
+    });
+
+    it('fills the measuring-point category on every point once it is given', () => {
+        const x = buildCockpitExport(fixture(), { ...PARAMS, measuringPointCategory: 'M' });
+        const rows = rowsOf(fileOf(x, 'S_HEADER')!.text);
+        expect(rows.every(r => r.split(',')[1] === 'M')).toBe(true);
+        expect(x.issues.some(i => /MEASUREMENT_POINT_TYPE/.test(i.message))).toBe(false);
+        expect(x.issues.some(i => i.level === 'error')).toBe(false);
     });
 
     it('refuses to move alarm bands or units into fields that mean something else', () => {

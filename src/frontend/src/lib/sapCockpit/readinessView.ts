@@ -56,6 +56,17 @@ export const FIELD_LABELS: Record<string, string> = {
 
 export const label = (code: string): string => FIELD_LABELS[code] ?? code;
 
+/**
+ * What to do about a blank mandatory field, where the honest answer is not
+ * "fill it in IREAMS": some of these are SAP configuration IREAMS has no
+ * field for, set once for the whole load.
+ */
+const BLANK_ACTIONS: Record<string, string> = {
+    MEASUREMENT_POINT_TYPE: 'Set the measuring-point category once under SAP values — it is SAP configuration, the same for every point; IREAMS has no field for it.',
+    IWERK: 'Set the planning plant once under SAP values.',
+    WERKS: 'Set the plant once under SAP values.',
+};
+
 const OBJECT_LABELS: Record<string, string> = {
     functionalLocation: 'Functional locations', equipment: 'Equipment', material: 'Materials', equipmentBom: 'Equipment BOMs',
     measuringPoint: 'Measuring points', measurementDoc: 'Measurement documents', sourceList: 'Source lists',
@@ -100,7 +111,7 @@ export function readinessView(issues: RawIssue[], totalRows: number): ReadinessV
             mustFix.push({
                 level: 'error',
                 title: `${label(field)} is missing${where ? ` on ${where.toLowerCase()}` : ''} — SAP will reject those rows`,
-                action: kind === 'a key field' ? 'Every row needs it; it is how SAP tells the rows apart.' : 'Fill it in IREAMS, or set it in the cockpit’s value mapping before loading.',
+                action: BLANK_ACTIONS[field] ?? (kind === 'a key field' ? 'Every row needs it; it is how SAP tells the rows apart.' : 'Fill it in IREAMS, or set it in the cockpit’s value mapping before loading.'),
                 code: field,
                 rows: rows ? Number(rows) : i.count,
             });

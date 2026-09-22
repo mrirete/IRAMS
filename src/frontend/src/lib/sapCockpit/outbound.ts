@@ -31,7 +31,7 @@
 import { renderCockpitCsv, cockpitFolderName, cockpitFileName, renderCsv, missingMandatory, type CockpitColumn } from './dialect';
 import { COCKPIT_OBJECT_BY_KEY, columnsOf, structureSpec, type CockpitObjectKey, type CockpitStructureSpec } from './structures';
 import type { CockpitIssue } from './inbound';
-import type { SapLoadSource, SrcAsset, SrcSchedule, SrcReadingDefinition, SrcReadingLog } from '../sapLoad/build';
+import type { SapLoadSource, SrcAsset, SrcSchedule } from '../sapLoad/build';
 import { objectClassOf } from '../../eam/services/hierarchyModel';
 import { addCadence, sapCycleUnit, isMeterUnit, type Cadence, type CadenceUnit } from '../../eam/lib/sapCycles';
 import { toSapDate, toSapTime } from '../sapLoad/build';
@@ -50,9 +50,64 @@ export interface CockpitExportParams {
     orderType: string;
     /** legacy = EQUNR carries the IREAMS equipment number; internal = the tag is the legacy key. */
     numbering: 'legacy' | 'internal';
+    /**
+     * MEASUREMENT_POINT_TYPE on every point — SAP's measuring-point category,
+     * mandatory, and pure configuration: IREAMS has no field for it because
+     * it means nothing outside SAP. One value for the whole load.
+     */
+    measuringPointCategory?: string;
     /** The source system these files are for, written onto nothing — used only to decide what "came from SAP" means. */
     sourceSystem?: string;
+    /**
+     * Send one study's outcome rather than the whole register. A schedule
+     * belongs to a study through the provenance stamped on it when the study
+     * created it (origin.study_id for RCM; origin.source for a Weibull-derived
+     * schedule). Points and readings are condition data, not a study's output,
+     * and are left out of a study-scoped send.
+     */
+    scope?: { studyId?: string; source?: string };
 }
+
+/** One group of schedules that a study produced, as the page lists them. */
+export interface StudyGroup {
+    /** Stable key for the scope: "study:<id>" or "source:<name>". */
+    key: string;
+    label: string;
+    schedules: number;
+    scope: NonNullable<CockpitExportParams['scope']>;
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+    weibull_analysis: 'Weibull analyses (schedules created from fits)',
+    rcm: 'RCM studies',
+};
+
+/** The studies whose schedules are in the register, from the schedules' own provenance. */
+export function studiesIn(src: SapLoadSource): StudyGroup[] {
+    const groups = new Map<string, StudyGroup>();
+    for (const pm of src.schedules ?? []) {
+        const o = (pm.origin ?? {}) as Record<string, unknown>;
+        const studyId = s(o.study_id);
+        const source = s(o.source);
+        if (studyId) {
+            const key = `study:${studyId}`;
+            const g = groups.get(key) ?? { key, label: `${s(o.study_title) || 'Study'}${o.study_revision ? ` (rev ${s(o.study_revision)})` : ''}`, schedules: 0, scope: { studyId } };
+            g.schedules += 1; groups.set(key, g);
+        } else if (source && source !== 'sap_pm' && source !== 'sap_load_file') {
+            const key = `source:${source}`;
+            const g = groups.get(key) ?? { key, label: SOURCE_LABELS[source] ?? source, schedules: 0, scope: { source } };
+            g.schedules += 1; groups.set(key, g);
+        }
+    }
+    return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+const inScope = (pm: SrcSchedule, scope: CockpitExportParams['scope']): boolean => {
+    if (!scope || (!scope.studyId && !scope.source)) return true;
+    const o = (pm.origin ?? {}) as Record<string, unknown>;
+    if (scope.studyId) return s(o.study_id) === scope.studyId;
+    return s(o.source) === scope.source;
+};
 
 export const defaultExportParams = (): CockpitExportParams => ({
     mode: 'delta', planningPlant: '', plant: '', orderType: 'PM01', numbering: 'legacy', sourceSystem: 'sap_pm',
@@ -171,6 +226,7 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
     const fromSap = (sys: string | null | undefined) => !!sys && sys === (params.sourceSystem || 'sap_pm');
     const delta = params.mode === 'delta';
     const alreadyInSap = { points: 0, readings: 0, schedules: 0 };
+    const studyScoped = !!(params.scope && (params.scope.studyId || params.scope.source));
 
     const sheet = (object: CockpitObjectKey, structure: string) => new Sheet(object, structureSpec(object, structure)!, issues);
 
@@ -193,12 +249,13 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
         if (d.is_active === false) continue;
         const key = fromSap(d.source_system) && s(d.source_ref) ? s(d.source_ref) : d.id;
         pointKey.set(d.id, key);
+        if (studyScoped) continue;                 // a study's outcome is strategy, not condition data
         if (delta && fromSap(d.source_system)) { alreadyInSap.points += 1; continue; }
         const obj = objectOf(assetById.get(d.asset_id));
         if (!obj.type) { issues.add('warn', 'measuring point(s) sit on an asset that is neither equipment nor a functional location — not exported'); continue; }
         points.add({
             MEAS_POINT: key,
-            MEASUREMENT_POINT_TYPE: (d.category || '').toUpperCase() === 'METER' ? '' : '',
+            MEASUREMENT_POINT_TYPE: s(params.measuringPointCategory),
             PSORT: '',
             PTTXT: s(d.name),
             OBJECT_TYPE: obj.type,
@@ -208,8 +265,8 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
             DECIM: '',
         });
     }
-    if (points.rows.length) {
-        issues.add('info', 'MEASUREMENT_POINT_TYPE is mandatory and is client configuration (the measuring-point category) — fill it in the cockpit’s value mapping or set a default before loading.', false);
+    if (points.rows.length && !s(params.measuringPointCategory)) {
+        issues.add('info', 'The measuring-point category (MEASUREMENT_POINT_TYPE) is SAP configuration, not something IREAMS knows — set it once in the SAP values above and every point gets it.', false);
         if (src.readingDefinitions.some(d => d.unit)) {
             issues.add('info', 'The mandatory measuring-point template carries no unit column; SAP takes the unit from the characteristic (ATNAM). Units set in IREAMS do not travel — configure the characteristics with their units before the load.', false);
         }
@@ -222,6 +279,7 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
     const docs = sheet('measurementDocument', 'S_MEASUREMENT_DOCU');
     for (const l of src.readingLogs) {
         if (l.is_active === false) continue;
+        if (studyScoped) continue;
         if (delta && fromSap(l.source_system)) { alreadyInSap.readings += 1; continue; }
         const key = pointKey.get(l.definition_id);
         if (!key) { issues.add('warn', 'reading(s) belong to a point that is inactive or missing — not exported'); continue; }
@@ -257,6 +315,7 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
     let listSeq = 0;
     for (const pm of src.schedules ?? []) {
         if (pm.active === false || (pm.status && !/ACTIVE|DRAFT|PAUSED/i.test(pm.status))) continue;
+        if (!inScope(pm, params.scope)) continue;
         const origin = (pm.origin ?? {}) as Record<string, unknown>;
         const sapPlan = s(origin.plan), sapItem = s(origin.item), sapList = s(origin.task_list);
         const inSap = !!(sapPlan || sapItem || sapList);
