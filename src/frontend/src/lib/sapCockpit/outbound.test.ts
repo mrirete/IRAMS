@@ -140,13 +140,43 @@ describe('delta by identity', () => {
         expect(rowsOf(fileOf(x, 'S_MPLA')!.text)).toHaveLength(1);
     });
 
-    it('hands over a changed schedule SAP already has, with its SAP keys', () => {
+    it('a SAP schedule nothing changed is in sync and not handed over', () => {
         const x = buildCockpitExport(fixture(), PARAMS);
+        expect(x.handover).toBeNull();
+        expect(x.inSyncSchedules).toBe(1);
+        expect(x.issues.some(i => /1 schedule\(s\) SAP already has are in sync/.test(i.message))).toBe(true);
+    });
+
+    const revised = (): SapLoadSource => {
+        const src = fixture();
+        src.schedules![1] = {
+            ...src.schedules![1],
+            origin: {
+                ...src.schedules![1].origin, source: 'rcm', study_id: 'st-1', study_title: 'Fan RCM',
+                interval_revisions: [{ proposal_id: 'p1', recommendation_type: 'extend_interval', from_interval: 3, from_unit: 'Months', to_days: 120, basis: 'Weibull B10', applied_at: '2026-09-20T10:00:00Z', applied_by: 'j.rel' }],
+            },
+        };
+        return src;
+    };
+
+    it('hands over a changed SAP schedule with what SAP has, what IREAMS has, and why', () => {
+        const x = buildCockpitExport(revised(), PARAMS);
         expect(x.handover).not.toBeNull();
         const [header, row] = x.handover!.text.split('\r\n');
-        expect(header).toBe('IREAMS_CODE,TITLE,WARPL,WPPOS,PLNNR_PLNAL,OBJECT,CYCLE,STEPS,NEXT_DUE,NOTE');
-        expect(row).toMatch(/^1000\/0010,Fan service,1000,0010,30009001\/01,10004712,4 MON,1,01.04.2026,/);
-        expect(x.issues.some(i => /1 schedule\(s\) already exist in SAP/.test(i.message))).toBe(true);
+        expect(header).toBe('IREAMS_CODE,TITLE,WARPL,WPPOS,PLNNR_PLNAL,OBJECT,SAP_CYCLE,IREAMS_CYCLE,CHANGES,STUDY,STEPS,NEXT_DUE,LAST_SENT,NOTE');
+        expect(row).toMatch(/^1000\/0010,Fan service,1000,0010,30009001\/01,10004712,3 Months,4 Months,"3 Months → 120 days \(extend interval, Weibull B10\) on 2026-09-20",Fan RCM,1,01.04.2026,,/);
+        expect(x.changes).toHaveLength(1);
+        expect(x.changes[0]).toMatchObject({ state: 'changed', sap: { plan: '1000', item: '0010' } });
+        expect(x.sentScheduleIds).toEqual(['pm-new', 'pm-sap']);
+    });
+
+    it('once a planner confirms the change in SAP, the schedule drops out of the hand-over', () => {
+        const src = revised();
+        src.schedules![1].origin = { ...src.schedules![1].origin, sap_sync: { sent_at: '2026-09-21T08:00:00Z', confirmed_at: '2026-09-21T09:00:00Z' } };
+        const x = buildCockpitExport(src, PARAMS);
+        expect(x.handover).toBeNull();
+        expect(x.inSyncSchedules).toBe(1);
+        expect(x.sentScheduleIds).toEqual(['pm-new']);
     });
 
     it('full mode loads everything, keyed on the SAP numbers where they exist', () => {
@@ -264,6 +294,6 @@ describe('the loop closes', () => {
         const back = readZip(buildZip(entries, new Date('2026-09-22T10:00:00')));
         expect(back.map(e => e.name)).toEqual(entries.map(e => e.name));
         expect(back.map(e => e.text)).toEqual(entries.map(e => e.text));
-        expect(back.some(e => e.name === 'Hand-over (not loaded)/IREAMS_changes_for_SAP.csv')).toBe(true);
+        expect(back.every(e => /^Source data for PM - /.test(e.name))).toBe(true);   // nothing changed on the SAP schedule: no hand-over
     });
 });

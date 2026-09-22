@@ -36,6 +36,7 @@ import { objectClassOf } from '../../eam/services/hierarchyModel';
 import { addCadence, sapCycleUnit, isMeterUnit, type Cadence, type CadenceUnit } from '../../eam/lib/sapCycles';
 import { toSapDate, toSapTime } from '../sapLoad/build';
 import { SAP_ILART_MAP, SAP_PRIOK_MAP } from '../../eam/services/assetTemplates';
+import { scheduleChange, cadenceText, revisionText, type ScheduleChange } from './handover';
 
 // ── Parameters ───────────────────────────────────────────────────────────────
 
@@ -135,8 +136,14 @@ export interface CockpitHandover {
 
 export interface CockpitExport {
     files: CockpitExportFile[];
-    /** Schedules SAP already has, that IREAMS may have changed — not loaded. */
+    /** Schedules SAP already has, that IREAMS changed — not loaded, handed to the planner. */
     handover: CockpitHandover | null;
+    /** The same schedules as objects, for the page: keys, SAP vs IREAMS cadence, revisions, sync state. */
+    changes: ScheduleChange[];
+    /** Schedule ids in this send — loaded ones and handed-over ones — for the sync stamp. */
+    sentScheduleIds: string[];
+    /** SAP-origin schedules left out because SAP already has every change (confirmed), or nothing changed. */
+    inSyncSchedules: number;
     issues: CockpitIssue[];
     /** Rows per object, for the page. */
     counts: Record<CockpitObjectKey, number>;
@@ -308,6 +315,9 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
     const mpos = sheet('maintenancePlan', 'S_MPOS');
     const objl = sheet('maintenancePlan', 'S_OBJ_LIST');
     const handover: Record<string, string>[] = [];
+    const changes: ScheduleChange[] = [];
+    const sentScheduleIds: string[] = [];
+    let inSyncSchedules = 0;
 
     const invByKey = new Map<string, string>();
     for (const i of src.inventoryItems) { invByKey.set(i.id, s(i.material_number) || s(i.part_number)); }
@@ -331,14 +341,24 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
 
         if (delta && inSap) {
             alreadyInSap.schedules += 1;
+            // Only what IREAMS changed and SAP has not confirmed goes to the
+            // planner. Unchanged, or confirmed since the last change, is in sync.
+            const ch = scheduleChange(pm);
+            if (ch.inSync) { inSyncSchedules += 1; continue; }
+            changes.push(ch);
+            sentScheduleIds.push(pm.id);
             handover.push({
-                IREAMS_CODE: code, TITLE: title, WARPL: sapPlan, WPPOS: sapItem, PLNNR_PLNAL: sapList,
-                OBJECT: obj.ref, CYCLE: cadence ? `${cadence.interval} ${SAP_UNIT[cadence.unit]}` : '',
+                IREAMS_CODE: code, TITLE: title, WARPL: sapPlan, WPPOS: sapItem, PLNNR_PLNAL: sapList, OBJECT: obj.ref,
+                SAP_CYCLE: cadenceText(ch.sapCadence), IREAMS_CYCLE: cadenceText(ch.cadence),
+                CHANGES: ch.revisions.map(revisionText).join(' | '),
+                STUDY: ch.study ? (ch.study.title || ch.study.id) : '',
                 STEPS: String(tasks.length), NEXT_DUE: toSapDate(s(pm.next_due_date).slice(0, 10)),
-                NOTE: 'SAP already has this plan. Apply any change IREAMS made in IP02 (plan) / IA06 (task list), or let the live link carry it.',
+                LAST_SENT: ch.sync.sentAt ? ch.sync.sentAt.slice(0, 10) : '',
+                NOTE: 'SAP already has this plan. Apply the change in IP02 (plan cycle) / IA06 (task list), then mark it confirmed in IREAMS — or let the live link carry it.',
             });
             continue;
         }
+        sentScheduleIds.push(pm.id);
         if (!obj.type) { issues.add('warn', `schedule(s) have no equipment or functional location to schedule against — not exported`); continue; }
         if (!cadence) { issues.add('error', `schedule(s) have no cadence IREAMS can express as a SAP cycle — not exported`); continue; }
 
@@ -413,21 +433,22 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
 
     let ho: CockpitHandover | null = null;
     if (handover.length) {
-        const cols = ['IREAMS_CODE', 'TITLE', 'WARPL', 'WPPOS', 'PLNNR_PLNAL', 'OBJECT', 'CYCLE', 'STEPS', 'NEXT_DUE', 'NOTE'];
+        const cols = ['IREAMS_CODE', 'TITLE', 'WARPL', 'WPPOS', 'PLNNR_PLNAL', 'OBJECT', 'SAP_CYCLE', 'IREAMS_CYCLE', 'CHANGES', 'STUDY', 'STEPS', 'NEXT_DUE', 'LAST_SENT', 'NOTE'];
         ho = {
             folder: 'Hand-over (not loaded)',
             fileName: 'IREAMS_changes_for_SAP.csv',
             text: renderCsv([cols, ...handover.map(r => cols.map(c => r[c] ?? ''))]),
             rows: handover.length,
         };
-        issues.add('info', `${handover.length} schedule(s) already exist in SAP and are not loaded again — they are listed on the hand-over sheet with their SAP keys, for the planner to apply in IP02 / IA06 or for the live link to carry`, false);
+        issues.add('info', `${handover.length} schedule(s) SAP already has were changed by IREAMS — they are on the hand-over sheet with what SAP holds, what IREAMS holds now and why, for the planner to apply in IP02 / IA06 and then confirm here`, false);
     }
+    if (inSyncSchedules) issues.add('info', `${inSyncSchedules} schedule(s) SAP already has are in sync — unchanged, or confirmed since the last change — and are not sent.`, false);
     if (delta && (alreadyInSap.points || alreadyInSap.readings)) {
         issues.add('info', `${alreadyInSap.points} point(s) and ${alreadyInSap.readings} reading(s) came from SAP and are not loaded again (delta mode).`, false);
     }
     if (files.length === 0 && !ho) issues.add('warn', 'Nothing to export: no active points, readings or schedules that SAP does not already have.', false);
 
-    return { files, handover: ho, issues: issues.list(), counts, alreadyInSap };
+    return { files, handover: ho, changes, sentScheduleIds, inSyncSchedules, issues: issues.list(), counts, alreadyInSap };
 }
 
 /** Entries for a single ZIP laid out exactly as the cockpit lays out a download. */

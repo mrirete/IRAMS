@@ -30,6 +30,8 @@ import { saveAs } from 'file-saver';
 import { buildCockpitExport, exportZipEntries, studiesIn, type CockpitExportParams } from '../../lib/sapCockpit/outbound';
 import { buildZip } from '../../lib/sapCockpit/zip';
 import { readinessView, type ViewItem, type ReadinessView } from '../../lib/sapCockpit/readinessView';
+import { cadenceText, revisionText } from '../../lib/sapCockpit/handover';
+import { markSentToSap, markConfirmedInSap } from '../../eam/services/sapSyncService';
 
 const STORAGE_KEY = 'ireams.sapLoad.params.v1';
 
@@ -214,13 +216,38 @@ export const SapLoadCenterPage: React.FC = () => {
     const cockpitRows = cockpit ? cockpit.files.reduce((n, f) => n + f.rows, 0) : 0;
     const cockpitView = cockpit ? readinessView(cockpit.issues, cockpitRows) : null;
 
-    const downloadCockpit = () => {
+    const [confirming, setConfirming] = useState<string | null>(null);
+
+    const downloadCockpit = async () => {
         if (!cockpit) return;
         const entries = exportZipEntries(cockpit);
         if (entries.length === 0) { showToast('Nothing to export — SAP already has everything IREAMS holds.', 'info'); return; }
+        const fileName = `IREAMS_cockpit_source_data_${new Date().toISOString().slice(0, 10)}.zip`;
         const bytes = buildZip(entries);
-        saveAs(new Blob([bytes as BlobPart], { type: 'application/zip' }), `IREAMS_cockpit_source_data_${new Date().toISOString().slice(0, 10)}.zip`);
+        saveAs(new Blob([bytes as BlobPart], { type: 'application/zip' }), fileName);
         showToast(`${entries.length} file(s) zipped in the cockpit’s own layout — upload in Migrate Your Data.`, 'success');
+        // Every schedule in the file is stamped as sent, so the next send knows
+        // what SAP has already been told, and the planner sees the date.
+        try {
+            const out = await markSentToSap(cockpit.sentScheduleIds, fileName);
+            if (out.failed.length) showToast(`${out.failed.length} schedule(s) could not be marked as sent.`, 'error');
+            if (out.updated) void refresh();
+        } catch (e: unknown) {
+            showToast(errMessage(e), 'error');
+        }
+    };
+
+    const confirmInSap = async (id: string) => {
+        setConfirming(id);
+        try {
+            await markConfirmedInSap(id);
+            showToast('Marked as confirmed in SAP — it leaves the hand-over.', 'success');
+            await refresh();
+        } catch (e: unknown) {
+            showToast(errMessage(e), 'error');
+        } finally {
+            setConfirming(null);
+        }
     };
 
     return (
@@ -314,6 +341,42 @@ export const SapLoadCenterPage: React.FC = () => {
                     {cockpitView.verdict === 'attention' && <p className="text-sm text-amber-700 mb-3">Loads as it is. A few things are worth a look first.</p>}
                     {cockpitView.verdict === 'blocked' && <p className="text-sm text-rose-700 mb-3">SAP will reject some rows until the items under <b>Must fix</b> are dealt with — in IREAMS, or in the cockpit’s value mapping.</p>}
                     <ReadinessGroups view={cockpitView} />
+
+                    {/* Schedules SAP already has, changed by a study: the cockpit
+                        cannot update them, so the planner does — and says so here. */}
+                    {cockpit.changes.length > 0 && (
+                        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+                            <div className="text-sm font-semibold text-slate-800">For the planner — {cockpit.changes.length} schedule{cockpit.changes.length === 1 ? '' : 's'} SAP already has, changed by IREAMS</div>
+                            <p className="text-xs text-slate-500 mt-0.5 mb-3">
+                                SAP's Migration Cockpit creates and never updates. These go into the file on a hand-over sheet with the
+                                SAP numbers; apply the change in IP02 (plan cycle) or IA06 (task list), then mark it confirmed here so it
+                                leaves this list.
+                            </p>
+                            <ul className="divide-y divide-amber-100">
+                                {cockpit.changes.map(c => (
+                                    <li key={c.id} className="py-2.5 flex flex-wrap items-start gap-x-4 gap-y-1 text-sm">
+                                        <div className="min-w-[14rem] flex-1">
+                                            <div className="text-slate-800 font-medium">{c.title} <span className="text-[10px] font-mono text-slate-500 bg-white border border-slate-200 rounded px-1.5 py-0.5 ml-1">WARPL {c.sap.plan}{c.sap.item ? ` / ${c.sap.item}` : ''}</span></div>
+                                            <div className="text-xs text-slate-600 mt-0.5">
+                                                SAP has <b>{cadenceText(c.sapCadence) || '?'}</b> · IREAMS now <b>{cadenceText(c.cadence) || '?'}</b>
+                                                {c.study ? <span className="text-slate-400"> · from {c.study.title || 'a study'}</span> : null}
+                                            </div>
+                                            <ul className="text-xs text-slate-500 mt-0.5">{c.revisions.map((r, i) => <li key={i}>{revisionText(r)}</li>)}</ul>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${c.state === 'sent' ? 'bg-sky-50 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>
+                                                {c.state === 'sent' ? `sent ${c.sync.sentAt?.slice(0, 10)}` : 'not yet sent'}
+                                            </span>
+                                            <button onClick={() => void confirmInSap(c.id)} disabled={confirming === c.id}
+                                                className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-2.5 py-1.5 disabled:opacity-50">
+                                                {confirming === c.id ? 'Saving…' : 'Confirmed in SAP'}
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                 </Step>
             )}
 
