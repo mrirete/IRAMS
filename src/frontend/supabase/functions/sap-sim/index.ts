@@ -67,6 +67,7 @@ const entityResponse = (r: Row, status: number) =>
 /** Sets whose numbers SAP assigns from a range; the rest are keyed by the caller. */
 const GENERATED: Partial<Record<EntitySet, number>> = {
     A_Equipment: 10000000,
+    A_MeasuringPoint: 1000,
     A_MeasurementDocument: 1,
     A_MaintenanceNotification: 10000000,
     A_MaintenanceOrder: 4000000,

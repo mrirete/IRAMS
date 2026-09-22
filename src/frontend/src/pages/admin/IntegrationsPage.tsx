@@ -63,15 +63,30 @@ const Chip: React.FC<{ status: string }> = ({ status }) => (
     </span>
 );
 
-const DOC_WORD: Record<string, string> = { equipment: 'Equipment', functional_location: 'Functional location' };
+const DOC_WORD: Record<string, string> = {
+    equipment: 'Equipment', functional_location: 'Functional location',
+    measuring_point: 'Measuring point', measurement_document: 'Reading',
+};
 const docWord = (t: string) => DOC_WORD[t] ?? t.replace(/_/g, ' ');
+
+/** Where "Open record" goes for each document kind. A reading opens its point's trend. */
+const recordHref = (row: OutboxRow): string => {
+    switch (row.document_type) {
+        case 'measuring_point': return `/readings?point=${encodeURIComponent(row.document_id)}`;
+        case 'measurement_document': return '/readings';
+        default: return `/assets?id=${encodeURIComponent(row.document_id)}`;
+    }
+};
 
 /** "3 sent · 1 failed" — the numbers a person wants from a run, in words. */
 const STAT_WORDS: [string, string][] = [
     ['out_sent', 'sent to SAP'], ['out_dry_run', 'would be sent'], ['out_failed', 'failed'], ['out_conflict', 'conflicts'],
     ['out_already_sent', 'already sent'], ['out_waiting', 'waiting for retry'], ['out_retried', 'retried'], ['out_resend_queued', 'queued to re-send'],
     ['in_applied', 'updated from SAP'], ['in_created', 'created from SAP'], ['in_adopted', 'linked by tag'], ['in_conflict', 'conflicts'],
-    ['in_dry_run', 'would change'], ['in_echo', 'echoes ignored'], ['in_unchanged', 'unchanged'],
+    ['in_dry_run', 'would change'], ['in_echo', 'echoes ignored'], ['in_unchanged', 'unchanged'], ['out_in_sync', 'already in step'],
+    ['out_object_unlinked', 'points held (object not in SAP yet)'], ['out_point_unlinked', 'readings held (point not in SAP yet)'],
+    ['out_reading_not_logged', 'machine readings kept back'], ['in_object_unknown', 'SAP points on unknown objects'],
+    ['in_point_unknown', 'SAP readings on unknown points'], ['in_no_value', 'SAP documents without a value'],
     ['equipment_seen', 'equipment visible'], ['deleted', 'removed'],
 ];
 const statsText = (s: Record<string, number> | null | undefined): string => {
@@ -296,14 +311,25 @@ export const IntegrationsPage: React.FC = () => {
         catch (e) { showToast(e instanceof Error ? e.message : 'Could not acknowledge.', 'error'); }
     };
 
+    const simIsDocument = simEdit.set === 'A_MeasurementDocument';
     const simChange = async () => {
         if (!simTarget) return;
-        if (!simEdit.key.trim() || !simEdit.name.trim()) { showToast('Give the SAP key and the new name.', 'error'); return; }
+        if (!simEdit.key.trim() || !simEdit.name.trim()) { showToast(simIsDocument ? 'Give the measuring point number and the value.' : 'Give the SAP key and the new name.', 'error'); return; }
         setBusy('sim_edit');
         try {
-            const field = simEdit.set === 'A_Equipment' ? 'EquipmentName' : 'FunctionalLocationName';
-            const rs = await erpLinkService.run('sim_edit', simTarget.id, { edit: { set: simEdit.set, key: simEdit.key.trim(), changes: { [field]: simEdit.name.trim() } } });
-            if (rs[0]?.error) showToast(rs[0].error, 'error', 6000); else showToast('Changed in the simulator. Sync now to see it come back.', 'success');
+            let edit: { set: string; key?: string; changes: Record<string, unknown> };
+            if (simIsDocument) {
+                // A planner logging a reading in SAP: a new document on the point, dated now.
+                const value = Number(simEdit.name.trim());
+                if (!Number.isFinite(value)) { showToast('The value must be a number.', 'error'); return; }
+                const now = new Date();
+                edit = { set: simEdit.set, changes: { MeasuringPoint: simEdit.key.trim(), MsmtRdngDate: now.toISOString().slice(0, 10), MsmtRdngTime: now.toISOString().slice(11, 19), MeasurementReadingInEntryUoM: value, MeasurementReadingByUser: 'PLANNER' } };
+            } else {
+                const field = simEdit.set === 'A_Equipment' ? 'EquipmentName' : simEdit.set === 'A_MeasuringPoint' ? 'MeasuringPointDescription' : 'FunctionalLocationName';
+                edit = { set: simEdit.set, key: simEdit.key.trim(), changes: { [field]: simEdit.name.trim() } };
+            }
+            const rs = await erpLinkService.run('sim_edit', simTarget.id, { edit });
+            if (rs[0]?.error) showToast(rs[0].error, 'error', 6000); else showToast(simIsDocument ? 'Logged in the simulator. Sync now to see it arrive as a reading.' : 'Changed in the simulator. Sync now to see it come back.', 'success');
             setSimEdit((s) => ({ ...s, name: '' }));
             await load();
         } catch (e) { showToast(e instanceof Error ? e.message : 'Could not change.', 'error'); }
@@ -318,8 +344,7 @@ export const IntegrationsPage: React.FC = () => {
         finally { setBusy(null); }
     };
 
-    // The register opens the asset named by ?id= (Assets.tsx reads it).
-    const openRecord = (row: OutboxRow) => navigate(`/assets?id=${encodeURIComponent(row.document_id)}`);
+    const openRecord = (row: OutboxRow) => navigate(recordHref(row));
 
     const familiesLine = (t: ErpTarget) => FAMILIES
         .filter((f) => (t.families[f]?.direction ?? 'off') !== 'off')
@@ -449,13 +474,16 @@ export const IntegrationsPage: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_1fr_auto] gap-2 items-end">
                         <div><label className={label}>Object</label>
-                            <select className={input} value={simEdit.set} onChange={(e) => setSimEdit((s) => ({ ...s, set: e.target.value }))}><option value="A_Equipment">Equipment</option><option value="A_FunctionalLocation">Functional location</option></select>
+                            <select className={input} value={simEdit.set} onChange={(e) => setSimEdit((s) => ({ ...s, set: e.target.value, key: '', name: '' }))}>
+                                <option value="A_Equipment">Equipment</option><option value="A_FunctionalLocation">Functional location</option>
+                                <option value="A_MeasuringPoint">Measuring point</option><option value="A_MeasurementDocument">Reading (new document)</option>
+                            </select>
                         </div>
-                        <div><label className={label}>SAP key</label><input className={`${input} font-mono text-xs`} value={simEdit.key} onChange={(e) => setSimEdit((s) => ({ ...s, key: e.target.value }))} placeholder="10000001" list="sim-keys" />
-                            <datalist id="sim-keys">{sim.filter((e) => e.entity_set === simEdit.set).map((e) => <option key={e.id} value={e.entity_key} />)}</datalist>
+                        <div><label className={label}>{simIsDocument ? 'Measuring point number' : 'SAP key'}</label><input className={`${input} font-mono text-xs`} value={simEdit.key} onChange={(e) => setSimEdit((s) => ({ ...s, key: e.target.value }))} placeholder={simIsDocument ? '1000' : '10000001'} list="sim-keys" />
+                            <datalist id="sim-keys">{sim.filter((e) => e.entity_set === (simIsDocument ? 'A_MeasuringPoint' : simEdit.set)).map((e) => <option key={e.id} value={e.entity_key} />)}</datalist>
                         </div>
-                        <div><label className={label}>New name</label><input className={input} value={simEdit.name} onChange={(e) => setSimEdit((s) => ({ ...s, name: e.target.value }))} placeholder="Renamed in SAP" /></div>
-                        <button type="button" className={btnPrimary} onClick={() => void simChange()} disabled={!!busy}>{busy === 'sim_edit' ? <Loader2 size={13} className="animate-spin" /> : <Pencil size={13} />} Change in SAP</button>
+                        <div><label className={label}>{simIsDocument ? 'Value' : 'New name'}</label><input className={input} value={simEdit.name} onChange={(e) => setSimEdit((s) => ({ ...s, name: e.target.value }))} placeholder={simIsDocument ? '4.2' : 'Renamed in SAP'} /></div>
+                        <button type="button" className={btnPrimary} onClick={() => void simChange()} disabled={!!busy}>{busy === 'sim_edit' ? <Loader2 size={13} className="animate-spin" /> : <Pencil size={13} />} {simIsDocument ? 'Log a reading in SAP' : 'Change in SAP'}</button>
                     </div>
                     {sim.length > 0 && (
                         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -466,7 +494,7 @@ export const IntegrationsPage: React.FC = () => {
                                         <tr key={e.id}>
                                             <td className="px-3 py-1.5 text-slate-600">{e.entity_set.replace('A_', '').replace(/([a-z])([A-Z])/g, '$1 $2')}</td>
                                             <td className="px-3 py-1.5 font-mono">{e.entity_key}</td>
-                                            <td className="px-3 py-1.5 text-slate-800">{String(e.payload.EquipmentName ?? e.payload.FunctionalLocationName ?? '')}</td>
+                                            <td className="px-3 py-1.5 text-slate-800">{String(e.payload.EquipmentName ?? e.payload.FunctionalLocationName ?? e.payload.MeasuringPointDescription ?? (e.payload.MeasurementReadingInEntryUoM !== undefined ? `${e.payload.MeasurementReadingInEntryUoM} on point ${e.payload.MeasuringPoint}` : ''))}</td>
                                             <td className="px-3 py-1.5 text-slate-500">{when(e.last_change_datetime)}</td>
                                             <td className="px-3 py-1.5 font-mono text-slate-400">W/"{e.etag}"</td>
                                         </tr>

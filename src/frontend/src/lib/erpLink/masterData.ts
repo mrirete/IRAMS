@@ -284,15 +284,22 @@ export function changedFields(a: Partial<LinkAsset>, b: Partial<LinkAsset>): str
 
 // ── Watermarks and retries ───────────────────────────────────────────────────
 
-/** The later of the current watermark and every processed timestamp; never moves backwards. */
+/**
+ * The later of the current watermark and every processed timestamp; never
+ * moves backwards. Returns the winning timestamp AS THE DATABASE WROTE IT:
+ * Postgres keeps microseconds and JavaScript's Date keeps milliseconds, so a
+ * watermark re-rendered through Date lands 0.2 ms before the row it came
+ * from, and `updated_at > watermark` selects that row again on every run.
+ */
 export function advanceWatermark(current: string | null | undefined, processed: (string | null | undefined)[]): string | null {
-    let best = current ? new Date(current).getTime() : Number.NEGATIVE_INFINITY;
+    let bestAt = current ? new Date(current).getTime() : Number.NEGATIVE_INFINITY;
+    let best: string | null = current && Number.isFinite(bestAt) ? current : null;
     for (const p of processed) {
         if (!p) continue;
         const t = new Date(p).getTime();
-        if (Number.isFinite(t) && t > best) best = t;
+        if (Number.isFinite(t) && t > bestAt) { bestAt = t; best = p; }
     }
-    return Number.isFinite(best) ? new Date(best).toISOString() : null;
+    return best;
 }
 
 /** 1, 5, 15, 60 minutes, then every 4 hours. A dead endpoint is not hammered; a blip is retried soon. */
@@ -301,14 +308,39 @@ export function backoffMinutes(attempts: number): number {
     return steps[Math.min(Math.max(attempts, 0), steps.length - 1)];
 }
 
-export interface FamilyState { in?: string | null; out?: string | null }
+/**
+ * A family may carry more than one stream per direction: condition has
+ * points (by updated_at) and documents (by created_at), each with its own
+ * high-water mark. `in`/`out` are the family's main stream.
+ */
+export type WatermarkKey = 'in' | 'out' | 'docs_in' | 'docs_out';
+export type FamilyState = Partial<Record<WatermarkKey, string | null>>;
 export type Watermarks = Partial<Record<Family, FamilyState>>;
 
-export const watermarkOf = (w: Watermarks | null | undefined, family: Family, dir: 'in' | 'out'): string | null =>
-    w?.[family]?.[dir] ?? null;
+export const watermarkOf = (w: Watermarks | null | undefined, family: Family, key: WatermarkKey): string | null =>
+    w?.[family]?.[key] ?? null;
 
-export function withWatermark(w: Watermarks | null | undefined, family: Family, dir: 'in' | 'out', value: string | null): Watermarks {
+export function withWatermark(w: Watermarks | null | undefined, family: Family, key: WatermarkKey, value: string | null): Watermarks {
     const next: Watermarks = { ...(w ?? {}) };
-    next[family] = { ...(next[family] ?? {}), [dir]: value };
+    next[family] = { ...(next[family] ?? {}), [key]: value };
     return next;
+}
+
+/**
+ * Where the watermark may go after a batch: the latest processed instant,
+ * but never past a row that was held back (its object not yet in SAP), so
+ * the held row is seen again next run instead of being skipped forever.
+ */
+export function settleWatermark(current: string | null | undefined, processed: (string | null | undefined)[], held: (string | null | undefined)[]): string | null {
+    const advanced = advanceWatermark(current, processed);
+    const earliestHeld = held.map((h) => (h ? new Date(h).getTime() : NaN)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b)[0];
+    if (earliestHeld === undefined || advanced === null) return advanced;
+    const cap = earliestHeld - 1;
+    const cur = current ? new Date(current).getTime() : Number.NEGATIVE_INFINITY;
+    const adv = new Date(advanced).getTime();
+    // The cap binds only when it lies between where we are and where we would
+    // go; otherwise keep the database's own string (see advanceWatermark).
+    if (adv <= cap) return advanced;
+    if (cap <= cur) return current ?? null;
+    return new Date(cap).toISOString();
 }

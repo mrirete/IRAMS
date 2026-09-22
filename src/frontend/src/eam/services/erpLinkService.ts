@@ -144,7 +144,12 @@ export const erpLinkService = {
             fail('save target', error);
             return data as ErpTarget;
         }
-        const { data, error } = await supabase.from('erp_targets').insert({ ...row, created_by: user?.id ?? null }).select('*').single();
+        // The link carries changes AFTER go-live (plan §4): every family's
+        // watermark starts at the moment the target is created, so a register
+        // that came from SAP by file is not echoed straight back to SAP.
+        const now = new Date().toISOString();
+        const watermarks = Object.fromEntries(Object.keys(row.families).map((f) => [f, { in: now, out: now }]));
+        const { data, error } = await supabase.from('erp_targets').insert({ ...row, watermarks, created_by: user?.id ?? null }).select('*').single();
         fail('add target', error);
         return data as ErpTarget;
     },
@@ -212,7 +217,8 @@ export const erpLinkService = {
         fail('acknowledge', error);
     },
 
-    async run(mode: SyncMode, targetId?: string, extra: { direction?: 'OUT' | 'IN' | 'BOTH'; edit?: { set: string; key: string; changes: Record<string, unknown> } } = {}): Promise<SyncReport[]> {
+    /** `edit` without a key creates the object in the simulator (a planner logging a reading); with a key it changes it. */
+    async run(mode: SyncMode, targetId?: string, extra: { direction?: 'OUT' | 'IN' | 'BOTH'; edit?: { set: string; key?: string; changes: Record<string, unknown> } } = {}): Promise<SyncReport[]> {
         const { data, error } = await supabase.functions.invoke('erp-sync', { body: { mode, target_id: targetId, ...extra } });
         if (error) {
             // supabase-js hides the function's JSON body behind a generic message; surface it.

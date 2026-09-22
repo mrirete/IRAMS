@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     objectTypeOf, levelRank, childLevelOf, sendOrder, toEquipmentDoc, toFunctionalLocationDoc,
     fromEquipment, fromFunctionalLocation, patchDiff, newAssetFromEquipment, newAssetFromFunctionalLocation,
-    resolveInbound, resolveStaleSend, changedFields, advanceWatermark, backoffMinutes,
+    resolveInbound, resolveStaleSend, changedFields, advanceWatermark, settleWatermark, backoffMinutes,
     watermarkOf, withWatermark, flows, DEFAULT_FAMILIES, type LinkAsset,
 } from './masterData';
 
@@ -113,11 +113,19 @@ describe('the conflict rule', () => {
 });
 
 describe('watermarks and retries', () => {
-    it('advances to the latest processed timestamp and never backwards', () => {
-        expect(advanceWatermark(null, ['2026-01-02T00:00:00Z', null, '2026-01-01T00:00:00Z'])).toBe('2026-01-02T00:00:00.000Z');
-        expect(advanceWatermark('2026-03-01T00:00:00Z', ['2026-01-02T00:00:00Z'])).toBe('2026-03-01T00:00:00.000Z');
+    it('advances to the latest processed timestamp, as the database wrote it, and never backwards', () => {
+        // microseconds survive: a Date-rendered value would land 0.2 ms early and re-select the row forever
+        expect(advanceWatermark(null, ['2026-01-02T00:00:00.123456+00:00', null, '2026-01-01T00:00:00Z'])).toBe('2026-01-02T00:00:00.123456+00:00');
+        expect(advanceWatermark('2026-03-01T00:00:00Z', ['2026-01-02T00:00:00Z'])).toBe('2026-03-01T00:00:00Z');
         expect(advanceWatermark(null, [])).toBeNull();
         expect(advanceWatermark(null, ['garbage'])).toBeNull();
+    });
+    it('holds the watermark before a row that was held back, and never moves backwards', () => {
+        const p = ['2026-01-05T00:00:00.000Z', '2026-01-09T00:00:00.000Z'];
+        expect(settleWatermark(null, p, [])).toBe('2026-01-09T00:00:00.000Z');
+        expect(settleWatermark(null, p, ['2026-01-07T00:00:00.000Z'])).toBe('2026-01-06T23:59:59.999Z');
+        expect(settleWatermark('2026-01-08T00:00:00.000Z', p, ['2026-01-07T00:00:00.000Z'])).toBe('2026-01-08T00:00:00.000Z');
+        expect(settleWatermark(null, [], ['2026-01-07T00:00:00.000Z'])).toBeNull();
     });
     it('backs off 1, 5, 15, 60, then 240 minutes', () => {
         expect([0, 1, 2, 3, 4, 9].map(backoffMinutes)).toEqual([1, 5, 15, 60, 240, 240]);
