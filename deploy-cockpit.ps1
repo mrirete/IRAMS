@@ -37,8 +37,17 @@ New-Item -ItemType Directory -Path (Join-Path $dst '.vercel') | Out-Null
 
 Write-Host "`n=== Deploy (pinned CLI) ===" -ForegroundColor Cyan
 Set-Location $dst
-npx vercel@58.9.5 deploy --prod --yes --archive=tgz
-if ($LASTEXITCODE -ne 0) { throw "vercel deploy failed with exit $LASTEXITCODE" }
+try {
+# The CLI's exit code is not the deploy's: after a successful deploy it offers
+# to upgrade itself, and a failed upgrade exits 1 (seen 2026-09-22, "spawn
+# npm ENOENT"). The deploy is judged on its output — the Production line.
+$out = & npx vercel@58.9.5 deploy --prod --yes --archive=tgz 2>&1 | ForEach-Object { "$_" }
+$out | Write-Host
+$prod = $out | Where-Object { $_ -match 'Production:\s+https://\S+' } | Select-Object -First 1
+if (-not $prod) { throw "vercel deploy produced no Production URL (exit $LASTEXITCODE) — nothing was deployed" }
+if ($LASTEXITCODE -ne 0) { Write-Host "CLI exited $LASTEXITCODE after the deploy (its self-upgrade prompt); the deploy itself succeeded." -ForegroundColor Yellow }
+}
+finally { Set-Location $repo }
 
 Write-Host "`n=== Verify the RUNNING app, not the deployment API ===" -ForegroundColor Cyan
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
