@@ -19,6 +19,21 @@ describe('readiness for people', () => {
         expect(v.verdict).toBe('attention');
     });
 
+    it('folds fields whose names carry digits, which is most of SAP', () => {
+        // LTXA1 escaped the fold on the live page and landed raw — the field class lacked digits.
+        const v = readinessView([
+            { level: 'warn', message: "S_OPERATIONS.LTXA1 longer than SAP's 40 characters — clipped; check the clipped values read sensibly", count: 4 },
+            { level: 'warn', message: "S_MPLA.WPTXT longer than SAP's 40 characters — clipped; check the clipped values read sensibly", count: 3 },
+            { level: 'error', message: 'S_MPLA.ZYKL1 is mandatory and is blank — SAP will reject the row', count: 2 },
+        ], 30);
+        expect(v.check).toHaveLength(1);
+        expect(v.check[0].details).toEqual([
+            'Step description (LTXA1) on task-list steps: over 40 characters, 4 row(s)',
+            'Plan description (WPTXT) on maintenance plans: over 40 characters, 3 row(s)',
+        ]);
+        expect(v.mustFix[0].code).toBe('ZYKL1');
+    });
+
     it('keeps catalogue-code clips apart, because the fix is a mapping, not a shorter name', () => {
         const v = readinessView([
             { level: 'warn', message: "D_CODE longer than SAP's 4 characters — clipped; define 4-character catalog codes in QS41 and map the IREAMS codes to them in the cockpit's value mapping (the full codes are on the Order History sheet)", count: 2, object: 'openNotification' },

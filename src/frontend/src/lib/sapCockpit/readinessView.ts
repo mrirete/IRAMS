@@ -76,8 +76,10 @@ const OBJECT_LABELS: Record<string, string> = {
     S_OBJ_LIST: 'Object lists', S_ITEM: 'Maintenance items',
 };
 
-const CLIP = /^(?:(S_[A-Z_]+)\.)?([A-Z_]+) longer than SAP's (\d+) characters — clipped;(.*)$/;
-const BLANK = /^(?:(S_[A-Z_]+)\.)?([A-Z_]+) is (a key field|mandatory) and is blank(?: on (\d+) row\(s\))? — SAP will reject/;
+// SAP field names carry digits (LTXA1, KTEX1, ZYKL1, ATVLO...): the class must allow them,
+// or those lines escape the fold and land raw on the page.
+const CLIP = /^(?:(S_[A-Z0-9_]+)\.)?([A-Z0-9_]+) longer than SAP's (\d+) characters — clipped;(.*)$/;
+const BLANK = /^(?:(S_[A-Z0-9_]+)\.)?([A-Z0-9_]+) is (a key field|mandatory) and is blank(?: on (\d+) row\(s\))? — SAP will reject/;
 
 /** Fold raw issues into the three groups a person acts on. */
 export function readinessView(issues: RawIssue[], totalRows: number): ReadinessView {
