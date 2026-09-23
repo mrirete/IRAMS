@@ -64,6 +64,14 @@ describe('ready for a study?', () => {
         expect(byKey(r).condition.have).toBe('35 reading points, 0 readings');
     });
 
+    it('points with too few readings to trend are partial, and condition-based studies wait', () => {
+        const r = studyReadiness({ ...full, readingPoints: 35, readings: 1 });
+        expect(byKey(r).condition.status).toBe('partial');
+        expect(byKey(r).condition.because).toMatch(/Too few readings to trend/);
+        expect(r.blocked).toContainEqual({ study: 'Predict and condition-based RCM', needs: 'condition history' });
+        expect(r.verdict).toBe('4 of 5 analyses can run today — predict and condition-based RCM is waiting on condition history.');
+    });
+
     it('routes are the page’s to decide', () => {
         const r = studyReadiness(empty, { failures: '/somewhere/else' });
         expect(byKey(r).failures.action.to).toBe('/somewhere/else');

@@ -171,7 +171,7 @@ export const ApiKeysPage: React.FC = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                        <KeyRound size={20} className="text-primary-600" /> API keys
+                        <KeyRound size={20} className="text-primary-600" /> Inbound APIs
                     </h1>
                     <p className="text-slate-500 text-sm mt-1 max-w-2xl">
                         Credentials for pushing data into IREAMS from outside — each integration gets its own key,

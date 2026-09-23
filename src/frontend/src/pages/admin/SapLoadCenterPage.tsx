@@ -11,7 +11,7 @@
  * here and remembered in this browser. They are also written into the
  * workbook's Read-me so the file states what it was built against.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
     ArrowLeft, Download, FileSpreadsheet, Loader2, RefreshCw,
@@ -83,6 +83,14 @@ const Step: React.FC<{ n: number; title: string; children: React.ReactNode }> = 
 
 export const SapLoadCenterPage: React.FC = () => {
     const { showToast } = useToast();
+    // The Migration Center's "Master data and opening balances" link lands on
+    // the consultant section (#master-data) — opened, not left folded shut.
+    const masterDataRef = useRef<HTMLDetailsElement>(null);
+    useEffect(() => {
+        if (window.location.hash !== '#master-data' || !masterDataRef.current) return;
+        masterDataRef.current.open = true;
+        masterDataRef.current.scrollIntoView({ block: 'start' });
+    }, []);
     const [params, setParams] = useState<SapTargetParams>(loadParams);
     const [source, setSource] = useState<SapLoadSource | null>(null);
     const [loading, setLoading] = useState(true);
@@ -359,7 +367,7 @@ export const SapLoadCenterPage: React.FC = () => {
                 the consultant's E82 workbook (one sheet per object, SAP field
                 names on row 4) with its own readiness and per-sheet downloads.
                 A planner sending a strategy back never needs it. */}
-            <details className="rounded-2xl border border-slate-200 bg-slate-50/60">
+            <details id="master-data" ref={masterDataRef} className="rounded-2xl border border-slate-200 bg-slate-50/60 scroll-mt-4">
             <summary className="cursor-pointer select-none px-5 py-4 text-sm">
                 <span className="font-semibold text-slate-800">Advanced — SAP configuration values and the consultant workbook</span>
                 <span className="block text-xs text-slate-500 mt-0.5">Company code, plants, valuation classes; and the alternative E82 workbook format (functional locations, equipment, materials, BOMs, stock, open work) for consultants who load with LTMC sheets.</span>

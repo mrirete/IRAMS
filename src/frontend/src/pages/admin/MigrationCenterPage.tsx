@@ -12,8 +12,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     Database, Wrench, Users, Package, Building2, CalendarClock, Gauge,
     FileSpreadsheet, Radio, BarChart2, Boxes, CheckCircle2, ArrowRight, ArrowLeft, Loader2,
-    Send, RotateCcw, AlertTriangle, Tags, Download, FileUp, Lock,
+    Send, RotateCcw, AlertTriangle, Tags, Download, FileUp, Lock, ChevronRight,
 } from 'lucide-react';
+import { Drawer } from '../../eam/components/ui';
 import BulkImportModal from '../../eam/components/modals/BulkImportModal';
 import PidRegisterModal from '../../components/migration/PidRegisterModal';
 import { DatabaseService } from '../../eam/services/DatabaseService';
@@ -27,7 +28,7 @@ import { useToast } from '../../eam/contexts/ToastContext';
 import { useConfirm } from '../../eam/contexts/ConfirmContext';
 import { assessmentService } from '../../eam/services/AssessmentService';
 import type { IntakeDimensionKey } from '../../eam/services/IntakeQuickAnalysis';
-import { studyReadiness, type Ingredient } from '../../lib/migration/studyReadiness';
+import { studyReadiness, type Ingredient, type IngredientKey } from '../../lib/migration/studyReadiness';
 import { LookingFor } from '../../components/admin/DataDoors';
 import { ErpExportService } from '../../eam/services/ErpExportService';
 
@@ -55,11 +56,51 @@ interface Phase {
     requires?: { phase: number; needs: string; met: (c: Counts) => boolean }[];
 }
 
+/** "1 readings" → "1 reading": the phase units are plural nouns. */
+const unitFor = (n: number, unit: string) =>
+    n !== 1 ? unit : unit === 'people' ? 'person' : unit.replace(/batches$/, 'batch').replace(/s$/, '');
+
+/**
+ * The readiness ingredient each import feeds. A step can hold data and still be
+ * too thin for a study (one reading on 35 points) — its row then says so in
+ * amber instead of a plain green count that step 2 contradicts.
+ */
+const PHASE_INGREDIENT: Partial<Record<number, IngredientKey>> = { 1: 'register', 6: 'schedules', 7: 'failures', 8: 'codes', 9: 'condition' };
+
 const NEEDS_REGISTER = { phase: 1, needs: 'the asset register', met: (c: Counts) => c.assets > 0 };
 
 const SOURCE_LABELS: Record<string, string> = {
     sap_pm: 'SAP PM', maximo: 'IBM Maximo', maintainx: 'MaintainX', emaint: 'eMaint', limble: 'Limble', fiix: 'Fiix', upkeep: 'UpKeep',
 };
+const KNOWN_SOURCES = new Set([...Object.keys(SOURCE_LABELS), 'spreadsheet', 'other']);
+
+/**
+ * The source is a per-person convenience, remembered in this browser: an SAP
+ * shop should not have to pick "SAP PM" on every visit to see the SAP doors.
+ * Storage can be unavailable (private window) — the page works without it.
+ */
+const SOURCE_KEY = 'ireams.migration.source';
+const readStoredSource = (): string | null => {
+    try { const v = window.localStorage.getItem(SOURCE_KEY); return v && KNOWN_SOURCES.has(v) ? v : null; } catch { return null; }
+};
+const storeSource = (v: string) => { try { window.localStorage.setItem(SOURCE_KEY, v); } catch { /* convenience only */ } };
+
+/** One numbered step — the page reads top-down as the three things it does. */
+const Step: React.FC<{ n: number; title: string; lead?: React.ReactNode; right?: React.ReactNode; tone?: 'plain' | 'primary'; children: React.ReactNode }> = ({ n, title, lead, right, tone = 'plain', children }) => (
+    <section className={`rounded-2xl border p-5 ${tone === 'primary' ? 'border-primary-200 bg-primary-50/40' : 'border-slate-200 bg-white'}`}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-3 min-w-0">
+                <span className="w-7 h-7 rounded-full bg-primary-600 text-white text-sm font-bold flex items-center justify-center shrink-0">{n}</span>
+                <div className="min-w-0">
+                    <h2 className="font-semibold text-slate-800 leading-7">{title}</h2>
+                    {lead && <div className="text-sm text-slate-500 mt-0.5">{lead}</div>}
+                </div>
+            </div>
+            {right}
+        </div>
+        <div className="mt-4">{children}</div>
+    </section>
+);
 
 const PHASES: Phase[] = [
     {
@@ -202,7 +243,10 @@ export const MigrationCenterPage: React.FC = () => {
     const [batches, setBatches] = useState<Awaited<ReturnType<typeof importService.listBatches>>>([]);
     // import_batches.source_system vocabulary. Threaded into importAssets so a
     // foreign CMMS's own ids are kept (erp_object_map) rather than discarded.
-    const [sourceSystem, setSourceSystem] = useState('spreadsheet');
+    const [sourceSystem, setSourceSystemState] = useState<string>(() => readStoredSource() ?? 'spreadsheet');
+    const setSourceSystem = (v: string) => { setSourceSystemState(v); storeSource(v); };
+    // The import step whose details sheet is open.
+    const [sheetPhase, setSheetPhase] = useState<number | null>(null);
     const sourceLabel = SOURCE_LABELS[sourceSystem] ?? 'your system';
     const [inviting, setInviting] = useState(false);
     const [harvesting, setHarvesting] = useState(false);
@@ -242,6 +286,13 @@ export const MigrationCenterPage: React.FC = () => {
     }, []);
 
     useEffect(() => { void refresh(); }, [refresh]);
+
+    // Nothing chosen in this browser yet: the most recent import names the source.
+    useEffect(() => {
+        if (readStoredSource()) return;
+        const last = batches.find(b => b.source_system && KNOWN_SOURCES.has(b.source_system));
+        if (last?.source_system) setSourceSystemState(last.source_system);
+    }, [batches]);
 
     /**
      * Bulk invites — imported contacts have an email but no login, and inviting
@@ -405,8 +456,9 @@ export const MigrationCenterPage: React.FC = () => {
     };
 
     const done = (p: Phase) => !!counts && p.count(counts) > 0;
+    const blockersOf = (p: Phase) => (done(p) ? [] : (p.requires ?? []).filter((r) => !counts || !r.met(counts)));
 
-    // ── Study readiness: the purpose of the page ─────────────────────────────
+    // ── Study readiness: what a study can run on ─────────────────────────────
     // Where each ingredient is fetched from depends on where the files come
     // from: SAP shops have the cockpit's own files; everyone else has the
     // wizard and the templates.
@@ -427,9 +479,10 @@ export const MigrationCenterPage: React.FC = () => {
         if (i.action.to.startsWith('#import:')) setOpenType(i.action.to.slice('#import:'.length) as ImportType);
         else navigate(i.action.to, { state: { to: '/admin/migration', label: 'Migration Center' } });
     };
-    const STATUS_DOT: Record<Ingredient['status'], string> = {
-        ready: 'bg-emerald-500', partial: 'bg-amber-400', missing: 'bg-slate-300',
-    };
+    // A ready ingredient that still carries a caveat (failures inferred from the
+    // work type) is amber, not green — the dot never contradicts the words under it.
+    const dotFor = (i: Ingredient) =>
+        i.status === 'ready' ? (i.because ? 'bg-amber-400' : 'bg-emerald-500') : i.status === 'partial' ? 'bg-amber-400' : 'bg-slate-300';
     const SOURCE_KINDS: { id: string; label: string; systems: string[] }[] = [
         { id: 'sap', label: 'SAP PM', systems: ['sap_pm'] },
         { id: 'cmms', label: 'Another CMMS', systems: ['maximo', 'maintainx', 'emaint', 'limble', 'fiix', 'upkeep', 'other'] },
@@ -437,6 +490,39 @@ export const MigrationCenterPage: React.FC = () => {
     ];
     const sourceKind = SOURCE_KINDS.find(k => k.systems.includes(sourceSystem))?.id ?? 'sheets';
     const wizardState = { state: { to: '/admin/migration', label: 'Migration Center' } };
+
+    // The first step that can be done now and is not — the list points at it.
+    // Sensor feeds (10) and the assessment (11) are not loads, so never "next".
+    const nextPhase = counts ? PHASES.find(p => !done(p) && blockersOf(p).length === 0 && p.n <= 9) : undefined;
+    const sheet = PHASES.find(p => p.n === sheetPhase) ?? null;
+    const sheetTemplates = sheet ? phaseTemplatesFor(sourceSystem, sheet.n) : [];
+
+    /** A step's own action — the importer, or the page that owns the step. */
+    const phaseAction = (p: Phase, size: 'sm' | 'md' = 'sm') => {
+        const locked = blockersOf(p).length > 0;
+        const cls = size === 'sm'
+            ? 'inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-3 py-1.5'
+            : 'inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-4 py-2';
+        // In the list, a step that already has data gets a quiet button — the
+        // blue ones are what is left to do. The drawer's footer stays primary.
+        const on = size === 'sm' && done(p)
+            ? 'border border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+            : 'bg-primary-600 hover:bg-primary-700 text-white';
+        const off = 'bg-slate-200 text-slate-400 cursor-not-allowed';
+        if (p.importType) {
+            return (
+                <button onClick={() => { setSheetPhase(null); setOpenType(p.importType!); }} disabled={locked} className={`${cls} ${locked ? off : on}`}>
+                    {locked && <Lock size={12} />} {done(p) ? 'Import more' : 'Import'} <ArrowRight size={13} />
+                </button>
+            );
+        }
+        if (!p.to) return null;
+        return locked ? (
+            <button disabled className={`${cls} ${off}`}><Lock size={12} /> {p.toLabel}</button>
+        ) : (
+            <Link to={p.to} state={wizardState.state} className={`${cls} ${on}`}>{p.toLabel} <ArrowRight size={13} /></Link>
+        );
+    };
 
     return (
         <div className="ers-page-form space-y-6 pb-24 animate-in fade-in duration-300">
@@ -451,11 +537,10 @@ export const MigrationCenterPage: React.FC = () => {
                     <Database size={22} className="text-primary-600" /> Migration Center
                 </h1>
                 <p className="text-slate-500 text-sm mt-1 max-w-2xl">
-                    Bring your plant’s data in, see what a reliability study can run on, and send the finished
-                    strategy back to your maintenance system. The register comes first.
+                    Three steps: bring your plant’s data in, check what a reliability study can run on, then send
+                    the finished strategy back to your maintenance system.
                 </p>
                 <div className="mt-2"><LookingFor here="migration" /></div>
-                <MaturityEmphasisHint />
             </div>
 
             {/* Order warning — the failure mode this page exists to prevent */}
@@ -470,33 +555,146 @@ export const MigrationCenterPage: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Door B first: ready for a study? — the reason to import anything ── */}
-            <section className="rounded-2xl border border-primary-200 bg-primary-50/40 p-5">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                        <h2 className="font-semibold text-slate-800 flex items-center gap-2"><BarChart2 size={17} className="text-primary-600" /> Ready for a reliability study?</h2>
-                        <p className="text-sm text-slate-600 mt-1">{readiness ? readiness.verdict : 'Reading the register…'}</p>
+            {/* ── Step 1: bring data in — by what you have ── */}
+            <Step
+                n={1}
+                title="Bring data in"
+                lead="Start from what you have. Naming the source keeps its record ids, so a later integration starts already mapped."
+                right={(
+                    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Where your data comes from">
+                        {SOURCE_KINDS.map(k => (
+                            <button key={k.id} onClick={() => setSourceSystem(k.systems[0])} aria-pressed={sourceKind === k.id}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${sourceKind === k.id ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>
+                                {k.label}
+                            </button>
+                        ))}
                     </div>
-                    {readiness && readiness.canRun.length > 0 && (
-                        <Link to="/specialist/assessment" state={wizardState.state}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2">
-                            Run the assessment <ArrowRight size={14} />
-                        </Link>
+                )}
+            >
+                {sourceKind === 'cmms' && (
+                    <label className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                        <span>Which one?</span>
+                        <select value={sourceSystem} onChange={e => setSourceSystem(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white">
+                            <option value="maximo">IBM Maximo</option><option value="maintainx">MaintainX</option><option value="emaint">eMaint</option>
+                            <option value="limble">Limble</option><option value="fiix">Fiix</option><option value="upkeep">UpKeep</option><option value="other">Another system</option>
+                        </select>
+                    </label>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {sourceKind === 'sap' && (
+                        <>
+                            <Link to="/admin/migration/cockpit" className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
+                                <div className="text-sm font-semibold text-slate-800">Migration Cockpit source data</div>
+                                <div className="text-xs text-slate-500 mt-1">The ZIPs SAP’s cockpit downloads: measuring points, readings, task lists, maintenance items and plans. Drop the folders — no reshaping.</div>
+                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: condition history and the current PM programme →</div>
+                            </Link>
+                            <Link to="/specialist/import" state={wizardState.state} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
+                                <div className="text-sm font-semibold text-slate-800">Order history (IW38 / IW39 export)</div>
+                                <div className="text-xs text-slate-500 mt-1">Orders and notifications as a spreadsheet export. Columns are mapped for you, quality-checked, and the batch can be rolled back.</div>
+                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: failure history and cost — export the cost columns →</div>
+                            </Link>
+                            <button onClick={() => setOpenType('asset')} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block text-left">
+                                <div className="text-sm font-semibold text-slate-800">Consultant workbook (E82 layout)</div>
+                                <div className="text-xs text-slate-500 mt-1">Functional locations, equipment, materials, BOMs, stock and source lists, one sheet per object. Drop the whole workbook — the right sheet is picked for each step.</div>
+                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: the register, and the finance master data →</div>
+                            </button>
+                        </>
+                    )}
+                    {sourceKind === 'cmms' && (
+                        <>
+                            <Link to="/specialist/import" state={wizardState.state} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block md:col-span-2">
+                                <div className="text-sm font-semibold text-slate-800">{sourceLabel} exports — register and work-order history</div>
+                                <div className="text-xs text-slate-500 mt-1">Upload the export as it comes out of {sourceLabel}; the wizard proposes the column mapping, you confirm it, and the batch can be rolled back.</div>
+                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: the register, failure history and cost →</div>
+                            </Link>
+                            <div className="rounded-xl border border-slate-200 p-4">
+                                <div className="text-sm font-semibold text-slate-800">Everything else</div>
+                                <div className="text-xs text-slate-500 mt-1">Readings, schedules, parts, people: IREAMS’s own templates, in the list below.</div>
+                            </div>
+                        </>
+                    )}
+                    {sourceKind === 'sheets' && (
+                        <div className="rounded-xl border border-slate-200 p-4 md:col-span-3">
+                            <div className="text-sm font-semibold text-slate-800">IREAMS’s own templates</div>
+                            <div className="text-xs text-slate-500 mt-1">One template per import below (open Details), with a Read-me sheet and example rows. The register first; everything else names an asset tag from it.</div>
+                        </div>
                     )}
                 </div>
 
+                {/* Every import, in order — one line each; notes, templates and
+                    the extra tools open in a side sheet so the list stays calm. */}
+                <div className="mt-5">
+                    <div className="flex items-baseline justify-between gap-2 mb-2">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Every import, in order</h3>
+                        {counts && <span className="text-xs text-slate-500">{PHASES.filter(done).length} of {PHASES.length} have data</span>}
+                    </div>
+                    <ol className="divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
+                        {PHASES.map(p => {
+                            const complete = done(p);
+                            const n = counts ? p.count(counts) : 0;
+                            const blockers = blockersOf(p);
+                            const locked = blockers.length > 0;
+                            const isNext = nextPhase?.n === p.n;
+                            const ing = PHASE_INGREDIENT[p.n] && readiness?.ingredients.find(i => i.key === PHASE_INGREDIENT[p.n]);
+                            const thin = complete && !!ing && ing.status !== 'ready';
+                            return (
+                                <li key={p.n} className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-2.5 ${isNext ? 'bg-primary-50/60' : 'bg-white'}`}>
+                                    <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold border
+                                        ${complete ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : isNext ? 'bg-primary-600 text-white border-primary-600' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                        {complete ? <CheckCircle2 size={15} /> : locked ? <Lock size={12} /> : p.n}
+                                    </span>
+                                    <button onClick={() => setSheetPhase(p.n)} className="flex-1 min-w-[10rem] text-left group">
+                                        <span className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-sm font-semibold text-slate-800 group-hover:text-primary-700">{p.title}</span>
+                                            {isNext && <span className="text-[10px] font-bold uppercase tracking-wider text-primary-700">Next</span>}
+                                            {counts && (
+                                                <span className={`text-[11px] ${thin ? 'text-amber-700' : complete ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                                    {complete ? `${n.toLocaleString()} ${unitFor(n, p.unit)}${thin ? ' — too few for a study yet (step 2)' : ''}`
+                                                        : locked ? `needs ${blockers.map(b => b.needs).join(' and ')}` : 'not started'}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </button>
+                                    <div className="flex items-center gap-2 ml-10 sm:ml-0">
+                                        {phaseAction(p)}
+                                        <button onClick={() => setSheetPhase(p.n)} className="inline-flex items-center gap-0.5 text-xs font-medium text-slate-500 hover:text-slate-800 px-1.5 py-1.5" aria-label={`Details and templates for ${p.title}`}>
+                                            Details <ChevronRight size={13} />
+                                        </button>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ol>
+                </div>
+            </Step>
+
+            {/* ── Step 2: ready for a study? — the reason to import anything ── */}
+            <Step
+                n={2}
+                tone="primary"
+                title="Ready for a reliability study?"
+                lead={readiness ? readiness.verdict : 'Reading the register…'}
+                right={readiness && readiness.canRun.length > 0 ? (
+                    <Link to="/specialist/assessment" state={wizardState.state}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2">
+                        Run the assessment <ArrowRight size={14} />
+                    </Link>
+                ) : undefined}
+            >
                 {readiness && (
                     <>
-                        <ul className="mt-4 divide-y divide-primary-100 rounded-xl border border-primary-100 bg-white">
+                        <MaturityEmphasisHint />
+                        <ul className="mt-3 divide-y divide-primary-100 rounded-xl border border-primary-100 bg-white">
                             {readiness.ingredients.map(i => (
                                 <li key={i.key} className="px-4 py-3 flex flex-wrap items-start gap-x-4 gap-y-1">
-                                    <span className={`mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ${STATUS_DOT[i.status]}`} aria-label={i.status} />
+                                    <span className={`mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ${dotFor(i)}`} aria-label={i.status === 'ready' && i.because ? 'ready, with a caveat' : i.status} />
                                     <div className="min-w-[12rem] flex-1">
                                         <div className="text-sm text-slate-800"><span className="font-semibold">{i.label}</span> <span className="text-slate-500">— {i.have}</span></div>
                                         <div className="text-xs text-slate-500 mt-0.5">{i.unlocks}</div>
                                         {i.because && <div className={`text-xs mt-0.5 ${i.status === 'missing' ? 'text-slate-600' : 'text-amber-700'}`}>{i.because}</div>}
                                     </div>
-                                    {i.status !== 'ready' && (
+                                    {(i.status !== 'ready' || i.because) && (
                                         <button onClick={() => follow(i)}
                                             className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-2.5 py-1.5">
                                             {i.action.label} <ArrowRight size={12} />
@@ -511,246 +709,116 @@ export const MigrationCenterPage: React.FC = () => {
                         </div>
                     </>
                 )}
-            </section>
+            </Step>
 
-            {/* ── Door A: bring data in — by what you have ── */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                        <h2 className="font-semibold text-slate-800 flex items-center gap-2"><FileUp size={17} className="text-slate-400" /> Bring data in</h2>
-                        <p className="text-sm text-slate-500 mt-1">Start from what you have. Naming the source keeps its record ids, so a later integration starts already mapped.</p>
-                    </div>
-                    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-                        {SOURCE_KINDS.map(k => (
-                            <button key={k.id} onClick={() => setSourceSystem(k.systems[0])}
-                                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${sourceKind === k.id ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>
-                                {k.label}
-                            </button>
-                        ))}
+            {/* ── Step 3: the way back to the maintenance system ── */}
+            <Step
+                n={3}
+                title={isSap ? 'Send it back to SAP' : 'Send it back to your maintenance system'}
+                lead="After a study: the new plans, task lists and points go back to the system your planners work in."
+            >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {isSap ? (
+                        <Link to="/admin/migration/sap" className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
+                            <div className="text-sm font-semibold text-slate-800 flex items-center gap-2"><Send size={15} className="text-slate-400" /> Send to SAP</div>
+                            <p className="text-xs text-slate-500 mt-1">New plans, task lists and points go out in the cockpit’s own files; changes to plans SAP already has go to the planner with what SAP holds and what IREAMS now says.</p>
+                            <span className="text-[11px] text-primary-700 mt-2 inline-block">Open Send to SAP →</span>
+                        </Link>
+                    ) : (
+                        <Link to="/specialist/deliver" state={wizardState.state} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
+                            <div className="text-sm font-semibold text-slate-800 flex items-center gap-2"><Send size={15} className="text-slate-400" /> Deliver work to {sourceKind === 'cmms' ? sourceLabel : 'your CMMS'}</div>
+                            <p className="text-xs text-slate-500 mt-1">A study’s PM changes and new work, as a file your CMMS imports. Using SAP? Pick SAP PM in step 1 for the cockpit files.</p>
+                            <span className="text-[11px] text-primary-700 mt-2 inline-block">Open Deliver Work →</span>
+                        </Link>
+                    )}
+                    <div className="rounded-xl border border-slate-200 p-4">
+                        <div className="text-sm font-semibold text-slate-800 flex items-center gap-2"><Building2 size={15} className="text-slate-400" /> Finance &amp; materials</div>
+                        <ul className="mt-2 space-y-2 text-sm">
+                            {isSap && (
+                                <li>
+                                    <Link to="/admin/migration/sap#master-data" className="text-slate-800 hover:text-primary-700 font-medium">Master data and opening balances →</Link>
+                                    <div className="text-xs text-slate-500">Materials with valuation class and price control, source lists, opening stock as a 561 movement, cost centres — through the cockpit.</div>
+                                </li>
+                            )}
+                            <li>
+                                <Link to="/finops" className="text-slate-800 hover:text-primary-700 font-medium">Financial documents →</Link>
+                                <div className="text-xs text-slate-500">
+                                    Cost postings, goods movements, receipts, PO lines and invoices as a hand-over file, exactly once.
+                                    {finance ? ` Waiting now: ${finance.unsettled} unsettled order(s), ${finance.unpostedMovements} unposted movement(s).` : ''}
+                                </div>
+                                {isSap && <div className="text-[11px] text-slate-500 mt-0.5">Sent automatically once SAP is connected under ERP Systems (proven against the simulator; a real SAP FI is a client-connect step). This file remains the fallback.</div>}
+                            </li>
+                        </ul>
                     </div>
                 </div>
+            </Step>
 
-                {sourceKind === 'cmms' && (
-                    <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-                        <span>Which one?</span>
-                        <select value={sourceSystem} onChange={e => setSourceSystem(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white">
-                            <option value="maximo">IBM Maximo</option><option value="maintainx">MaintainX</option><option value="emaint">eMaint</option>
-                            <option value="limble">Limble</option><option value="fiix">Fiix</option><option value="upkeep">UpKeep</option><option value="other">Another system</option>
-                        </select>
-                    </label>
+            {/* One import's details — notes, templates and its extra tools. */}
+            <Drawer
+                open={!!sheet}
+                onClose={() => setSheetPhase(null)}
+                title={sheet ? `${sheet.n}. ${sheet.title}` : undefined}
+                subtitle={sheet && counts ? (done(sheet) ? `${sheet.count(counts).toLocaleString()} ${unitFor(sheet.count(counts), sheet.unit)} in IREAMS` : 'Not started') : undefined}
+                footer={sheet ? <div className="flex w-full justify-end">{phaseAction(sheet, 'md')}</div> : undefined}
+            >
+                {sheet && (
+                    <div className="p-4 md:p-5 space-y-4">
+                        <p className="text-sm text-slate-600">{sheet.blurb}</p>
+                        {blockersOf(sheet).length > 0 && (
+                            <p className="flex items-start gap-1.5 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                <Lock size={14} className="mt-0.5 shrink-0" />
+                                <span>Locked — import {blockersOf(sheet).map(b => `${b.needs} (step ${b.phase})`).join(' and ')} first.</span>
+                            </p>
+                        )}
+                        {sheet.note && <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">{sheet.note}</p>}
+
+                        {(sheet.n === 1 || sheet.n === 2 || sheet.n === 7) && (
+                            <div className="flex flex-wrap gap-2">
+                                {sheet.n === 1 && (
+                                    <button onClick={() => { setSheetPhase(null); setPidOpen(true); }}
+                                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2">
+                                        <FileUp size={13} /> No spreadsheet? Build it from a P&amp;ID
+                                    </button>
+                                )}
+                                {sheet.n === 2 && (
+                                    <button onClick={() => void inviteImportedPeople()} disabled={inviting || !counts || counts.people === 0}
+                                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2 disabled:opacity-50">
+                                        {inviting ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Invite imported people
+                                    </button>
+                                )}
+                                {sheet.n === 7 && (
+                                    <button onClick={() => void exportUnresolvedCodes()} disabled={harvesting}
+                                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2 disabled:opacity-50">
+                                        {harvesting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Export unresolved codes from history
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* The source system decides which files a user is handed for
+                            this step — a SAP shop gets the cockpit workbook and the PM
+                            load files, in the layouts the importers read as they arrive. */}
+                        {sheetTemplates.length > 0 && (
+                            <div>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Templates for {sourceLabel}</h3>
+                                <ul className="space-y-2">
+                                    {sheetTemplates.map(t => (
+                                        <li key={t.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                                            <button onClick={t.download} className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-700 hover:underline">
+                                                <Download size={13} /> {t.label}
+                                            </button>
+                                            {t.hint && <p className="text-xs text-slate-500 mt-1">{t.hint}</p>}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                        {sheet.n === 7 && sourceSystem !== 'spreadsheet' && sourceSystem !== 'other' && (
+                            <p className="text-xs text-slate-500">The wizard offers the {sourceLabel} history and register templates in your system’s own export layout.</p>
+                        )}
+                    </div>
                 )}
-
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {sourceKind === 'sap' && (
-                        <>
-                            <Link to="/admin/migration/cockpit" className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
-                                <div className="text-sm font-semibold text-slate-800">Migration Cockpit source data</div>
-                                <div className="text-xs text-slate-500 mt-1">The ZIPs SAP’s cockpit downloads: measuring points, readings, task lists, maintenance items and plans. Drop the folders — no reshaping.</div>
-                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: condition history and the current PM programme →</div>
-                            </Link>
-                            <Link to="/specialist/import" state={wizardState.state} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block">
-                                <div className="text-sm font-semibold text-slate-800">Order history (IW38 / IW39 export)</div>
-                                <div className="text-xs text-slate-500 mt-1">Orders and notifications as a spreadsheet export. Columns are mapped for you, quality-checked, and the batch can be rolled back.</div>
-                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: failure history and cost — export the cost columns →</div>
-                            </Link>
-                            <div className="rounded-xl border border-slate-200 p-4">
-                                <div className="text-sm font-semibold text-slate-800">Consultant workbook (E82 layout)</div>
-                                <div className="text-xs text-slate-500 mt-1">Functional locations, equipment, materials, BOMs, stock and source lists, one sheet per object. Drop the whole workbook on the matching step below.</div>
-                                <div className="text-[11px] text-slate-500 mt-2">Gives a study: the register, and the finance master data (materials, valuation, cost centres).</div>
-                            </div>
-                        </>
-                    )}
-                    {sourceKind === 'cmms' && (
-                        <>
-                            <Link to="/specialist/import" state={wizardState.state} className="rounded-xl border border-slate-200 hover:border-primary-300 p-4 block md:col-span-2">
-                                <div className="text-sm font-semibold text-slate-800">{sourceLabel} exports — register and work-order history</div>
-                                <div className="text-xs text-slate-500 mt-1">Upload the export as it comes out of {sourceLabel}; the wizard proposes the column mapping, you confirm it, and the batch can be rolled back.</div>
-                                <div className="text-[11px] text-primary-700 mt-2">Gives a study: the register, failure history and cost →</div>
-                            </Link>
-                            <div className="rounded-xl border border-slate-200 p-4">
-                                <div className="text-sm font-semibold text-slate-800">Everything else</div>
-                                <div className="text-xs text-slate-500 mt-1">Readings, schedules, parts, people: IREAMS’s own templates, on the steps below.</div>
-                            </div>
-                        </>
-                    )}
-                    {sourceKind === 'sheets' && (
-                        <div className="rounded-xl border border-slate-200 p-4 md:col-span-3">
-                            <div className="text-sm font-semibold text-slate-800">IREAMS’s own templates</div>
-                            <div className="text-xs text-slate-500 mt-1">One template per step below, with a Read-me sheet and example rows. The register first; everything else names an asset tag from it.</div>
-                        </div>
-                    )}
-                </div>
-
-                <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60">
-                    <summary className="cursor-pointer select-none px-4 py-3 text-sm">
-                        <span className="font-semibold text-slate-800">All import steps, in order</span>
-                        <span className="text-xs text-slate-500 ml-2">assets · people · inventory · BOMs · vendors · schedules · history · codes · readings · sensors · assess</span>
-                    </summary>
-                    <div className="px-4 pb-4">
-            <div className="space-y-3">
-                {PHASES.map((p) => {
-                    const complete = done(p);
-                    const n = counts ? p.count(counts) : 0;
-                    // The mechanism behind "work down this list in order": a phase
-                    // whose prerequisites hold no data yet is locked — its importer
-                    // will not open. Until counts load, treat as locked (fail safe).
-                    const blockers = complete ? [] : (p.requires ?? []).filter((r) => !counts || !r.met(counts));
-                    const locked = blockers.length > 0;
-                    const phaseTemplates = phaseTemplatesFor(sourceSystem, p.n);
-                    return (
-                        <div key={p.n}
-                            className={`rounded-2xl border bg-white p-5 transition-colors ${complete ? 'border-emerald-200' : 'border-slate-200'}`}>
-                            <div className="flex items-start gap-4">
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-bold text-sm
-                                    ${complete ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                                        : 'bg-slate-50 text-slate-400 border border-slate-200'}`}>
-                                    {complete ? <CheckCircle2 size={18} /> : locked ? <Lock size={15} /> : p.n}
-                                </div>
-
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-slate-400">{p.icon}</span>
-                                        <h3 className="font-semibold text-slate-800">{p.title}</h3>
-                                        {counts && (
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full
-                                                ${complete ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                {complete ? `${n.toLocaleString()} ${p.unit}` : 'Not started'}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-slate-500 mt-1">{p.blurb}</p>
-                                    {p.note && !complete && (
-                                        <p className="text-xs text-slate-400 mt-1.5">{p.note}</p>
-                                    )}
-
-                                    {locked && (
-                                        <p className="flex items-start gap-1.5 text-xs font-medium text-amber-700 mt-1.5">
-                                            <Lock size={12} className="mt-0.5 shrink-0" />
-                                            <span>
-                                                Locked — import {blockers.map((b, i) => (
-                                                    <React.Fragment key={b.phase}>
-                                                        {i > 0 && ' and '}{b.needs} (phase {b.phase})
-                                                    </React.Fragment>
-                                                ))} first.
-                                            </span>
-                                        </p>
-                                    )}
-                                    <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                        {p.importType && (
-                                            <button
-                                                onClick={() => setOpenType(p.importType!)}
-                                                disabled={locked}
-                                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
-                                            >
-                                                {locked && <Lock size={12} />} Import {p.title.toLowerCase()} <ArrowRight size={13} />
-                                            </button>
-                                        )}
-                                        {p.to && (locked ? (
-                                            <button
-                                                disabled
-                                                className="flex items-center gap-1.5 rounded-lg bg-slate-200 text-slate-400 text-xs font-semibold px-3 py-2 cursor-not-allowed"
-                                            >
-                                                <Lock size={12} /> {p.toLabel} <ArrowRight size={13} />
-                                            </button>
-                                        ) : (
-                                            <Link
-                                                to={p.to}
-                                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2"
-                                            >
-                                                {p.toLabel} <ArrowRight size={13} />
-                                            </Link>
-                                        ))}
-                                        {p.n === 7 && (
-                                            <button
-                                                onClick={() => void exportUnresolvedCodes()}
-                                                disabled={harvesting}
-                                                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2 disabled:opacity-50"
-                                            >
-                                                {harvesting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                                                Export unresolved codes from history
-                                            </button>
-                                        )}
-                                        {p.n === 1 && (
-                                            <button
-                                                onClick={() => setPidOpen(true)}
-                                                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2"
-                                            >
-                                                <FileUp size={13} />
-                                                No spreadsheet? Build it from a P&ID
-                                            </button>
-                                        )}
-                                        {p.n === 2 && (
-                                            <button
-                                                onClick={() => void inviteImportedPeople()}
-                                                disabled={inviting || !counts || counts.people === 0}
-                                                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2 disabled:opacity-50"
-                                            >
-                                                {inviting ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                                                Invite imported people
-                                            </button>
-                                        )}
-                                    </div>
-                                    {/* The source system decides which files a user is handed for
-                                        this step — a SAP shop gets the cockpit workbook and the PM
-                                        load files, in the layouts the importers read as they arrive. */}
-                                    {phaseTemplates.length > 0 && (
-                                        <div className="mt-2.5 flex flex-wrap items-start gap-2">
-                                            <span className="text-xs text-slate-500 py-1.5">Templates for {sourceLabel}:</span>
-                                            {phaseTemplates.map(t => (
-                                                <button
-                                                    key={t.id}
-                                                    onClick={t.download}
-                                                    title={t.hint}
-                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-colors"
-                                                >
-                                                    <Download size={12} /> {t.label}
-                                                </button>
-                                            ))}
-                                            <span className="basis-full text-[11px] text-slate-400">
-                                                {phaseTemplates.map(t => t.hint).join(' ')}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {p.n === 7 && sourceSystem !== 'spreadsheet' && sourceSystem !== 'other' && (
-                                        <p className="mt-2 text-[11px] text-slate-400">
-                                            The wizard offers the {sourceLabel} history and register templates in your system's own export layout.
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-                    </div>
-                </details>
-            </section>
-
-            {/* ── Doors C and D: the way back to SAP ── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Link to="/admin/migration/sap" className="rounded-2xl border border-slate-200 bg-white hover:border-primary-300 p-5 block">
-                    <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Send size={16} className="text-slate-400" /> Send strategy back to SAP</h2>
-                    <p className="text-sm text-slate-500 mt-1">After a study: new plans, task lists and points go out in the cockpit’s own files; changes to plans SAP already has go to the planner with what SAP holds and what IREAMS now says.</p>
-                    <span className="text-[11px] text-primary-700 mt-2 inline-block">Send to SAP →</span>
-                </Link>
-                <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Building2 size={16} className="text-slate-400" /> Finance &amp; materials with SAP</h2>
-                    <ul className="mt-2 space-y-2 text-sm">
-                        <li>
-                            <Link to="/admin/migration/sap" className="text-slate-800 hover:text-primary-700 font-medium">Master data and opening balances →</Link>
-                            <div className="text-xs text-slate-500">Materials with valuation class and price control, source lists, opening stock as a 561 movement, cost centres — through the cockpit. Works today.</div>
-                        </li>
-                        <li>
-                            <Link to="/finops" className="text-slate-800 hover:text-primary-700 font-medium">Financial documents →</Link>
-                            <div className="text-xs text-slate-500">
-                                Cost postings, goods movements, receipts, PO lines and invoices as a hand-over file, exactly once.
-                                {finance ? ` Waiting now: ${finance.unsettled} unsettled order(s), ${finance.unpostedMovements} unposted movement(s).` : ''}
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">Sent automatically by Integrations once a system is connected (proven against the simulator; a real SAP FI is a client-connect step). This file remains the fallback.</div>
-                        </li>
-                    </ul>
-                </div>
-            </div>
+            </Drawer>
 
             {/* Provenance — what came in, and the way back out */}
             {batches.length > 0 && (

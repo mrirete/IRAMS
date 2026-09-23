@@ -11,7 +11,8 @@
  *
  * `IntegrationStrip` sits under the title of the three Integrations pages
  * (they stay separate pages with their own tested UI; the strip is what makes
- * them read as one area). `LookingFor` is the one-line cross-link the data
+ * them read as one area). Its labels are the pages' own titles and the
+ * sidebar's entries (config/adminNav) — one name per page everywhere. `LookingFor` is the one-line cross-link the data
  * pages share.
  */
 import React from 'react';
@@ -21,13 +22,14 @@ import { Plug, Radio, KeyRound } from 'lucide-react';
 export type IntegrationPart = 'systems' | 'feeds' | 'apis';
 
 const PARTS: { key: IntegrationPart; to: string; label: string; hint: string; icon: React.ReactNode }[] = [
-    { key: 'systems', to: '/admin/integrations', label: 'Systems', hint: 'an ERP kept in step through its API', icon: <Plug size={13} /> },
-    { key: 'feeds', to: '/admin/connectors', label: 'Feeds', hint: 'historians and sensors into reading points', icon: <Radio size={13} /> },
+    { key: 'systems', to: '/admin/integrations', label: 'ERP Systems', hint: 'an ERP kept in step through its API', icon: <Plug size={13} /> },
+    { key: 'feeds', to: '/admin/connectors', label: 'Sensor & Data Feeds', hint: 'historians and sensors into reading points', icon: <Radio size={13} /> },
     { key: 'apis', to: '/admin/api-keys', label: 'Inbound APIs', hint: 'keys other systems push with', icon: <KeyRound size={13} /> },
 ];
 
 export const IntegrationStrip: React.FC<{ active: IntegrationPart }> = ({ active }) => (
     <nav aria-label="Integrations" className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit">
+        <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Integrations</span>
         {PARTS.map((p) => (
             <NavLink
                 key={p.key}

@@ -58,6 +58,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isQuickReportOpen, setIsQuickReportOpen] = useState(false);
     const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+    const [paletteBrowse, setPaletteBrowse] = useState(false);
     // Computed once at mount (lazy init) — avoids a setState-in-effect cascade.
     const [isMainFrame] = useState(() => typeof window === 'undefined' || window.top === window.self);
     const { isOpen: isRelanternOpen, contextData, contextType, initialPrompt, pageActions, closeRelantern } = useRelantern();
@@ -104,10 +105,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         const onKey = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
                 e.preventDefault();
+                setPaletteBrowse(false);
                 setIsPaletteOpen(prev => !prev);
             }
         };
-        const onEvent = () => setIsPaletteOpen(true);
+        // `detail.browse` (the TopBar grid button) opens it as an all-pages list.
+        const onEvent = (e: Event) => {
+            setPaletteBrowse(!!(e as CustomEvent<{ browse?: boolean }>).detail?.browse);
+            setIsPaletteOpen(true);
+        };
         window.addEventListener('keydown', onKey);
         window.addEventListener('open-command-palette', onEvent);
         return () => {
@@ -133,7 +139,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600" />
                         <span>
                             <strong>This login is not attached to a company</strong>, so assets, work orders and every other record will appear empty.
-                            Sign out and back in first. If this message stays, an administrator must set your company under Admin → Access Control (Ops Health lists affected logins).
+                            Sign out and back in first. If this message stays, an administrator must set your company under Admin → System Administration → User Access (Ops Health lists affected logins).
                         </span>
                     </div>
                 )}
@@ -199,7 +205,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             {/* Global Command Palette (⌘K) — lazy loaded on first open */}
             {isPaletteOpen && (
                 <Suspense fallback={null}>
-                    <CommandPalette open onClose={() => setIsPaletteOpen(false)} />
+                    <CommandPalette open browse={paletteBrowse} onClose={() => setIsPaletteOpen(false)} />
                 </Suspense>
             )}
 

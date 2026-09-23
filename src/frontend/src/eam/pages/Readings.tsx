@@ -21,7 +21,7 @@ import { useToast } from '../contexts/ToastContext';
 import { Button } from '../components/ui';
 import { offlineQueue } from '../services/offlineQueue';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
 import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 import { evaluateMeterPMs, forecastMeterPM, isMeterSchedule, matchesReading, type MeterPM, type MeterReadingCtx, type MeterPMDue, type MeterPMForecast } from '../../lib/meterPM';
@@ -603,6 +603,13 @@ export const Readings: React.FC = () => {
                             title="Type to search across the whole register — useful if equipment is mislabelled as a site/system"
                         />
                     </div>
+                    {/* Where readings come from when nobody types them — the admin-only
+                        feeds page had no path from the data it fills. */}
+                    {permissions?.admin?.view && (
+                        <Link to="/admin/connectors" className="mt-2 inline-block text-[11px] text-slate-500 hover:text-primary-700">
+                            Readings from a historian or sensors? <span className="font-semibold text-primary-700">Sensor &amp; Data Feeds →</span>
+                        </Link>
+                    )}
                 </div>
                 {/* Rounds bar — what's due to be read, criticality-driven cadence */}
                 {(dueSummary.overdue + dueSummary.due + dueSummary.never) > 0 && (

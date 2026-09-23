@@ -387,8 +387,8 @@ export const IntegrationsPage: React.FC = () => {
         <div className="ers-page-form space-y-6 pb-24 animate-in fade-in duration-300">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2"><Plug size={22} className="text-primary-600" /> Integrations</h1>
-                    <p className="text-slate-500 text-sm mt-1 max-w-2xl">Systems kept in step with IREAMS continuously: what flows which way, and what needs a person. Every document sent or received is kept verbatim.</p>
+                    <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2"><Plug size={22} className="text-primary-600" /> ERP Systems</h1>
+                    <p className="text-slate-500 text-sm mt-1 max-w-2xl">An ERP such as SAP kept in step with IREAMS continuously: what flows which way, and what needs a person. Every document sent or received is kept verbatim.</p>
                     <div className="mt-3 space-y-2">
                         <IntegrationStrip active="systems" />
                         <LookingFor here="integrations" />

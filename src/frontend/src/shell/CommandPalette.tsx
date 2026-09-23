@@ -1,19 +1,26 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Search, CornerDownLeft, ArrowUp, ArrowDown, Wrench, Package, FileText, AlertTriangle } from 'lucide-react';
+import { Search, CornerDownLeft, ArrowUp, ArrowDown, Wrench, Package, FileText, AlertTriangle, Lock, Database } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { MODULE_REGISTRY } from '../config/moduleRegistry';
+import { MODULE_MAP, type ModuleDefinition, type ModuleId } from '../config/moduleRegistry';
+import { ADMIN_NAV, ADMIN_SEARCH_EXTRAS, type AdminNavItem } from '../config/adminNav';
+import { useNavVisibility } from './useNavVisibility';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { StatusPill } from '../eam/components/ui';
 
 /**
  * CommandPalette — global ⌘K / Ctrl+K launcher (Spotlight / cmdk style).
  *
- * Searches three sources: navigation pages (from MODULE_REGISTRY), live work
- * orders, and live assets. Keyboard-first (↑/↓ to move, ↵ to open, Esc to close).
- * Opened via the `open-command-palette` window event or the global shortcut
- * (both wired in AppLayout); the TopBar search field also dispatches the event.
+ * Searches three sources: navigation pages, live work orders, and live assets.
+ * Keyboard-first (↑/↓ to move, ↵ to open, Esc to close). Opened via the
+ * `open-command-palette` window event or the global shortcut (both wired in
+ * AppLayout); the TopBar search field also dispatches the event.
+ *
+ * Pages are exactly what the sidebar would show this user (useNavVisibility:
+ * edition, licence, RBAC), plus the admin pages and the few pages that live
+ * inside another page and have no sidebar entry. `browse` (the TopBar grid
+ * button) lists every page instead of the first dozen.
  */
 
 interface Command {
@@ -41,14 +48,30 @@ const ACTION_COMMANDS: Command[] = [
 interface AssetLite { id: string; tag?: string; name?: string }
 interface WorkOrderLite { id: string; wo_number?: string; title?: string; status?: string }
 
-// Flatten the module registry into page commands (top-level + accordion children).
-function buildPageCommands(): Command[] {
+/**
+ * Pages with no sidebar entry of their own — reached from inside another page —
+ * attached to the module that owns them so the same gates apply.
+ */
+const IN_PAGE_PAGES: { module: ModuleId; label: string; path: string }[] = [
+    { module: 'core', label: 'Asset Register', path: '/assets' },
+    { module: 'predict', label: 'Failure Review', path: '/failure-review' },
+    { module: 'specialist', label: 'What your Specialist has earned', path: '/specialist/roi' },
+    { module: 'specialist', label: 'Review meeting pack', path: '/specialist/meeting' },
+];
+
+function buildPageCommands(
+    modules: ModuleDefinition[],
+    hasPermission: (path: string) => boolean,
+    adminItems: AdminNavItem[],
+): Command[] {
     const cmds: Command[] = [];
-    for (const mod of MODULE_REGISTRY) {
-        if (mod.path) {
-            cmds.push({ id: `mod-${mod.id}`, label: mod.label, icon: mod.icon, group: 'Pages', run: (nav) => nav(mod.path!) });
+    const visible = new Set(modules.map(m => m.id));
+    for (const mod of modules) {
+        if (mod.path && hasPermission(mod.path)) {
+            cmds.push({ id: `mod-${mod.id}`, label: mod.id === 'core' ? 'Dashboard' : mod.label, icon: mod.icon, group: 'Pages', run: (nav) => nav(mod.path!) });
         }
         for (const child of mod.children ?? []) {
+            if (!hasPermission(child.path)) continue;
             cmds.push({
                 id: `child-${child.id}`,
                 label: child.label,
@@ -59,10 +82,21 @@ function buildPageCommands(): Command[] {
             });
         }
     }
+    for (const p of IN_PAGE_PAGES) {
+        const mod = MODULE_MAP.get(p.module);
+        if (!mod || !visible.has(p.module) || !hasPermission(p.path)) continue;
+        cmds.push({
+            id: `page-${p.path}`, label: p.label, hint: mod.label,
+            icon: p.path === '/assets' ? Database : mod.icon, group: 'Pages', run: (nav) => nav(p.path),
+        });
+    }
+    for (const item of adminItems) {
+        cmds.push({ id: `admin-${item.to}`, label: item.label, hint: 'Admin', icon: Lock, group: 'Pages', run: (nav) => nav(item.to) });
+    }
     return cmds;
 }
 
-export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClose }) => {
+export const CommandPalette: React.FC<{ open: boolean; onClose: () => void; browse?: boolean }> = ({ open, onClose, browse = false }) => {
     const navigate = useNavigate();
     const [query, setQuery] = useState('');
     const [active, setActive] = useState(0);
@@ -71,7 +105,15 @@ export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = 
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
 
-    const pageCommands = useMemo(buildPageCommands, []);
+    const { visibleModules, hasPermission, canSeeAdminItem } = useNavVisibility();
+    const adminItems = useMemo(
+        () => [...ADMIN_NAV.flatMap(g => g.sections.flatMap(sec => sec.items)), ...ADMIN_SEARCH_EXTRAS].filter(canSeeAdminItem),
+        [canSeeAdminItem],
+    );
+    const pageCommands = useMemo(
+        () => buildPageCommands(visibleModules, hasPermission, adminItems),
+        [visibleModules, hasPermission, adminItems],
+    );
 
     // Lazy-load searchable data once on first open
     useEffect(() => {
@@ -123,8 +165,10 @@ export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = 
                 }))
             : [];
 
-        return [...actions, ...pages.slice(0, q ? 6 : 12), ...woCmds, ...assetCmds];
-    }, [query, pageCommands, workOrders, assets]);
+        // Browsing (the grid button) lists every page; typing narrows to the best few.
+        const pageCap = browse ? pages.length : q ? 8 : 12;
+        return [...(browse && !q ? [] : actions), ...pages.slice(0, pageCap), ...woCmds, ...assetCmds];
+    }, [query, pageCommands, workOrders, assets, browse]);
 
     // Clamp active index when results change
     useEffect(() => { setActive(a => Math.min(a, Math.max(0, results.length - 1))); }, [results.length]);
@@ -163,7 +207,7 @@ export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = 
         <div className="fixed inset-0 z-[120] flex items-start justify-center p-4 pt-[12vh]">
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px]" onClick={onClose} aria-hidden />
 
-            <div role="dialog" aria-modal="true" aria-label="Command palette"
+            <div role="dialog" aria-modal="true" aria-label={browse ? 'All pages' : 'Command palette'}
                 className="relative w-full max-w-xl bg-white rounded-card shadow-overlay flex flex-col max-h-[70vh] overflow-hidden animate-[scaleIn_140ms_ease-out]">
                 {/* Search input */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200">
@@ -172,7 +216,7 @@ export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = 
                         ref={inputRef}
                         value={query}
                         onChange={(e) => { setQuery(e.target.value); setActive(0); }}
-                        placeholder="Search pages, work orders, assets…"
+                        placeholder={browse ? 'All pages — type to filter…' : 'Search pages, work orders, assets…'}
                         className="flex-1 bg-transparent text-base text-slate-900 placeholder:text-slate-400 focus:outline-none"
                     />
                     <kbd className="hidden sm:inline text-[10px] font-semibold text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">ESC</kbd>

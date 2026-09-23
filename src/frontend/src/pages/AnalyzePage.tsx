@@ -735,10 +735,10 @@ export const AnalyzePage: React.FC = () => {
                             real control, not a caption: at 11px/slate-400 it read as decoration
                             and users couldn't find their way out. */}
                         <button
-                            onClick={() => navigate('/reliability')}
+                            onClick={() => navigate('/specialist')}
                             className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit cursor-pointer py-0.5"
                         >
-                            <ArrowLeft size={14} strokeWidth={2.5} /> Back to Reliability
+                            <ArrowLeft size={14} strokeWidth={2.5} /> Back to Reliability Specialist
                         </button>
                         <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight truncate leading-tight">Diagnose</h1>
                     </div>

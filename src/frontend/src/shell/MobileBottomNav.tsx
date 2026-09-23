@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Wrench, Package, Plus, Boxes } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useEdition } from '../lib/useEdition';
 import { useAuth } from '../contexts/AuthContext';
 import { useUnreadNotifications } from '../hooks/useUnreadNotifications';
 
@@ -42,9 +43,14 @@ export const MobileBottomNav: React.FC = () => {
     // Unread dot on Home — the bell lives in the top bar, but on mobile the
     // bottom bar is what the thumb watches (comm-loop audit gap).
     const { unreadCount } = useUnreadNotifications(user?.id);
+    // Specialist edition: the workspace IS home (same rule as RoleLanding) —
+    // /dashboard would open the EAM dashboard that edition hides.
+    const { edition } = useEdition();
+    const homePath = edition === 'specialist' ? '/specialist' : '/dashboard';
 
     const isActive = (path: string) => {
-        if (path === '/dashboard') return location.pathname === '/' || location.pathname.startsWith('/dashboard');
+        if (path === '/dashboard') return location.pathname === '/' || location.pathname.startsWith('/dashboard')
+            || (homePath === '/specialist' && location.pathname === '/specialist');
         return location.pathname.startsWith(path);
     };
 
@@ -61,7 +67,7 @@ export const MobileBottomNav: React.FC = () => {
                     if (item.id === 'home' && active) {
                         window.dispatchEvent(new CustomEvent('ers-dashboard-home'));
                     }
-                    navigate(item.path);
+                    navigate(item.id === 'home' ? homePath : item.path);
                 }}
                 className={`mobile-bottom-nav-item ${active ? 'active' : ''}`}
                 aria-current={active ? 'page' : undefined}

@@ -1,82 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Lock, Database, X, Flame } from 'lucide-react';
-import { MODULE_REGISTRY, type ModuleDefinition, type SidebarChild, type ModuleId } from '../config/moduleRegistry';
-import { MODULE_ID_TO_PERM_KEY } from '../config/modulePermissions';
-import { useLicense } from '../contexts/LicenseContext';
-import { useAuth } from '../eam/contexts/AuthContext';
-import { useEdition } from '../lib/useEdition';
-import type { ModuleName } from '../eam/types';
-
-/**
- * ═══ Route → RBAC Permission Key Mapping ═══
- * Maps each sidebar route to the AuthContext permission key
- * that controls its visibility. This bridges the gap between
- * the Module Registry (license layer) and ROLE_PERMISSION_TEMPLATES (RBAC layer).
- */
-const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
-    '/': 'dashboard',
-    '/assets': 'assets',
-    '/work-orders': 'workOrders',
-    '/requests': 'requests',
-    '/recurring-work': 'pm',
-    '/scheduling': 'scheduling',
-    '/task-library': 'taskLibrary',
-    '/management-of-change': 'moc',
-    '/inventory': 'inventory',
-    '/purchase-orders': 'purchasing',
-    '/contacts': 'contacts',
-    '/vendors': 'vendors',
-    '/readings': 'readings',
-    '/notifications': 'notifications',
-    '/finops': 'finops',
-    '/reports': 'analytics',
-    // ── Reliability Specialist (hero product — reliability permission) ──
-    '/specialist': 'reliability',
-    '/specialist/import': 'reliability',
-    '/specialist/assessment': 'reliability',
-    '/specialist/deliver': 'reliability',
-    '/specialist/manuals': 'reliability',
-    // ── Reliability Suite (dedicated permission key) ──
-    '/reliability-metrics': 'reliability',
-    '/predict': 'reliability',
-    '/reliability-modelling': 'reliability',
-    '/reliability-toolkit': 'reliability',
-    '/analyze': 'reliability',
-    '/analyze/rca': 'reliability',
-    '/rcm': 'reliability',
-    '/vision': 'reliability',
-    '/knowledge-graph': 'reliability',
-    // ── Sustainability Suite ──
-    '/sustain': 'sustain',
-    // ── Integrity Suite (dedicated permission key) ──
-    // Mechanical Integrity loop steps + Process Safety share the key.
-    '/comply/assess': 'integrity',
-    '/comply/inspection-schedule': 'integrity',
-    '/comply/measure': 'integrity',
-    '/comply/evaluate': 'integrity',
-    '/comply/psm': 'integrity',
-    '/comply/loto': 'integrity',
-    '/comply/regulatory': 'integrity',
-    // ── Audits Suite (standalone module) ──
-    '/audits': 'audits',
-    '/audits/templates': 'audits',
-    '/audits/schedule': 'audits',
-    '/audits/corrective-actions': 'audits',
-    // ── Admin Suite ──
-    '/eam-admin': 'admin',
-    '/admin/connectors': 'admin',
-    '/admin/connectors/new': 'admin',
-    '/admin/integrations': 'admin',
-    '/admin/api-keys': 'admin',
-    '/admin/settings': 'admin',
-    '/admin/hierarchy': 'admin',
-    '/admin/manufacturers': 'admin',
-    '/admin/work-centers': 'admin',
-    '/admin/error-logs': 'admin',
-    '/admin/activity-log': 'activityLog',
-    '/system-health': 'admin',
-};
+import { MODULE_REGISTRY, type ModuleDefinition } from '../config/moduleRegistry';
+import { ADMIN_NAV, adminItemActive, isAdminPath } from '../config/adminNav';
+import { useNavVisibility } from './useNavVisibility';
 
 interface SidebarProps {
     isOpen: boolean;
@@ -85,21 +12,8 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const location = useLocation();
-    const { isModuleEnabled } = useLicense();
-    const { permissions, role, loading: authLoading } = useAuth();
-    const { edition } = useEdition();
-
-    // ── Admin-tier roles bypass the license gate (always see all modules) ──
-    const isAdminTier = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
-
-    // ── RBAC Check: Does the user have view permission for a given route? ──
-    const hasPermission = (path: string): boolean => {
-        // While auth is loading, hide everything except dashboard for safety
-        if (authLoading || !permissions) return path === '/';
-        const permKey = ROUTE_TO_PERMISSION[path];
-        if (!permKey) return true; // Routes not in map (e.g. comply sub-pages) default to visible
-        return permissions[permKey]?.view === true;
-    };
+    // License, edition and RBAC gates — shared with the command palette.
+    const { visibleModules, hasPermission, hasAdminAccess, canSeeAdminItem } = useNavVisibility();
 
     // Track which accordion sections are expanded (by module id)
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
@@ -118,58 +32,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const toggleSection = (id: string) => {
         setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
     };
-
-    /**
-     * ═══ Module-Level RBAC Gate ═══
-     * For premium suites, check the permission key directly at the module
-     * level — if view is explicitly false, the entire sidebar section is
-     * hidden even if individual children might pass.
-     *
-     * The map lives in config/modulePermissions and is shared with the router's
-     * Gated helper, so what the nav hides and what the route refuses can never
-     * drift apart.
-     */
-    const isModulePermitted = (moduleId: string): boolean => {
-        const permKey = MODULE_ID_TO_PERM_KEY[moduleId as ModuleId];
-        if (!permKey) return true; // Core modules don't have a module-level gate
-        if (authLoading || !permissions) return false;
-        return permissions[permKey]?.view === true;
-    };
-
-    // ── Module filtering: Edition gate → License gate → Module RBAC gate → Child RBAC gate ──
-    const visibleModules = useMemo(() => {
-        return MODULE_REGISTRY.filter(m => {
-            // 0. Edition gate (strategy §5.2): Specialist edition hides the EAM
-            //    section (except Core: Home/Assets/Admin stay — they are the
-            //    platform basics the Specialist's data lives in).
-            if (edition === 'specialist' && m.section === 'eam' && m.id !== 'core') return false;
-
-            // 1. License/package check (admin-tier roles bypass this gate)
-            if (!isAdminTier && !isModuleEnabled(m.id)) return false;
-
-            // 2. Module-level RBAC check (premium suites: reliability, integrity, sustain)
-            //    This is the HIGH-LEVEL governance gate — if the admin disabled the suite
-            //    for this user, the entire section is hidden.
-            if (!isModulePermitted(m.id)) return false;
-
-            // 3. RBAC check: For modules with a single path, check permission directly
-            if (m.path && !m.children) {
-                return hasPermission(m.path);
-            }
-
-            // 4. For accordion modules with children, show if ANY child is permitted
-            if (m.children && m.children.length > 0) {
-                return m.children.some(child => hasPermission(child.path));
-            }
-
-            // 5. Core module (dashboard + assets) — always check
-            if (m.id === 'core') {
-                return hasPermission('/') || hasPermission('/assets');
-            }
-
-            return true;
-        });
-    }, [permissions, authLoading, isModuleEnabled, isAdminTier, edition]);
 
     // ── Blue active highlight for active, crisp slate for inactive ──
     const activeBgStyle: React.CSSProperties = {
@@ -290,8 +152,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     };
 
     // ── Admin section: Now RBAC-gated (no longer "always visible") ──
-    const hasAdminAccess = hasPermission('/eam-admin');
-    const isAdminActive = location.pathname.startsWith('/admin') || location.pathname.startsWith('/eam-admin');
+    const isAdminActive = isAdminPath(location.pathname);
     const adminExpanded = expandedSections['admin'] || false;
 
     const sidebarContent = (
@@ -402,56 +263,45 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         </button>
 
                         {adminExpanded && (
-                            <div className="mt-1 mb-2 ml-6 pl-3 border-l border-slate-200 space-y-0.5">
-                                {/* First: the onboarding motion a new tenant starts with. */}
-                                <NavLink to="/admin/migration" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Migration Center
-                                </NavLink>
-                                {/* The outbound SAP export (/admin/migration/sap) is reached from the
-                                    Migration Center's "Export to SAP" card, not from here — one migration
-                                    entry point, the reverse direction tucked inside it. */}
-                                <NavLink to="/eam-admin" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    System Administration
-                                </NavLink>
-                                <NavLink to="/admin/invitations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Invitations
-                                </NavLink>
-                                {/* One door for everything continuous. Feeds (/admin/connectors) and
-                                    Inbound APIs (/admin/api-keys) are its parts, reached from the strip
-                                    at the top of the page — their routes and permissions are unchanged. */}
-                                <NavLink to="/admin/integrations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Integrations
-                                </NavLink>
-                                <NavLink to="/admin/settings" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Global Settings
-                                </NavLink>
-                                <NavLink to="/admin/companies" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Your Company
-                                </NavLink>
-                                <NavLink to="/admin/hierarchy" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Hierarchy Config
-                                </NavLink>
-                                <NavLink to="/admin/manufacturers" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Manufacturers
-                                </NavLink>
-                                <NavLink to="/admin/work-centers" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Work Centers
-                                </NavLink>
-                                <NavLink to="/admin/ops-health" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Operations Health
-                                </NavLink>
-                                <NavLink to="/admin/error-logs" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Error Logs
-                                </NavLink>
-                                {/* Activity Log — SUPER_ADMIN only (activityLog.view gate) */}
-                                {permissions?.activityLog?.view && (
-                                    <NavLink to="/admin/activity-log" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                        <span className="flex items-center gap-1.5">
-                                            Activity Log
-                                        <span className="text-[8px] font-black text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Super</span>
-                                        </span>
-                                    </NavLink>
-                                )}
+                            <div className="mt-1 mb-2 ml-6 pl-3 border-l border-slate-200">
+                                {/* Two groups from config/adminNav — the same names the palette
+                                    and the breadcrumb use. Data first: the onboarding motion a
+                                    new tenant starts with. */}
+                                {ADMIN_NAV.map(group => {
+                                    const sections = group.sections
+                                        .map(sec => ({ ...sec, items: sec.items.filter(canSeeAdminItem) }))
+                                        .filter(sec => sec.items.length > 0);
+                                    if (sections.length === 0) return null;
+                                    return (
+                                        <div key={group.label} className="pt-1.5 first:pt-0">
+                                            <div className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{group.label}</div>
+                                            <div className="space-y-0.5">
+                                                {sections.map((sec, si) => (
+                                                    <div key={sec.caption ?? si}>
+                                                        {sec.caption && <div className="px-3 pt-1.5 pb-0.5 text-[11px] font-semibold text-slate-500">{sec.caption}</div>}
+                                                        <div className={sec.caption ? 'ml-2 pl-2 border-l border-slate-100 space-y-0.5' : 'space-y-0.5'}>
+                                                            {sec.items.map(item => {
+                                                                const active = adminItemActive(item, location.pathname);
+                                                                return (
+                                                                    <NavLink key={item.to} to={item.to} onClick={onClose}
+                                                                        className={subLinkClass(active)} style={active ? activeBgStyle : undefined}
+                                                                        aria-current={active ? 'page' : undefined}>
+                                                                        {item.badge ? (
+                                                                            <span className="flex items-center gap-1.5">
+                                                                                {item.label}
+                                                                                <span className="text-[8px] font-black text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full uppercase tracking-wider">{item.badge}</span>
+                                                                            </span>
+                                                                        ) : item.label}
+                                                                    </NavLink>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>

@@ -79,10 +79,8 @@ const EamNotifications = lazyWithReload(() => import('./eam/pages/Notifications'
 const EamVendors = lazyWithReload(() => import('./eam/pages/Vendors').then(m => ({ default: m.Vendors })));
 const EamFinOps = lazyWithReload(() => import('./eam/pages/FinOps').then(m => ({ default: m.FinOps })));
 const EamManagementOfChange = lazyWithReload(() => import('./eam/pages/ManagementOfChange').then(m => ({ default: m.ManagementOfChange })));
-const EamReliabilityToolkit = lazyWithReload(() => import('./eam/pages/ReliabilityToolkit').then(m => ({ default: m.ReliabilityToolkit })));
 // EAM Analytics removed — ERS Analyze module covers this
 const EamTaskLibrary = lazyWithReload(() => import('./eam/pages/admin/TaskLibrary').then(m => ({ default: m.TaskLibraryManager })));
-const EamSystemHealth = lazyWithReload(() => import('./eam/pages/SystemHealth').then(m => ({ default: m.SystemHealth })));
 const EamReports = lazyWithReload(() => import('./eam/pages/Reports').then(m => ({ default: m.Reports })));
 const EamReportDrillDown = lazyWithReload(() => import('./eam/pages/ReportDrillDown').then(m => ({ default: m.ReportDrillDown })));
 
@@ -224,8 +222,11 @@ function App() {
                                 <Route path="/task-library" element={<PermissionGate module="taskLibrary"><EamTaskLibrary /></PermissionGate>} />
                                 <Route path="/management-of-change" element={<PermissionGate module="moc"><EamManagementOfChange /></PermissionGate>} />
                                 <Route path="/management-of-change/:id" element={<PermissionGate module="moc"><EamManagementOfChange /></PermissionGate>} />
-                                <Route path="/reliability-toolkit" element={<PermissionGate module="reliability"><EamReliabilityToolkit /></PermissionGate>} />
-                                <Route path="/system-health" element={<PermissionGate module="admin"><EamSystemHealth /></PermissionGate>} />
+                                {/* Retired pages: every Toolkit calculator lives in Reliability
+                                    Modelling (RAM incl. maintainability, Weibull, spares, Monte Carlo,
+                                    RBD); System Health was a backend check superseded by Operations Health. */}
+                                <Route path="/reliability-toolkit" element={<Navigate to="/reliability-modelling" replace />} />
+                                <Route path="/system-health" element={<Navigate to="/admin/ops-health" replace />} />
                                 <Route path="/reports" element={<PermissionGate module="analytics"><EamReports /></PermissionGate>} />
                                 <Route path="/reports/drilldown/:reportType" element={<PermissionGate module="analytics"><EamReportDrillDown /></PermissionGate>} />
                                 <Route path="/eam-admin" element={<PermissionGate module="admin"><EamAdmin /></PermissionGate>} />

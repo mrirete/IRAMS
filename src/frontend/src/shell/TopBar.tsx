@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ResetPasswordModal } from '../eam/components/modals/ResetPasswordModal';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MODULE_REGISTRY } from '../config/moduleRegistry';
+import { adminItemFor, isAdminPath } from '../config/adminNav';
 import { NotificationCenter } from '../components/shell/NotificationCenter';
 import { ReliabilityPresenceWidget } from '../components/shell/ReliabilityPresenceWidget';
 import { useRelantern } from '../eam/contexts/RelanternContext';
@@ -31,6 +32,9 @@ interface TopBarProps {
  */
 function breadcrumbFor(pathname: string): { section: string; page: string } {
     if (pathname === '/' || pathname.startsWith('/dashboard')) return { section: 'Home', page: 'Dashboard' };
+    // Admin pages are not a module: name them from the admin nav, the same
+    // words the sidebar uses (the core module's routes would say "Core Platform").
+    if (isAdminPath(pathname)) return { section: 'Admin', page: adminItemFor(pathname)?.label ?? 'Admin' };
     let best: { section: string; page: string; len: number } | null = null;
     for (const m of MODULE_REGISTRY) {
         const candidates: { path: string; page: string }[] = [];
@@ -169,7 +173,13 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                     </button>
                 )}
 
-                <button className="text-slate-400 hover:text-slate-700 transition-colors hidden lg:block">
+                {/* All pages — the palette as a browsable list of everything this user can open. */}
+                <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette', { detail: { browse: true } }))}
+                    className="text-slate-400 hover:text-slate-700 transition-colors hidden lg:block"
+                    title="All pages"
+                    aria-label="All pages"
+                >
                     <Grid size={18} />
                 </button>
 

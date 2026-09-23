@@ -91,25 +91,25 @@ export const ConnectorHub: React.FC = () => {
                     </div>
                     <div>
                         <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sensor &amp; Data Feeds</h1>
-                        <p className="text-slate-500 text-sm font-medium">Historians, sensors and other feeds that keep reading points current — and how healthy each feed is. Files go through the Migration Center.</p>
+                        <p className="text-slate-500 text-sm font-medium">Historians, sensors and other feeds that keep reading points current — and how healthy each feed is. A one-off historian export can be uploaded here; CMMS and SAP files go through the Migration Center.</p>
                         <div className="mt-2"><IntegrationStrip active="feeds" /></div>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 w-fit">
+                <div className="flex flex-wrap items-center gap-2 w-fit md:shrink-0">
                     <button
                         onClick={() => setImportOpen(true)}
-                        className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-all flex items-center space-x-2 shadow-lg shadow-blue-500/20 active:scale-95"
-                        title="Import a historian/SCADA/lab CSV export into ers_sensor_readings (feeds Predict)"
+                        className="whitespace-nowrap px-4 py-2.5 bg-white border border-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-50 transition-all flex items-center space-x-2 active:scale-95"
+                        title="A historian, SCADA or lab CSV export, loaded once into the sensor feed Predict reads"
                     >
                         <UploadCloud size={18} />
-                        <span>Import Readings (CSV)</span>
+                        <span>Upload historian export (CSV)</span>
                     </button>
                     <Link
                         to="/admin/connectors/new"
-                        className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-50 transition-all flex items-center space-x-2 active:scale-95"
+                        className="whitespace-nowrap px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-all flex items-center space-x-2 shadow-lg shadow-blue-500/20 active:scale-95"
                     >
                         <Plus size={18} />
-                        <span>Add Connector</span>
+                        <span>Add a feed</span>
                     </Link>
                 </div>
             </div>
@@ -125,6 +125,9 @@ export const ConnectorHub: React.FC = () => {
                 </span>
             </div>
 
+            {/* Stats and the toolbar only once there is a feed to count or filter —
+                an empty page leads with the one thing to do. */}
+            {(isLoading || connectors.length > 0) && (<>
             {/* High-Level System Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 flex items-center space-x-3">
@@ -242,6 +245,7 @@ export const ConnectorHub: React.FC = () => {
                     </div>
                 </div>
             </div>
+            </>)}
 
             {/* Connectors Grid/List */}
             <div>
@@ -270,7 +274,7 @@ export const ConnectorHub: React.FC = () => {
                         {connectors.length === 0 ? (
                             <>
                                 <h3 className="text-lg font-bold text-slate-800">No feeds configured</h3>
-                                <p className="text-slate-500 mt-2 max-w-md font-medium">Connect a historian, sensor gateway or REST feed so readings arrive on their own. To load a CMMS export, use the Migration Center; to keep an ERP in step, use Integrations.</p>
+                                <p className="text-slate-500 mt-2 max-w-md font-medium">Connect a historian, sensor gateway or REST feed so readings arrive on their own. To load a CMMS export, use the Migration Center; to keep an ERP in step, use ERP Systems.</p>
                                 <div className="mt-6 grid grid-cols-3 gap-4 text-xs text-slate-600 max-w-sm font-semibold">
                                     <div className="flex flex-col items-center gap-1">
                                         <div className="w-8 h-8 rounded-full bg-primary-50 flex items-center justify-center text-primary-700 font-bold">1</div>
@@ -289,7 +293,7 @@ export const ConnectorHub: React.FC = () => {
                                     to="/admin/connectors/new"
                                     className="mt-6 px-4 py-2 bg-accent-blue text-white font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
                                 >
-                                    Configure First Connector
+                                    Add your first feed
                                 </Link>
                             </>
                         ) : (

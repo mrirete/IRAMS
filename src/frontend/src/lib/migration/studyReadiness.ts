@@ -57,6 +57,12 @@ export interface StudyReadiness {
 
 /** Below this many failure events a Weibull fit is a guess with a decimal point. */
 const MIN_FAILURES_FOR_FIT = 10;
+/**
+ * A trend needs a few points to draw a line through: below this many readings
+ * per point on average, the points exist but nothing can be trended yet.
+ * (Predict's alarm baselines want more — MIN_BASELINE_READINGS per point.)
+ */
+const MIN_READINGS_PER_POINT = 3;
 /** Below this share of costed orders, money-ranked findings mislead more than they inform. */
 const MIN_COST_COVERAGE = 0.5;
 
@@ -97,11 +103,15 @@ export function studyReadiness(c: ReadinessCounts, routes: Partial<Record<Ingred
         },
         {
             key: 'condition', label: 'Condition history',
-            have: c.readingPoints > 0 || c.readings > 0 ? `${n(c.readingPoints)} reading points, ${n(c.readings)} readings` : 'no readings',
-            status: c.readings > 0 ? 'ready' : c.readingPoints > 0 ? 'partial' : 'missing',
+            have: c.readingPoints > 0 || c.readings > 0 ? `${n(c.readingPoints)} reading point${c.readingPoints === 1 ? '' : 's'}, ${n(c.readings)} reading${c.readings === 1 ? '' : 's'}` : 'no readings',
+            status: c.readings === 0 ? (c.readingPoints > 0 ? 'partial' : 'missing')
+                : c.readings >= MIN_READINGS_PER_POINT * Math.max(c.readingPoints, 1) ? 'ready' : 'partial',
             unlocks: 'Predict trends and alarms, condition-based RCM decisions, P–F interval evidence.',
             because: c.readings === 0 && c.readingPoints > 0 ? 'Points exist but carry no readings yet — trends need history.'
-                : c.readings === 0 ? 'Predict and RCM read reading points and their logs.' : undefined,
+                : c.readings === 0 ? 'Predict and RCM read reading points and their logs.'
+                : c.readings < MIN_READINGS_PER_POINT * Math.max(c.readingPoints, 1)
+                    ? `Too few readings to trend — a point needs at least ${MIN_READINGS_PER_POINT} before a line can be drawn through it. Load the measurement history, or connect a feed.`
+                    : undefined,
             action: { label: 'Import measuring points and readings', to: to('condition', '/admin/migration/cockpit') },
         },
         {
@@ -139,7 +149,7 @@ export function studyReadiness(c: ReadinessCounts, routes: Partial<Record<Ingred
             ? 'The register is in. Failure history is the next thing every analysis is waiting on.'
             : blocked.length === 0
                 ? 'Everything a study needs is here.'
-                : `${canRun.length} of ${canRun.length + blocked.length} analyses can run today — ${blocked[0].study.toLowerCase()} is waiting on ${blocked[0].needs}.`;
+                : `${canRun.length} of ${canRun.length + blocked.length} analyses can run today — ${blocked[0].study.charAt(0).toLowerCase()}${blocked[0].study.slice(1)} is waiting on ${blocked[0].needs}.`;
 
     return { ingredients, canRun, blocked, verdict };
 }

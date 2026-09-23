@@ -1268,9 +1268,9 @@ export function RCAInvestigationPage() {
                         <nav className="flex items-center gap-1.5 text-xs font-bold w-fit" aria-label="Breadcrumb">
                             <button
                                 className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                                onClick={() => navigate('/reliability')}
+                                onClick={() => navigate('/specialist')}
                             >
-                                <ArrowLeft size={14} strokeWidth={2.5} /> Reliability
+                                <ArrowLeft size={14} strokeWidth={2.5} /> Reliability Specialist
                             </button>
                             <span className="text-slate-300">/</span>
                             <button

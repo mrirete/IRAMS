@@ -494,11 +494,11 @@ export class NotificationService {
             'requests': '/requests',
             'workOrders': '/work-orders',
             'pm': '/recurring-work',
-            'purchasing': '/purchasing',
+            'purchasing': '/purchase-orders',
             'inventory': '/inventory',
             'safety': '/work-orders',
             'assets': '/assets',
-            'analytics': '/analytics',
+            'analytics': '/reports',
             'analyze': '/analyze?division=defect_elimination',
         };
         return map[module] || '/notifications';
