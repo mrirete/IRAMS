@@ -606,7 +606,7 @@ export const Readings: React.FC = () => {
                     {/* Where readings come from when nobody types them — the admin-only
                         feeds page had no path from the data it fills. */}
                     {permissions?.admin?.view && (
-                        <Link to="/admin/connectors" className="mt-2 inline-block text-[11px] text-slate-500 hover:text-primary-700">
+                        <Link to="/admin/connectors" state={{ to: '/readings', label: 'Condition Data' }} className="mt-2 inline-block text-[11px] text-slate-500 hover:text-primary-700">
                             Readings from a historian or sensors? <span className="font-semibold text-primary-700">Sensor &amp; Data Feeds →</span>
                         </Link>
                     )}

@@ -6,10 +6,11 @@
  * endpoint via the proposal-writeback function. Both render from the same
  * unit-tested normalizer in lib/writebackPackage.
  */
+import { BackLink } from '../../components/nav/BackLink';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    ArrowLeft, Download, Send, Loader2, AlertTriangle, CheckCircle2,
+    Download, Send, Loader2, AlertTriangle, CheckCircle2,
     Plus, Radio, FileSpreadsheet, ClipboardList, History, X, CalendarClock,
 } from 'lucide-react';
 import {
@@ -141,10 +142,8 @@ export const DeliverWorkPage: React.FC = () => {
     return (
         <div className="ers-page-form space-y-5 pb-24 animate-in fade-in duration-300">
             <div>
-                <button onClick={() => navigate('/specialist')}
-                    className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-3">
-                    <ArrowLeft size={15} /> Specialist workspace
-                </button>
+                {/* Back to wherever sent us here (the Migration Center's step 3), else the workspace. */}
+                <BackLink fallback={{ to: '/specialist', label: 'Specialist workspace' }} className="mb-3" />
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
                     <Send size={20} className="text-primary-600" /> Deliver work to your CMMS
                 </h1>

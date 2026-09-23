@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react';
 import { lazyWithReload, prefetchRegisteredRoutes } from './lib/lazyWithReload';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { WithReturn } from './components/nav/BackLink';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, ProtectedRoute, useAuth } from './contexts/AuthContext';
 import { useEdition } from './lib/useEdition';
@@ -208,16 +209,16 @@ function App() {
                                 <Route path="/assets" element={<PermissionGate module="assets"><EamAssets /></PermissionGate>} />
                                 <Route path="/work-orders" element={<PermissionGate module="workOrders"><EamWorkOrders /></PermissionGate>} />
                                 <Route path="/work-orders/:jobId" element={<PermissionGate module="workOrders"><EamWorkOrders /></PermissionGate>} />
-                                <Route path="/inventory" element={<PermissionGate module="inventory"><EamInventory onAnalyze={() => { }} /></PermissionGate>} />
-                                <Route path="/contacts" element={<PermissionGate module="contacts"><EamContacts /></PermissionGate>} />
-                                <Route path="/vendors" element={<PermissionGate module="vendors"><EamVendors /></PermissionGate>} />
+                                <Route path="/inventory" element={<PermissionGate module="inventory"><WithReturn><EamInventory onAnalyze={() => { }} /></WithReturn></PermissionGate>} />
+                                <Route path="/contacts" element={<PermissionGate module="contacts"><WithReturn><EamContacts /></WithReturn></PermissionGate>} />
+                                <Route path="/vendors" element={<PermissionGate module="vendors"><WithReturn><EamVendors /></WithReturn></PermissionGate>} />
                                 <Route path="/requests" element={<PermissionGate module="requests"><EamServiceRequests /></PermissionGate>} />
-                                <Route path="/recurring-work" element={<PermissionGate module="pm"><EamRecurringWork /></PermissionGate>} />
+                                <Route path="/recurring-work" element={<PermissionGate module="pm"><WithReturn><EamRecurringWork /></WithReturn></PermissionGate>} />
                                 <Route path="/maintenance-strategies" element={<PermissionGate module="pm"><MaintenanceStrategiesPage /></PermissionGate>} />
                                 <Route path="/scheduling" element={<PermissionGate module="scheduling"><EamScheduling /></PermissionGate>} />
                                 <Route path="/purchase-orders" element={<PermissionGate module="purchasing"><EamPurchaseOrders /></PermissionGate>} />
                                 <Route path="/readings" element={<PermissionGate module="readings"><EamReadings /></PermissionGate>} />
-                                <Route path="/finops" element={<PermissionGate module="finops"><EamFinOps /></PermissionGate>} />
+                                <Route path="/finops" element={<PermissionGate module="finops"><WithReturn><EamFinOps /></WithReturn></PermissionGate>} />
                                 <Route path="/notifications" element={<PermissionGate module="notifications"><EamNotifications /></PermissionGate>} />
                                 <Route path="/task-library" element={<PermissionGate module="taskLibrary"><EamTaskLibrary /></PermissionGate>} />
                                 <Route path="/management-of-change" element={<PermissionGate module="moc"><EamManagementOfChange /></PermissionGate>} />
@@ -301,7 +302,7 @@ function App() {
                                 <Route path="/admin/invitations" element={<PermissionGate module="admin"><InvitationsPage /></PermissionGate>} />
                                 {/* The live link: connected ERPs, dry-run/sync, the exception queue (0383). */}
                                 <Route path="/admin/integrations" element={<PermissionGate module="admin"><IntegrationsPage /></PermissionGate>} />
-                                <Route path="/admin/connectors" element={<PermissionGate module="admin"><ConnectorHub /></PermissionGate>} />
+                                <Route path="/admin/connectors" element={<PermissionGate module="admin"><WithReturn><ConnectorHub /></WithReturn></PermissionGate>} />
                                 <Route path="/admin/api-keys" element={<PermissionGate module="admin"><ApiKeysPage /></PermissionGate>} />
                                 <Route path="/admin/connectors/new" element={<PermissionGate module="admin"><ConnectorWizard /></PermissionGate>} />
                                 <Route path="/admin/connectors/:id" element={<PermissionGate module="admin"><ConnectorDetail /></PermissionGate>} />

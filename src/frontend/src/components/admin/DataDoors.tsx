@@ -29,7 +29,6 @@ const PARTS: { key: IntegrationPart; to: string; label: string; hint: string; ic
 
 export const IntegrationStrip: React.FC<{ active: IntegrationPart }> = ({ active }) => (
     <nav aria-label="Integrations" className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit">
-        <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Integrations</span>
         {PARTS.map((p) => (
             <NavLink
                 key={p.key}

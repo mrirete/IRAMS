@@ -6,10 +6,11 @@
  * writes prose over those numbers — never the reverse. Print-ready via the
  * RCAReport pattern (no-print toolbar + @media print).
  */
+import { BackLink } from '../../components/nav/BackLink';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    ArrowLeft, Printer, Sparkles, Loader2, AlertTriangle, TrendingDown,
+    Printer, Sparkles, Loader2, AlertTriangle, TrendingDown,
     BadgeDollarSign, Activity, Wrench, ShieldCheck, Database, RefreshCw,
     Layers, FolderPlus, Check, Route, SendHorizonal, Users, PackageSearch, Footprints,
     FileSpreadsheet, Maximize2, ChevronDown,
@@ -403,9 +404,8 @@ export const AssessmentReportPage: React.FC = () => {
             `}</style>
 
             <div className="no-print flex items-center justify-between mb-5">
-                <button onClick={() => navigate('/specialist')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700">
-                    <ArrowLeft size={15} /> Specialist workspace
-                </button>
+                {/* Back to wherever sent us here (the Migration Center's step 2), else the workspace. */}
+                <BackLink fallback={{ to: '/specialist', label: 'Specialist workspace' }} />
                 <div className="flex items-center gap-2">
                     <button onClick={() => setAreaOpen(true)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2">
                         <Layers size={13} /> Assess an area

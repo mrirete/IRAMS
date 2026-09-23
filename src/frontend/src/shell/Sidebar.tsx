@@ -274,12 +274,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                     if (sections.length === 0) return null;
                                     return (
                                         <div key={group.label} className="pt-1.5 first:pt-0">
-                                            <div className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{group.label}</div>
+                                            {/* Headings are never smaller than what they head: same size,
+                                                told apart by weight and colour. */}
+                                            <div className="px-3 pt-1.5 pb-1 text-[13px] font-semibold text-slate-800">{group.label}</div>
                                             <div className="space-y-0.5">
-                                                {sections.map((sec, si) => (
+                                                {sections.map((sec, si) => {
+                                                    // A captioned section (Integrations) is a real row that opens and
+                                                    // closes its pages — open by default; lit when one of them is the
+                                                    // current page, so collapsing it never hides where you are.
+                                                    const holdsActive = sec.items.some(i => adminItemActive(i, location.pathname));
+                                                    const secKey = `admin-${sec.caption ?? si}`;
+                                                    const open = !sec.caption || expandedSections[secKey] !== false;
+                                                    return (
                                                     <div key={sec.caption ?? si}>
-                                                        {sec.caption && <div className="px-3 pt-1.5 pb-0.5 text-[11px] font-semibold text-slate-500">{sec.caption}</div>}
-                                                        <div className={sec.caption ? 'ml-2 pl-2 border-l border-slate-100 space-y-0.5' : 'space-y-0.5'}>
+                                                        {sec.caption && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setExpandedSections(prev => ({ ...prev, [secKey]: !open }))}
+                                                                aria-expanded={open}
+                                                                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] tracking-[-0.01em] transition-colors hover:bg-primary-50 ${holdsActive ? 'text-primary-600 font-semibold' : 'text-slate-600 font-medium hover:text-slate-800'}`}
+                                                            >
+                                                                <span>{sec.caption}</span>
+                                                                {open ? <ChevronDown size={13} className="text-slate-400" /> : <ChevronRight size={13} className="text-slate-400" />}
+                                                            </button>
+                                                        )}
+                                                        {open && (
+                                                        <div className={sec.caption ? 'ml-3 pl-2 border-l border-slate-200 space-y-0.5' : 'space-y-0.5'}>
                                                             {sec.items.map(item => {
                                                                 const active = adminItemActive(item, location.pathname);
                                                                 return (
@@ -296,8 +316,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                                                 );
                                                             })}
                                                         </div>
+                                                        )}
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     );

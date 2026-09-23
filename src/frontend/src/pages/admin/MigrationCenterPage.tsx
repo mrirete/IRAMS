@@ -741,7 +741,7 @@ export const MigrationCenterPage: React.FC = () => {
                                 </li>
                             )}
                             <li>
-                                <Link to="/finops" className="text-slate-800 hover:text-primary-700 font-medium">Financial documents →</Link>
+                                <Link to="/finops" state={wizardState.state} className="text-slate-800 hover:text-primary-700 font-medium">Financial documents →</Link>
                                 <div className="text-xs text-slate-500">
                                     Cost postings, goods movements, receipts, PO lines and invoices as a hand-over file, exactly once.
                                     {finance ? ` Waiting now: ${finance.unsettled} unsettled order(s), ${finance.unpostedMovements} unposted movement(s).` : ''}
