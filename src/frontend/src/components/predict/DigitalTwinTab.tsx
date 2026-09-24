@@ -10,6 +10,8 @@ import { screenRbi } from '../../lib/predict/rbi';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 import { DisgPanel } from './DisgPanel';
 import { SpectralAnalysisPanel } from './SpectralAnalysisPanel';
+import { MonitoringSetup } from './MonitoringSetup';
+import { useAssetPredictConfig } from './useAssetPredictConfig';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -42,8 +44,20 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
+    const rotating = equipmentClass?.cls !== 'static';
+    // The asset's saved monitoring setup — one owner for the pop-up and the capture panel.
+    const { config: predictConfig, save: savePredictConfig } = useAssetPredictConfig(selectedAssetId);
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
+
+            {/* ═══ Monitoring setup (ISO 17359: what is monitored and how it is judged) — set once, explicit Save ═══ */}
+            <MonitoringSetup
+                assetId={selectedAssetId}
+                assetName={selectedAssetName}
+                rotating={rotating}
+                config={predictConfig}
+                onSave={savePredictConfig}
+            />
 
             {/* ═══ Integrity (API 570) — the correct degradation surface for STATIC equipment ═══ */}
             {equipmentClass?.cls === 'static' && (
@@ -141,8 +155,9 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                 </div>
             )}
             {/* ═══ Spectral Analysis (ISO 13374 DM) — ROTATING equipment's counterpart to Integrity ═══ */}
-            {equipmentClass?.cls !== 'static' && (
-                <SpectralAnalysisPanel assetId={selectedAssetId} assetName={selectedAssetName} />
+            {/* Keyed by asset: a switch starts clean — no spectrum or speed carried over from the last asset. */}
+            {rotating && (
+                <SpectralAnalysisPanel key={selectedAssetId} assetId={selectedAssetId} assetName={selectedAssetName} config={predictConfig} />
             )}
 
             {/* Digital Twin Trajectory Chart */}

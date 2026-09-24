@@ -44,6 +44,7 @@ import {
     type RegimeFinding,
 } from '../../lib/predict/regimeBaseline';
 import { alarmGates } from '../../lib/predict/alarmGates';
+import { sensorHealthScore } from '../../lib/predict/sensorScore';
 
 /** A point the regime detector fired on, with what it needs to explain itself. */
 interface RegimeFired {
@@ -140,6 +141,9 @@ export interface SensorReading {
     trend: 'rising' | 'falling' | 'stable' | null;
     alarm_high: number | null;
     alarm_low: number | null;
+    /** Warning limits from the reading definition — zones only; the engine alarms on alarm_high/low. */
+    warn_high?: number | null;
+    warn_low?: number | null;
     readings: number[];
     created_at: string;
     /** ISA-18.2 rationalization (0205) — per-point alarm hygiene + guidance. */
@@ -169,6 +173,17 @@ export interface AssetPredictConfig {
     rated_rpm?: number | null;
     bearings?: BearingSpec[];
     regime?: RegimeConfig;
+    /** Stamped by the Monitoring setup Save — who last confirmed this asset's setup. */
+    saved_at?: string;
+    saved_by?: string | null;
+}
+
+/** A measurement point on the asset (reading_definitions) — the capture picker's options. */
+export interface MeasurementPointOption {
+    id: string;
+    name: string;
+    unit: string | null;
+    sensor_tag: string | null;
 }
 
 /** A stored vibration time-waveform + its computed spectral features (0206). */
@@ -398,6 +413,8 @@ class PredictionService {
                     ...r,
                     alarm_high: r.alarm_high ?? d.max_critical ?? d.max_warning ?? null,
                     alarm_low: r.alarm_low ?? d.min_critical ?? d.min_warning ?? null,
+                    warn_high: d.max_warning ?? null,
+                    warn_low: d.min_warning ?? null,
                     alarm_deadband_pct: r.alarm_deadband_pct ?? d.alarm_deadband_pct ?? null,
                     alarm_persistence: r.alarm_persistence ?? d.alarm_persistence ?? null,
                     operator_action: r.operator_action ?? d.operator_action ?? null,
@@ -463,6 +480,8 @@ class PredictionService {
                 trend,
                 alarm_high: d.max_critical ?? d.max_warning ?? null,
                 alarm_low: d.min_critical ?? d.min_warning ?? null,
+                warn_high: d.max_warning ?? null,
+                warn_low: d.min_warning ?? null,
                 readings: hist.slice(0, 20).map(h => Number(h.reading_value)).filter(v => !Number.isNaN(v)).reverse(),
                 created_at: latest?.reading_date || new Date().toISOString(),
                 // 0205 rationalization fields — undefined pre-migration (select *)
@@ -531,6 +550,32 @@ class PredictionService {
         const { error: upErr } = await supabase.from('assets').update({ properties }).eq('id', assetId);
         if (upErr) console.warn('[PredictionService.saveAssetPredictConfig]', upErr.message);
         return !upErr;
+    }
+
+    /** Tags with a live series on this asset — the only ones the regime check can use as its load. */
+    async getLiveTags(assetId: string): Promise<{ tag: string; unit: string }[]> {
+        const { data, error } = await supabase.from('ers_sensor_readings')
+            .select('tag, unit').eq('asset_id', assetId).order('tag', { ascending: true });
+        if (error) {
+            console.warn('[PredictionService.getLiveTags]', error.message);
+            return [];
+        }
+        // The live table can hold several rows per tag — one option each.
+        const seen = new Set<string>();
+        return (data || []).map((r: any) => ({ tag: String(r.tag), unit: r.unit ?? '' }))
+            .filter(t => { const k = t.tag.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    }
+
+    /** Active measurement points on the asset, for pickers. */
+    async getMeasurementPoints(assetId: string): Promise<MeasurementPointOption[]> {
+        const { data, error } = await supabase.from('reading_definitions')
+            .select('id, name, unit, sensor_tag').eq('asset_id', assetId).eq('is_active', true)
+            .order('name', { ascending: true });
+        if (error) {
+            console.warn('[PredictionService.getMeasurementPoints]', error.message);
+            return [];
+        }
+        return (data || []) as MeasurementPointOption[];
     }
 
     async getWaveforms(assetId: string, limit = 10): Promise<WaveformCapture[]> {
@@ -640,16 +685,12 @@ class PredictionService {
             return { success: false, message: 'No sensor readings found. Enter readings on Condition Data (Work Management), or connect an online sensor feed.' };
         }
 
-        // Weighted health scoring from sensor proximity to alarm limits
-        const sensorScores = sensors.map(s => {
-            if (s.current_value == null || s.alarm_high == null || s.alarm_low == null) return 100;
-            const range = s.alarm_high - s.alarm_low;
-            if (range <= 0) return 100;
-            // How far from midpoint relative to range → proximity to alarm = damage
-            const midpoint = (s.alarm_high + s.alarm_low) / 2;
-            const deviation = Math.abs(s.current_value - midpoint) / (range / 2);
-            return Math.max(0, Math.min(100, 100 - deviation * 40));
-        });
+        // Weighted health scoring from each point's position against its own
+        // limits (lib/predict/sensorScore). High-only and low-only points score
+        // too — the ISO 20816 vibration and temperature bands are high-only and
+        // used to count as a flat 100. A point with no usable limit is left out
+        // of the blend rather than counted as perfect.
+        const sensorScores = sensors.map(s => sensorHealthScore({ current: s.current_value, alarm_high: s.alarm_high, alarm_low: s.alarm_low }));
 
         // Class-aware weighting (Phase 2): a static cooler's health is driven by
         // thickness/thermal/pressure, a rotating machine's by vibration — one
@@ -668,13 +709,17 @@ class PredictionService {
         let totalWeight = 0;
         let weightedSum = 0;
         sensors.forEach((s, i) => {
+            const score = sensorScores[i];
+            if (score == null) return;
             const w = model.weights[sensorKind(s.tag, s.unit)] ?? model.defaultWeight;
-            weightedSum += sensorScores[i] * w;
+            weightedSum += score * w;
             totalWeight += w;
         });
+        // No point has a limit yet: nothing to judge against — reported as 100
+        // (as before); the setup guide and Condition Data prompt for limits.
         const healthIndex = totalWeight > 0
             ? Math.round((weightedSum / totalWeight) * 10) / 10
-            : sensorScores.reduce((a, b) => a + b, 0) / sensorScores.length;
+            : 100;
 
         // Build sensor summary
         const sensorSummary: Record<string, number> = {};

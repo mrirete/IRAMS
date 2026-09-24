@@ -14,6 +14,8 @@ import type { GroundedRul } from '../../lib/predict/groundedFit';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import { healthModelFor, sensorKind, type ClassHealthModel } from '../../lib/predict/healthModels';
 import type { RollupNode } from '../../lib/predict/rollup';
+import { sensorHealthScore, sensorZone, type ScoredPoint, type SensorZone } from '../../lib/predict/sensorScore';
+import { isVibrationUnit } from '../../lib/predict/limitLibrary';
 
 // ─────────────────────────────────────────────────────────
 //  Types
@@ -159,17 +161,11 @@ function decomposeHealthIndex(
         return rising * 8;
     };
 
-    // Deterministic per-sensor score — same transfer function as the twin
-    // engine (proximity to alarm midpoint, 100 − deviation×40). No jitter:
+    // Deterministic per-sensor score — the twin engine's own transfer function
+    // (lib/predict/sensorScore, one-sided limits included). No jitter:
     // a monitoring number must not change between renders of the same data.
-    const scoreSensor = (s: { current: number; alarm_high?: number; alarm_low?: number }): number | null => {
-        const hi = s.alarm_high, lo = s.alarm_low;
-        if (s.current == null || hi == null || lo == null || hi <= lo) return null;
-        const deviation = Math.abs(s.current - (hi + lo) / 2) / ((hi - lo) / 2);
-        return Math.max(0, Math.min(100, 100 - deviation * 40));
-    };
     const categoryHealth = (list: typeof sensorValues): number => {
-        const scored = list.map(s => scoreSensor(s as { current: number; alarm_high?: number; alarm_low?: number })).filter((v): v is number => v != null);
+        const scored = list.map(s => sensorHealthScore(s as ScoredPoint)).filter((v): v is number => v != null);
         // Fall back to the overall index when the category has no alarm bands.
         const base = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : systemHealth;
         return Math.max(0, Math.min(100, base - trendPenalty(list)));
@@ -189,26 +185,15 @@ function decomposeHealthIndex(
     });
 }
 
-/** ISO 10816 vibration severity zones — vibration zoning only for classes it applies to */
-function getISOZone(tag: string, value: number, vibZoning: boolean = true): { zone: string; color: string; bgColor: string } | null {
-    const k = tag.toLowerCase();
-    if (k.includes('vib')) {
-        // ISO 20816 severity is a ROTATING-machinery scale — suppress on static/electrical.
-        if (!vibZoning) return null;
-        // ISO 10816-3 Class II (15-75 kW): Good <2.8, Acceptable <7.1, Alert <18, Danger >18
-        if (value < 2.8) return { zone: 'A', color: 'text-emerald-600', bgColor: 'bg-emerald-50' };
-        if (value < 7.1) return { zone: 'B', color: 'text-primary-600', bgColor: 'bg-primary-50' };
-        if (value < 18) return { zone: 'C', color: 'text-amber-600', bgColor: 'bg-amber-50' };
-        return { zone: 'D', color: 'text-red-600', bgColor: 'bg-red-50' };
-    }
-    if (k.includes('temp')) {
-        // Temperature severity: Normal <80, Watch <100, Alert <130, Danger >130
-        if (value < 80) return { zone: 'Normal', color: 'text-emerald-600', bgColor: 'bg-emerald-50' };
-        if (value < 100) return { zone: 'Watch', color: 'text-primary-600', bgColor: 'bg-primary-50' };
-        if (value < 130) return { zone: 'Alert', color: 'text-amber-600', bgColor: 'bg-amber-50' };
-        return { zone: 'Danger', color: 'text-red-600', bgColor: 'bg-red-50' };
-    }
-    return null;
+/**
+ * Severity zone from the point's own limits (lib/predict/sensorScore): ISO
+ * 20816-3 zone geometry for vibration velocity on rotating classes, Normal /
+ * Alert / Danger for everything else. No limits → no badge — a fixed table
+ * that may not fit this machine is worse than none.
+ */
+function pointZone(s: { tag: string; current: number; unit?: string; alarm_high?: number; alarm_low?: number; warn_high?: number; warn_low?: number }, vibZoning: boolean): SensorZone | null {
+    const velocity = vibZoning && sensorKind(s.tag, s.unit) === 'vibration' && (!s.unit || isVibrationUnit(s.unit));
+    return sensorZone(s, velocity);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -265,7 +250,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
             ? assetSensorTrends
             : Object.entries(twinHealth?.sensor_summary || {}).map(([tag, val]) => ({ tag, current: val as number, trend: 'stable' as const }));
         return raw.filter(s => {
-            const z = getISOZone(s.tag, s.current, model.vibrationZoning);
+            const z = pointZone(s, model.vibrationZoning);
             if (!z) return false;
             const elevated = z.zone === 'C' || z.zone === 'D' || z.zone === 'Alert' || z.zone === 'Danger';
             const watchRising = (z.zone === 'B' || z.zone === 'Watch') && s.trend === 'rising';
@@ -397,7 +382,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             const strokeColor = sensor.trend === 'rising' ? '#ef4444' : sensor.trend === 'falling' ? '#eab308' : '#06b6d4';
                             const hasSparkline = sensor.readings && sensor.readings.length > 0;
                             const gradientId = `sparkGrad-${idx}`;
-                            const isoZone = getISOZone(sensor.tag, sensor.current, model.vibrationZoning);
+                            const isoZone = pointZone(sensor, model.vibrationZoning);
 
                             let sparklinePath = '';
                             let fillPath = '';
@@ -445,7 +430,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                         </div>
                                         {/* ISO Zone badge */}
                                         {isoZone && (
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isoZone.bgColor} ${isoZone.color} border-current/20`}>
+                                            <span title={isoZone.basis} className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isoZone.bgColor} ${isoZone.color} border-current/20`}>
                                                 {isoZone.zone}
                                             </span>
                                         )}
@@ -468,7 +453,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                     )}
                                     <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100">
                                         <span className="text-[9px] text-slate-300 font-medium">Last {sensor.readings?.length ?? 0} readings</span>
-                                        {isoZone && <span className={`text-[9px] font-medium ${isoZone.color}`}>ISO {isoZone.zone}</span>}
+                                        {isoZone && <span title={isoZone.basis} className={`text-[9px] font-medium ${isoZone.color}`}>{isoZone.zone.length === 1 ? `ISO ${isoZone.zone}` : isoZone.zone}</span>}
                                     </div>
                                 </div>
                             );

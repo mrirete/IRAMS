@@ -9,25 +9,36 @@
  * Captures persist to ers_waveforms (0206) so a history builds per asset;
  * when an online waveform feed lands, it writes the same table and this
  * panel needs nothing new.
+ *
+ * Per-capture inputs only. The asset's rated speed, bearings and load tag are
+ * Monitoring setup (MonitoringSetup.tsx, explicit Save) and arrive as props.
+ * The Model tab keys this panel by asset, so switching asset starts clean —
+ * it used to keep the previous asset's spectrum and speed, and Save capture
+ * would have filed that waveform against the new asset.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import { AudioWaveform, Play, Save, Clock, FlaskConical, Cog, X } from 'lucide-react';
+import { AudioWaveform, Play, Save, Clock, FlaskConical } from 'lucide-react';
 import {
     analyzeWaveform, parseWaveformText, decimateForPlot, demoBearingSignal,
     type SpectralAnalysis,
 } from '../../lib/predict/spectral';
-import { faultFrequencies, type BearingSpec } from '../../lib/predict/bearingFaults';
-import { BEARING_CATALOG } from '../../lib/predict/bearingCatalog';
-import { predictionService, type WaveformCapture } from '../../eam/services/PredictionService';
+import { predictionService, type WaveformCapture, type AssetPredictConfig, type MeasurementPointOption } from '../../eam/services/PredictionService';
+import { sensorKind } from '../../lib/predict/healthModels';
 
 interface Props {
     assetId: string;
     assetName: string;
     currentUser?: string | null;
+    /** Saved Monitoring setup — rated speed and bearing specs. */
+    config: AssetPredictConfig | null;
 }
+
+/** Vibration points first (by name or unit); the rest stay pickable. */
+const isVibPoint = (p: MeasurementPointOption) => sensorKind(p.name, p.unit) === 'vibration';
+const OTHER = '__other__';
 
 const TONE_STYLES: Record<string, string> = {
     ok: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -60,119 +71,14 @@ const SpectrumChart: React.FC<{ data: { freqHz: number; amp: number }[]; color: 
     </div>
 );
 
-/**
- * Compact bearing-spec manager: pick from the seed catalog or enter the
- * BPFO/BPFI orders straight from the manufacturer datasheet. Specs persist
- * per asset (assets.properties.predict.bearings) and turn envelope tones
- * into named-race findings.
- */
-const BearingManager: React.FC<{ bearings: BearingSpec[]; onChange: (next: BearingSpec[]) => void }> = ({ bearings, onChange }) => {
-    const [catalogSel, setCatalogSel] = useState(BEARING_CATALOG[0].designation);
-    const [position, setPosition] = useState('DE');
-    const [dsName, setDsName] = useState('');
-    const [dsBpfo, setDsBpfo] = useState('');
-    const [dsBpfi, setDsBpfi] = useState('');
-
-    const addFromCatalog = () => {
-        const entry = BEARING_CATALOG.find(e => e.designation === catalogSel);
-        if (!entry) return;
-        onChange([...bearings, { ...entry.spec, position: position.trim() || undefined }]);
-    };
-
-    const addFromDatasheet = () => {
-        const bpfo = Number(dsBpfo), bpfi = Number(dsBpfi);
-        if (!dsName.trim() || !(bpfo > 0) || !(bpfi > 0)) return;
-        onChange([...bearings, {
-            designation: dsName.trim(),
-            position: position.trim() || undefined,
-            orders: { bpfo, bpfi },
-            source: 'datasheet',
-        }]);
-        setDsName(''); setDsBpfo(''); setDsBpfi('');
-    };
-
-    return (
-        <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
-            <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bearing specs — enables named BPFO/BPFI/BSF/FTF findings</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                    Best source is the manufacturer datasheet (fault orders × running speed). Catalog entries marked
-                    approximate use ball count only — their matches read as hints, not verdicts.
-                </p>
-            </div>
-
-            {bearings.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                    {bearings.map((b, i) => {
-                        const f = faultFrequencies(b, 1);   // shaftHz=1 → hz equals orders
-                        return (
-                            <span key={i} className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px]">
-                                <span className="font-semibold text-slate-700">{b.designation || 'bearing'}</span>
-                                {b.position && <span className="text-slate-400">{b.position}</span>}
-                                {f && <span className="font-mono text-slate-500">BPFO {f.orders.bpfo}× · BPFI {f.orders.bpfi}×</span>}
-                                {(b.source === 'approximate' || f?.basis === 'approximate') && (
-                                    <span className="px-1 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded text-[9px] font-bold">APPROX</span>
-                                )}
-                                <button onClick={() => onChange(bearings.filter((_, j) => j !== i))}
-                                    className="text-slate-300 hover:text-red-500" title="Remove">
-                                    <X size={11} />
-                                </button>
-                            </span>
-                        );
-                    })}
-                </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div className="flex items-end gap-1.5">
-                    <div className="flex-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From catalog</label>
-                        <select value={catalogSel} onChange={e => setCatalogSel(e.target.value)}
-                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:border-primary-400 focus:outline-none">
-                            {BEARING_CATALOG.map(e => <option key={e.designation} value={e.designation}>{e.label}</option>)}
-                        </select>
-                    </div>
-                    <div className="w-20">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Position</label>
-                        <input value={position} onChange={e => setPosition(e.target.value)} placeholder="DE"
-                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
-                    </div>
-                    <button onClick={addFromCatalog}
-                        className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold rounded-lg transition-colors">
-                        Add
-                    </button>
-                </div>
-                <div className="flex items-end gap-1.5">
-                    <div className="flex-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From datasheet (orders ×RPM)</label>
-                        <input value={dsName} onChange={e => setDsName(e.target.value)} placeholder="designation, e.g. 6309"
-                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
-                    </div>
-                    <div className="w-16">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">BPFO</label>
-                        <input value={dsBpfo} onChange={e => setDsBpfo(e.target.value)} placeholder="3.05" type="number"
-                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
-                    </div>
-                    <div className="w-16">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">BPFI</label>
-                        <input value={dsBpfi} onChange={e => setDsBpfi(e.target.value)} placeholder="4.95" type="number"
-                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
-                    </div>
-                    <button onClick={addFromDatasheet} disabled={!dsName.trim() || !Number(dsBpfo) || !Number(dsBpfi)}
-                        className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors">
-                        Add
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, currentUser }) => {
+export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, currentUser, config }) => {
     const [rawText, setRawText] = useState('');
     const [fs, setFs] = useState('5120');
     const [rpm, setRpm] = useState('');
-    const [tag, setTag] = useState('Vibration — NDE bearing');
+    // Measurement point the capture belongs to — picked from the asset's points.
+    const [points, setPoints] = useState<MeasurementPointOption[] | null>(null);
+    const [pointSel, setPointSel] = useState('');
+    const [otherName, setOtherName] = useState('');
     const [analysis, setAnalysis] = useState<SpectralAnalysis | null>(null);
     const [samples, setSamples] = useState<number[]>([]);
     const [isDemo, setIsDemo] = useState(false);
@@ -180,46 +86,29 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
     const [saving, setSaving] = useState(false);
     const [savedMsg, setSavedMsg] = useState<string | null>(null);
     const [history, setHistory] = useState<WaveformCapture[] | null>(null);
-    const [bearings, setBearings] = useState<BearingSpec[]>([]);
-    const [showBearings, setShowBearings] = useState(false);
-    // Regime baseline (slice 3): which tag sets the duty. Saved on blur.
-    const [loadTag, setLoadTag] = useState('');
-    const [baselineDays, setBaselineDays] = useState('30');
+    const bearings = config?.bearings ?? [];
 
-    // Asset Predict config: default RPM from the nameplate, bearing specs for
-    // named-race matching, load tag for the regime baseline (assets.properties.predict).
+    // Speed during capture defaults to the saved rated speed (editable per capture).
+    const ratedRpm = config?.rated_rpm ?? null;
+    useEffect(() => { if (ratedRpm) setRpm(prev => (prev.trim() ? prev : String(ratedRpm))); }, [ratedRpm]);
+
     useEffect(() => {
         let alive = true;
-        predictionService.getAssetPredictConfig(assetId).then(cfg => {
+        // Defined measurement points, plus live-feed tags with no definition yet.
+        Promise.all([predictionService.getMeasurementPoints(assetId), predictionService.getLiveTags(assetId)]).then(([defs, live]) => {
             if (!alive) return;
-            setBearings(cfg.bearings ?? []);
-            if (cfg.rated_rpm) setRpm(prev => (prev.trim() ? prev : String(cfg.rated_rpm)));
-            setLoadTag(cfg.regime?.loadTag ?? '');
-            setBaselineDays(String(cfg.regime?.baselineDays ?? 30));
+            const known = new Set(defs.flatMap(d => [d.name, d.sensor_tag].filter(Boolean).map(v => String(v).toLowerCase())));
+            const list: MeasurementPointOption[] = [
+                ...defs,
+                ...live.filter(t => !known.has(t.tag.toLowerCase())).map(t => ({ id: `live:${t.tag}`, name: t.tag, unit: t.unit || null, sensor_tag: t.tag })),
+            ];
+            const sorted = [...list].sort((a, b) => Number(isVibPoint(b)) - Number(isVibPoint(a)));
+            setPoints(sorted);
+            setPointSel(sorted.find(isVibPoint)?.id ?? OTHER);
         });
         return () => { alive = false; };
     }, [assetId]);
-
-    const persistRegime = async () => {
-        const cfg = await predictionService.getAssetPredictConfig(assetId);
-        const days = Math.min(90, Math.max(7, Number(baselineDays) || 30));
-        const tag = loadTag.trim();
-        await predictionService.saveAssetPredictConfig(assetId, {
-            ...cfg,
-            regime: tag ? { ...(cfg.regime ?? { loadTag: tag }), loadTag: tag, baselineDays: days } : undefined,
-        });
-        setBaselineDays(String(days));
-    };
-
-    const persistConfig = async (next: BearingSpec[]) => {
-        setBearings(next);
-        const cfg = await predictionService.getAssetPredictConfig(assetId);
-        await predictionService.saveAssetPredictConfig(assetId, {
-            ...cfg,
-            bearings: next,
-            rated_rpm: rpm.trim() ? Number(rpm) : cfg.rated_rpm ?? null,
-        });
-    };
+    const tag = pointSel === OTHER ? otherName.trim() : (points?.find(p => p.id === pointSel)?.name ?? '');
 
     const run = (values: number[], demo: boolean) => {
         setError(null);
@@ -243,7 +132,7 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
     };
 
     const handleSave = async () => {
-        if (!analysis || isDemo) return;
+        if (!analysis || isDemo || !tag) return;
         setSaving(true);
         const saved = await predictionService.saveWaveform({
             asset_id: assetId,
@@ -287,47 +176,47 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                 (ISO 13373-style) — findings are candidates for an analyst, not verdicts.
             </p>
 
-            {/* Inputs */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                <div className="lg:col-span-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Waveform samples</label>
-                    <textarea
-                        value={rawText}
-                        onChange={e => setRawText(e.target.value)}
-                        rows={4}
-                        placeholder={'Paste values (one per line or comma-separated), or time,value CSV rows.\nMost analyzers and data collectors export this directly.'}
-                        className="w-full mt-1 p-2.5 border border-slate-200 rounded-lg text-xs font-mono resize-none focus:border-primary-400 focus:outline-none"
-                    />
+            {/* Capture inputs — fixed widths; the asset's speed and bearings come from Monitoring setup */}
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_8rem_8rem] gap-3 items-start">
+                <div className="min-w-0">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Measurement point</label>
+                    <select value={pointSel} onChange={e => setPointSel(e.target.value)} disabled={points === null}
+                        className="w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm bg-white focus:border-primary-400 focus:outline-none">
+                        {points?.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}{p.unit && !p.name.includes(p.unit) ? ` (${p.unit})` : ''}{isVibPoint(p) ? '' : ' — not vibration'}</option>
+                        ))}
+                        <option value={OTHER}>Other — name it…</option>
+                    </select>
+                    {pointSel === OTHER && (
+                        <input type="text" value={otherName} onChange={e => setOtherName(e.target.value)} placeholder="e.g. Vibration — NDE bearing"
+                            className="w-full mt-1.5 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
+                    )}
                 </div>
-                <div className="space-y-2">
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sample rate (Hz)</label>
-                        <input type="number" value={fs} onChange={e => setFs(e.target.value)}
-                            className="w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Running speed (RPM, optional)</label>
-                        <input type="number" value={rpm} onChange={e => setRpm(e.target.value)} placeholder="enables 1×/2× order checks"
-                            className="w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Load / regime tag (optional)</label>
-                        <div className="flex gap-2 mt-1">
-                            <input type="text" value={loadTag} onChange={e => setLoadTag(e.target.value)} onBlur={persistRegime}
-                                placeholder="e.g. STEAM_FLOW — judges every other point at this load"
-                                className="flex-1 min-w-0 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
-                            <input type="number" value={baselineDays} onChange={e => setBaselineDays(e.target.value)} onBlur={persistRegime}
-                                min={7} max={90} title="Baseline days (7–90)"
-                                className="w-16 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-1">The alert scan then flags a point that is inside its band but off this asset's own baseline at the current load.</p>
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Point / tag</label>
-                        <input type="text" value={tag} onChange={e => setTag(e.target.value)}
-                            className="w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
-                    </div>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sample rate (Hz)</label>
+                    <input type="number" value={fs} onChange={e => setFs(e.target.value)}
+                        className="w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
                 </div>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider" title="Shaft speed while this waveform was recorded — defaults to the rated speed from Monitoring setup">Speed (rpm)</label>
+                    <input type="number" value={rpm} onChange={e => setRpm(e.target.value)} placeholder={ratedRpm ? String(ratedRpm) : 'optional'}
+                        className="w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm focus:border-primary-400 focus:outline-none" />
+                </div>
+            </div>
+            <div className="mt-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Waveform samples</label>
+                <textarea
+                    value={rawText}
+                    onChange={e => setRawText(e.target.value)}
+                    rows={4}
+                    placeholder={'Paste values (one per line or comma-separated), or time,value CSV rows.\nMost analyzers and data collectors export this directly.'}
+                    className="w-full mt-1 p-2.5 border border-slate-200 rounded-lg text-xs font-mono resize-none focus:border-primary-400 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                    {bearings.length > 0
+                        ? `${bearings.length} bearing spec${bearings.length !== 1 ? 's' : ''} from Monitoring setup name envelope tones.`
+                        : 'Add bearings in Monitoring setup to name envelope tones (outer race, inner race, ball, cage).'}
+                </p>
             </div>
 
             <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -344,22 +233,13 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                     className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors">
                     <Clock size={13} /> History
                 </button>
-                <button onClick={() => setShowBearings(v => !v)}
-                    className={`flex items-center gap-1.5 px-3 py-2 border text-xs font-medium rounded-lg transition-colors ${showBearings ? 'bg-primary-50 border-primary-200 text-primary-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                    title="Bearing specs enable named BPFO/BPFI/BSF/FTF matching of envelope tones">
-                    <Cog size={13} /> Bearings ({bearings.length})
-                </button>
                 {analysis && !isDemo && (
-                    <button onClick={handleSave} disabled={saving}
+                    <button onClick={handleSave} disabled={saving || !tag} title={tag ? `Save to ${tag}` : 'Name the measurement point first'}
                         className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors ml-auto">
                         <Save size={13} /> {saving ? 'Saving…' : 'Save capture'}
                     </button>
                 )}
             </div>
-
-            {showBearings && (
-                <BearingManager bearings={bearings} onChange={persistConfig} />
-            )}
 
             {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
             {savedMsg && <p className="text-xs text-emerald-700 mt-2">{savedMsg}</p>}

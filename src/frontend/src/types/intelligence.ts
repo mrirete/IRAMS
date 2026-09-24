@@ -232,6 +232,8 @@ export interface SensorTrend {
     trend: 'rising' | 'falling' | 'stable';
     alarm_high?: number;
     alarm_low?: number;
+    warn_high?: number;
+    warn_low?: number;
 }
 
 // ---------------------------------------------------------

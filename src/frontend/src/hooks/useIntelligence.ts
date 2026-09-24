@@ -123,6 +123,8 @@ function normalizeSensor(db: DbSensor): SensorTrend {
         trend: (db.trend as SensorTrend['trend']) || 'stable',
         alarm_high: db.alarm_high != null ? Number(db.alarm_high) : undefined,
         alarm_low: db.alarm_low != null ? Number(db.alarm_low) : undefined,
+        warn_high: db.warn_high != null ? Number(db.warn_high) : undefined,
+        warn_low: db.warn_low != null ? Number(db.warn_low) : undefined,
     };
 }
 
