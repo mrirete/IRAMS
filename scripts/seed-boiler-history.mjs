@@ -123,7 +123,12 @@ if (CLEAN) {
     if (e2) fail(`delete projection: ${e2.message}`);
     const { error: e3 } = await sb.from('ers_reading_rollups_hourly').delete().eq('asset_id', asset.id);
     if (e3 && !/permission|policy/i.test(e3.message)) console.warn(`rollups not deleted (${e3.message}) — the hourly cron will overwrite them`);
-    console.log(`Removed ${count ?? '?'} seeded points for ${asset.tag}.`);
+    // A policy-filtered delete is reported as success with 0 rows. If points
+    // are still visible after "deleting", say so and fail — a re-seed on top
+    // doubles the series (burned 2026-09-24, fixed by the 0390 delete policy).
+    const { count: left } = await sb.from('ers_sensor_reading_points').select('id', { count: 'exact', head: true }).eq('asset_id', asset.id).in('source', [SOURCE, 'csv-injected']);
+    if ((count ?? 0) === 0 && (left ?? 0) > 0) fail(`--clean removed nothing but ${left} seeded points remain — the caller may not delete them (apply 0390 or clean as service role).`);
+    console.log(`Removed ${count ?? '?'} seeded points for ${asset.tag}${left ? ` (${left} remain)` : ''}.`);
     process.exit(0);
 }
 
