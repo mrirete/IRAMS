@@ -347,8 +347,11 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
 
-    const SVG_WIDTH = 900;
-    const SVG_HEIGHT = 500;
+    // The canvas grows with the drawing: a stored sheet larger than the
+    // default (the boiler drawing reaches 1040×620) must not be clipped.
+    const extents = equipment.reduce((m, e) => ({ x: Math.max(m.x, e.x || 0), y: Math.max(m.y, e.y || 0) }), { x: 0, y: 0 });
+    const SVG_WIDTH = Math.max(900, Math.ceil((extents.x + 80) / GRID) * GRID);
+    const SVG_HEIGHT = Math.max(500, Math.ceil((extents.y + 80) / GRID) * GRID);
 
     const selectedEq = equipment.find(e => e.id === selectedEqId);
 
