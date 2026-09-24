@@ -15,9 +15,12 @@
  * same rule the permit's isolation proposals use) — the resolution is shown,
  * not persisted; linking for real happens in Reliability Modelling.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Map as MapIcon, ExternalLink } from 'lucide-react';
+import { Map as MapIcon, ExternalLink, Box, Tag } from 'lucide-react';
+
+/** three is ~600 kB — only the 3D toggle pays for it. */
+const PlantScene3D = React.lazy(() => import('./PlantScene3D'));
 import PIDViewer, { type PIDEquipment, type PIDConnection } from '../analyze/PIDViewer';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import predictionService from '../../eam/services/PredictionService';
@@ -66,6 +69,11 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
     const [openWos, setOpenWos] = useState<Map<string, number>>(new Map());
     const [active, setActive] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const [view, setView] = useState<'2d' | '3d'>(() => {
+        try { return localStorage.getItem('predict.drawingView') === '3d' ? '3d' : '2d'; } catch { return '2d'; }
+    });
+    const [labels3d, setLabels3d] = useState(false);
+    const pickView = (v: '2d' | '3d') => { setView(v); try { localStorage.setItem('predict.drawingView', v); } catch { /* ignore */ } };
 
     // Register indexes: by id, by normalised tag, and the selected asset's subtree
     // (a boiler's drawing shows its fans and economisers, not one "boiler" box).
@@ -217,20 +225,45 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
                             </span>
                         )}
                         <span className="ml-auto flex items-center gap-2">
+                            <span className="inline-flex rounded-lg border border-slate-200 overflow-hidden" role="tablist" aria-label="Drawing view">
+                                <button onClick={() => pickView('2d')} className={`flex items-center gap-1 px-2 py-1 font-medium ${view === '2d' ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'}`} aria-selected={view === '2d'}>
+                                    <MapIcon size={11} /> 2D sheet
+                                </button>
+                                <button onClick={() => pickView('3d')} className={`flex items-center gap-1 px-2 py-1 font-medium border-l border-slate-200 ${view === '3d' ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'}`} aria-selected={view === '3d'}>
+                                    <Box size={11} /> 3D plant
+                                </button>
+                            </span>
+                            {view === '3d' && (
+                                <button onClick={() => setLabels3d((v) => !v)} className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-medium ${labels3d ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                                    <Tag size={11} /> Labels
+                                </button>
+                            )}
                             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> ≥80</span>
                             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> 60–79</span>
                             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> &lt;60</span>
                             <span className="text-slate-400">no badge = no snapshot yet</span>
                         </span>
                     </div>
-                    <PIDViewer
-                        readOnly
-                        title={current.drawing.title}
-                        equipment={current.equipment}
-                        connections={current.connections}
-                        highlightedEquipmentId={current.selectedNodeId ?? undefined}
-                        onEquipmentClick={(_id, aId) => { if (aId && aId !== assetId) onSelectAsset?.(aId); }}
-                    />
+                    {view === '2d' ? (
+                        <PIDViewer
+                            readOnly
+                            title={current.drawing.title}
+                            equipment={current.equipment}
+                            connections={current.connections}
+                            highlightedEquipmentId={current.selectedNodeId ?? undefined}
+                            onEquipmentClick={(_id, aId) => { if (aId && aId !== assetId) onSelectAsset?.(aId); }}
+                        />
+                    ) : (
+                        <Suspense fallback={<div className="h-[480px] rounded-lg bg-slate-50 border border-slate-100 animate-pulse" />}>
+                            <PlantScene3D
+                                equipment={current.equipment}
+                                connections={current.connections}
+                                selectedNodeId={current.selectedNodeId}
+                                showLabels={labels3d}
+                                onStudy={(aId) => { if (aId !== assetId) onSelectAsset?.(aId); }}
+                            />
+                        </Suspense>
+                    )}
                 </>
             )}
         </div>

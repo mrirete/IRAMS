@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, FileWarning } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, FileWarning, RefreshCw } from 'lucide-react';
+import { TwinDrawingPanel } from '../components/predict/TwinDrawingPanel';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
@@ -52,9 +53,9 @@ const INSIGHT_TYPES: { value: InsightType; label: string; description: string; i
 type PredictTab = 'overview' | 'twin' | 'rul';
 
 const PREDICT_TABS: { id: PredictTab; label: string; icon: React.ReactNode; description: string }[] = [
-    { id: 'overview', label: 'Overview', icon: <LayoutGrid size={16} />, description: 'Fleet health, KPIs & sensors' },
-    { id: 'twin', label: 'Digital Twin', icon: <Layers size={16} />, description: 'Trajectory & degradation' },
-    { id: 'rul', label: 'RUL & Reliability', icon: <BarChart3 size={16} />, description: 'Failure forecast & alerts' },
+    { id: 'overview', label: 'Now', icon: <LayoutGrid size={16} />, description: 'Drawing, condition & health' },
+    { id: 'twin', label: 'Model', icon: <Layers size={16} />, description: 'Trajectory, degradation & what-if' },
+    { id: 'rul', label: 'Forecast', icon: <BarChart3 size={16} />, description: 'Remaining life & alerts' },
 ];
 
 export const PredictPage: React.FC = () => {
@@ -244,6 +245,58 @@ export const PredictPage: React.FC = () => {
     // the user picks the asset or system to study (or sets up new equipment).
 
     const { loading, twinHealth, rulEstimate, getAssetAlerts, getSensorTrends, refetchPredict } = useIntelligence(selectedAssetId);
+
+    // ── Update twin: the four steps in order, one click — or none. ──────────
+    // The four-type modal made the twin a ritual (snapshot, then degradation,
+    // then RUL, then alert scan, each by hand); an asset with fresh readings
+    // and no twin row looked "Not connected". One action runs them in order,
+    // and runs itself when the asset's twin is missing or older than its
+    // newest reading. The modal stays under "Advanced" for one-step reruns.
+    const TWIN_STEPS: { type: InsightType; label: string }[] = [
+        { type: 'digital_twin', label: 'health snapshot' },
+        { type: 'degradation_model', label: 'degradation' },
+        { type: 'rul_analysis', label: 'remaining life' },
+        { type: 'alert_config', label: 'alert scan' },
+    ];
+    const [twinUpdate, setTwinUpdate] = useState<{ step: string; done: string[]; failed: string[]; running: boolean; reason: 'manual' | 'auto' } | null>(null);
+    const twinUpdateRunning = useRef(false);
+    const autoRanFor = useRef<Set<string>>(new Set());
+    const updateTwin = async (assetId: string, reason: 'manual' | 'auto') => {
+        if (!assetId || twinUpdateRunning.current) return;
+        twinUpdateRunning.current = true;
+        const done: string[] = [];
+        const failed: string[] = [];
+        const tag = getAssetById(assetId)?.tag || assetId;
+        try {
+            for (const s of TWIN_STEPS) {
+                setTwinUpdate({ step: s.label, done: [...done], failed: [...failed], running: true, reason });
+                const r = await predictionService.runPrediction(
+                    s.type, assetId, `${tag} — ${s.label}`,
+                    reason === 'auto' ? 'Automatic update: twin missing or older than the newest reading' : 'Update twin',
+                );
+                if (r.success) done.push(s.label);
+                else failed.push(`${s.label} (${r.message})`);
+            }
+        } finally {
+            twinUpdateRunning.current = false;
+            setTwinUpdate({ step: '', done, failed, running: false, reason });
+        }
+        await refetchPredict(assetId);
+    };
+    useEffect(() => {
+        if (!selectedAssetId || loading || autoRanFor.current.has(selectedAssetId)) return;
+        let cancelled = false;
+        (async () => {
+            const newest = await predictionService.newestReadingAt(selectedAssetId);
+            if (cancelled || !newest) return; // no readings at all → nothing to snapshot
+            const twinAt = twinHealth?.asset_id === selectedAssetId && twinHealth.updated_at ? new Date(twinHealth.updated_at).getTime() : 0;
+            if (twinAt >= new Date(newest).getTime()) return;
+            autoRanFor.current.add(selectedAssetId);
+            await updateTwin(selectedAssetId, 'auto');
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedAssetId, loading, twinHealth?.updated_at]);
 
     // ── Phase 1 (one engine): the grounded censored-Weibull fit from WO failure
     // history — the SAME fit the Reliability Advisor computes. When it exists it
@@ -572,9 +625,6 @@ export const PredictPage: React.FC = () => {
                 <div>
                     <div className="flex items-center gap-2.5">
                         <h1 className="text-2xl font-bold text-slate-800 font-sans tracking-tight">Predictive Insights</h1>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200">
-                            <FileWarning size={11} /> Experimental
-                        </span>
                     </div>
                     <p className="text-slate-500 text-sm mt-1">Condition-based health monitoring & failure forecasting — fitted Weibull RUL where failure history exists, directional heuristics otherwise</p>
                 </div>
@@ -600,16 +650,8 @@ export const PredictPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* ═══ Experimental disclaimer — only once an asset's heuristics are on screen ═══ */}
-            {selectedAssetId && !groundedActive && (
-                <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-card text-sm">
-                    <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                    <p className="text-amber-800 leading-relaxed">
-                        <strong>Directional only:</strong> this asset has no fitted life model yet — Health Index and RUL are <strong>heuristic estimates</strong> from condition trends, useful for triage but not for life decisions. A fitted Weibull RUL appears automatically once ≥2 failures are on record. For manual life-data studies and Monte-Carlo availability analysis, use{' '}
-                        <a href="/reliability-modelling" className="font-semibold underline decoration-amber-400 underline-offset-2 hover:text-amber-900">Reliability Modelling</a>.
-                    </p>
-                </div>
-            )}
+            {/* The "directional, no fitted life model" caveat is a chip in the
+                Overview status strip and a footnote on the RUL tile — once, not a banner. */}
 
             {/* ═══ Command Palette Modal ═══ */}
             {assetPickerOpen && (
@@ -871,13 +913,32 @@ export const PredictPage: React.FC = () => {
                     )}
                     <kbd className="hidden md:inline px-1.5 py-0.5 text-[10px] font-mono font-bold bg-slate-100 text-slate-400 border border-slate-200 rounded shrink-0">Ctrl+K</kbd>
                 </button>
-                <button
-                    onClick={() => setShowNewInsight(true)}
-                    className="flex items-center gap-2 px-4 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-xl text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] whitespace-nowrap"
-                >
-                    <Plus size={16} /> New Prediction
-                </button>
+                <div className="flex flex-col items-stretch justify-center gap-0.5">
+                    <button
+                        onClick={() => selectedAssetId && updateTwin(selectedAssetId, 'manual')}
+                        disabled={!selectedAssetId || !!twinUpdate?.running}
+                        title="Snapshot health, update degradation, forecast remaining life and scan for alerts — all four steps, in order"
+                        className="flex items-center gap-2 px-4 py-2 bg-accent-cyan hover:bg-primary-400 disabled:opacity-60 text-brand-900 font-semibold rounded-xl text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] whitespace-nowrap"
+                    >
+                        <RefreshCw size={16} className={twinUpdate?.running ? 'animate-spin' : ''} />
+                        {twinUpdate?.running ? `Updating · ${twinUpdate.step}` : 'Update twin'}
+                    </button>
+                    <button onClick={() => setShowNewInsight(true)} className="text-[10px] text-slate-400 hover:text-primary-600 text-center" title="Run one step on its own">
+                        Advanced · one step
+                    </button>
+                </div>
             </div>
+            {twinUpdate && !twinUpdate.running && (
+                <div className={`flex items-start gap-2 px-4 py-2 rounded-lg border text-xs ${twinUpdate.failed.length ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                    {twinUpdate.failed.length ? <AlertTriangle size={14} className="shrink-0 mt-0.5" /> : <CheckCircle size={14} className="shrink-0 mt-0.5" />}
+                    <p className="flex-1 leading-relaxed">
+                        {twinUpdate.reason === 'auto' ? 'Twin updated automatically — ' : 'Twin updated — '}
+                        {twinUpdate.done.length ? `${twinUpdate.done.join(', ')}.` : 'nothing completed.'}
+                        {twinUpdate.failed.length > 0 && <span className="block mt-0.5">Not done: {twinUpdate.failed.join(' · ')}</span>}
+                    </p>
+                    <button onClick={() => setTwinUpdate(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                </div>
+            )}
 
             {/* ═══ PLAIN DEFAULT — no asset selected: choose what to study ═══ */}
             {!selectedAssetId && (
@@ -939,6 +1000,16 @@ export const PredictPage: React.FC = () => {
             )}
 
             {/* ═══ TAB CONTENT ═══ */}
+            {/* The picture first: the site's drawing, register-resolved and health-badged. */}
+            {selectedAssetId && activeTab === 'overview' && (
+                <TwinDrawingPanel
+                    assetId={selectedAssetId}
+                    assetTag={selectedAsset?.tag ?? null}
+                    assetName={selectedAsset?.name || selectedAssetId}
+                    twinHealth={twinHealth}
+                    onSelectAsset={(id) => { setSelectedAssetId(id); setActiveTab('overview'); }}
+                />
+            )}
             {selectedAssetId && activeTab === 'overview' && (
                 <PredictOverviewTab
                     selectedAssetId={selectedAssetId}
@@ -1042,8 +1113,6 @@ export const PredictPage: React.FC = () => {
                     rulEstimate={displayRul}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
-                    selectedAssetTag={selectedAsset?.tag ?? null}
-                    onSelectAsset={(id) => { setSelectedAssetId(id); setActiveTab('overview'); }}
                     equipmentClass={classRes}
                     integrity={integrity}
                     criticality={selectedAsset?.criticality}

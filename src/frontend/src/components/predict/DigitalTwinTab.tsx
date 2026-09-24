@@ -10,17 +10,12 @@ import { screenRbi } from '../../lib/predict/rbi';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 import { DisgPanel } from './DisgPanel';
 import { SpectralAnalysisPanel } from './SpectralAnalysisPanel';
-import { TwinDrawingPanel } from './TwinDrawingPanel';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
     rulEstimate: RULEstimate | null;
     selectedAssetId: string;
     selectedAssetName: string;
-    /** Register tag — resolves the asset on the site's drawings. */
-    selectedAssetTag?: string | null;
-    /** A drawn component that resolves to another asset can be studied with one click. */
-    onSelectAsset?: (assetId: string) => void;
     /** Equipment-class resolution (Phase 2) */
     equipmentClass?: ClassResolution | null;
     /** API 570 thickness assessment — static assets with ≥2 thickness readings */
@@ -43,21 +38,12 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, selectedAssetTag, onSelectAsset, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
-
-            {/* ═══ The twin's picture: the site's drawing, register-resolved, health-badged ═══ */}
-            <TwinDrawingPanel
-                assetId={selectedAssetId}
-                assetTag={selectedAssetTag}
-                assetName={selectedAssetName}
-                twinHealth={twinHealth}
-                onSelectAsset={onSelectAsset}
-            />
 
             {/* ═══ Integrity (API 570) — the correct degradation surface for STATIC equipment ═══ */}
             {equipmentClass?.cls === 'static' && (

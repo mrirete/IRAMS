@@ -316,6 +316,24 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             {model.label}{equipmentClass.basis !== 'declared' ? ` · ${equipmentClass.basis}` : ''}
                         </span>
                     )}
+
+                    {/* The page's two caveats live here, once each — no banner, no badge. */}
+                    {hasData && !groundedFit && (
+                        <span
+                            title="Health Index and RUL are heuristic estimates from condition trends — useful for triage, not for life decisions. A fitted Weibull RUL appears once ≥2 failures are on record; for manual life-data studies use Reliability Modelling."
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200"
+                        >
+                            Directional · no fitted life model
+                        </span>
+                    )}
+                    {isStale && dataAgeDays != null && (
+                        <span
+                            title="Values derived from old data are not presented as live. Reconnect the feed or log new readings."
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide bg-slate-50 text-slate-500 border-slate-200"
+                        >
+                            Last reading {dataAgeDays}d ago
+                        </span>
+                    )}
                 </div>
 
                 {/* Action Buttons */}
@@ -349,30 +367,17 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-slate-800">{isStale ? 'Sensor Readings' : 'Live Sensor Readings'}</p>
-                                <p className="text-[10px] text-slate-400">
-                                    {isStale
-                                        ? `${selectedAssetName} — last data ${dataAgeDays}d ago · reconnect the feed or log new readings`
-                                        : `${selectedAssetName} — Real-time field instrument values`}
-                                </p>
+                                <p className="text-[10px] text-slate-400">{selectedAssetName} — field instrument values</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
-                            {/* Operating state mini badge */}
-                            <div className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-bold ${opConfig.bgColor} ${opConfig.color}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${opConfig.dotColor} ${opConfig.pulse ? 'animate-pulse' : ''}`} />
-                                {opConfig.label}
-                            </div>
+                            {/* Freshness is stated once, in the status strip above; here only the
+                                heartbeat, and only while the data is actually fresh. */}
                             {twinHealth?.updated_at && (() => {
                                 const diffMs = Date.now() - new Date(twinHealth.updated_at).getTime();
                                 const diffMin = Math.floor(diffMs / 60000);
                                 const timeAgo = diffMin < 1 ? 'just now' : diffMin < 60 ? `${diffMin}m ago` : diffMin < 1440 ? `${Math.floor(diffMin / 60)}h ago` : `${Math.floor(diffMin / 1440)}d ago`;
-                                // Green heartbeat only while the data is actually fresh.
-                                return isStale ? (
-                                    <span className="text-[10px] text-amber-600 font-medium flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                        Stale — updated {timeAgo}
-                                    </span>
-                                ) : (
+                                return isStale ? null : (
                                     <span className="text-[10px] text-slate-400 flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                         Updated {timeAgo}
@@ -464,7 +469,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                         </div>
                                     )}
                                     <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100">
-                                        <span className="text-[9px] text-slate-300 font-medium">Last 24h</span>
+                                        <span className="text-[9px] text-slate-300 font-medium">Last {sensor.readings?.length ?? 0} readings</span>
                                         {isoZone && <span className={`text-[9px] font-medium ${isoZone.color}`}>ISO {isoZone.zone}</span>}
                                     </div>
                                 </div>

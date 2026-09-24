@@ -91,6 +91,9 @@ export default defineConfig(({ command }) => ({
             return 'vendor-icons';
           }
 
+          // ── 3D (three + R3F + drei) — only the plant view loads it ──
+          if (id.includes('node_modules/three/') || id.includes('@react-three/')) return 'vendor-3d';
+
           // ── Heavy vendor libs — split from index ──
           if (id.includes('jspdf')) return 'vendor-pdf';
           if (id.includes('xlsx')) return 'vendor-xlsx';

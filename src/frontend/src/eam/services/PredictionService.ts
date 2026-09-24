@@ -584,6 +584,28 @@ class PredictionService {
     //  Run Prediction — compute & persist per insight type
     // ══════════════════════════════════════════════════════════
 
+    /**
+     * When did this asset last get a reading — raw online point or the
+     * projection a file load / rounds bridge wrote. Null when it has none.
+     * Drives "is the twin older than its data?" for the automatic update.
+     */
+    async newestReadingAt(assetId: string): Promise<string | null> {
+        try {
+            const [pt, proj] = await Promise.all([
+                supabase.from('ers_sensor_reading_points').select('ts').eq('asset_id', assetId).order('ts', { ascending: false }).limit(1).maybeSingle(),
+                supabase.from('ers_sensor_readings').select('created_at').eq('asset_id', assetId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+            ]);
+            const candidates = [
+                (pt.data as { ts?: string } | null)?.ts,
+                (proj.data as { created_at?: string } | null)?.created_at,
+            ].filter((s): s is string => typeof s === 'string' && Number.isFinite(new Date(s).getTime()));
+            if (!candidates.length) return null;
+            return candidates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+        } catch {
+            return null;
+        }
+    }
+
     async runPrediction(
         type: 'digital_twin' | 'rul_analysis' | 'alert_config' | 'degradation_model',
         assetId: string,
