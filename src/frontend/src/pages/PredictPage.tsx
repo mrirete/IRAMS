@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, FileWarning, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, LayoutGrid, Layers, BarChart3, FileWarning, RefreshCw } from 'lucide-react';
 import { TwinDrawingPanel } from '../components/predict/TwinDrawingPanel';
 import { PredictSideRail } from '../components/predict/PredictSideRail';
 import { useIntelligence } from '../hooks/useIntelligence';
@@ -70,10 +70,9 @@ export const PredictPage: React.FC = () => {
     const [predictionRunning, setPredictionRunning] = useState(false);
     const [predictionError, setPredictionError] = useState<string | null>(null);
     const [predictionMessage, setPredictionMessage] = useState('');
-    const [manageFleetOpen, setManageFleetOpen] = useState(false);
-    const [hiddenFleetIds, setHiddenFleetIds] = useState<Set<string>>(new Set());
-    const [fleetSearch, setFleetSearch] = useState('');
-    const fleetFilterRef = useRef<HTMLDivElement>(null);
+    // Keyboard cursor in the asset picker (↑↓ moves, Enter opens).
+    const [pickerIndex, setPickerIndex] = useState(0);
+    const pickerListRef = useRef<HTMLDivElement>(null);
 
     // ── Corrective Work Request Modal state ──
     const { profile } = useAuth();
@@ -229,19 +228,6 @@ export const PredictPage: React.FC = () => {
         return () => { active = false; };
     }, [selectedAssetId]);
 
-    // Close fleet filter on outside click
-    useEffect(() => {
-        if (!manageFleetOpen) return;
-        const handleClickOutside = (e: MouseEvent) => {
-            if (fleetFilterRef.current && !fleetFilterRef.current.contains(e.target as Node)) {
-                setManageFleetOpen(false);
-                setFleetSearch('');
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [manageFleetOpen]);
-
     // Deliberately NO auto-selection: the page defaults to a plain chooser —
     // the user picks the asset or system to study (or sets up new equipment).
 
@@ -382,6 +368,17 @@ export const PredictPage: React.FC = () => {
         const q = assetSearch.toLowerCase();
         return assetOptions.filter(a => a.name.toLowerCase().includes(q) || a.system.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q));
     }, [assetSearch, assetOptions]);
+    // Grouped by system; the flat order is what ↑↓ walks.
+    const pickerGroups = useMemo(() => {
+        const groups = new Map<string, typeof filteredAssets>();
+        filteredAssets.forEach(asset => {
+            const sys = asset.system || 'Unassigned';
+            if (!groups.has(sys)) groups.set(sys, []);
+            groups.get(sys)!.push(asset);
+        });
+        return Array.from(groups.entries());
+    }, [filteredAssets]);
+    const pickerOrder = useMemo(() => pickerGroups.flatMap(([, assets]) => assets), [pickerGroups]);
 
     // ── Fleet data from Supabase ──────────────────────────
     const [fleetData, setFleetData] = useState<FleetAssetHealth[]>([]);
@@ -443,6 +440,7 @@ export const PredictPage: React.FC = () => {
 
                         return {
                             asset_id: t.asset_id,
+                            tag: registeredAsset?.tag || undefined,
                             asset_name: registeredAsset
                                 ? `${registeredAsset.tag} — ${registeredAsset.name}`
                                 : fallbackName,
@@ -468,9 +466,11 @@ export const PredictPage: React.FC = () => {
         return () => { cancelled = true; };
     }, [getAssetById, assetOptions]);
 
-    const visibleFleetData = useMemo(() => {
-        return fleetData.filter(a => !hiddenFleetIds.has(a.asset_id));
-    }, [fleetData, hiddenFleetIds]);
+    // Register equipment with no health snapshot — the chooser's search offers set-up for these.
+    const unmonitoredAssets = useMemo(() => {
+        const monitored = new Set(fleetData.map(a => a.asset_id));
+        return assetOptions.filter(a => !monitored.has(a.id)).map(a => ({ id: a.id, tag: a.tag, name: a.name, system: a.system }));
+    }, [fleetData, assetOptions]);
 
     // ── Phase 4: system/unit roll-up from monitored equipment health ──
     // AssetContext assets use the ISO-taxonomy shape: parent_id (snake) and
@@ -499,39 +499,29 @@ export const PredictPage: React.FC = () => {
         );
     }, [fleetData, allRegisterAssets, redundancyGroups]);
 
-    const toggleAssetVisibility = (id: string) => {
-        setHiddenFleetIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
-    };
-
-    // Fleet list for the filter dropdown: sorted by health (worst first), searchable
-    const filteredFleet = useMemo(() => {
-        const q = fleetSearch.toLowerCase();
-        return [...fleetData]
-            .filter(a => !q || a.asset_name.toLowerCase().includes(q) || a.unit.toLowerCase().includes(q))
-            .sort((a, b) => a.health_index - b.health_index);
-    }, [fleetData, fleetSearch]);
-
-    // ── Ctrl+K keyboard shortcut ──────────────────────────
+    // ── Asset picker keys ─────────────────────────────────
+    // Ctrl+K is the global command palette's (AppLayout) — Predict used to claim
+    // it too and both opened at once. The picker opens from the asset switcher.
+    const closePicker = () => { setAssetPickerOpen(false); setAssetSearch(''); };
+    const openPicker = () => { setAssetSearch(''); setPickerIndex(0); setAssetPickerOpen(true); };
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-                e.preventDefault();
-                setAssetPickerOpen(prev => !prev);
-                setAssetSearch('');
-            }
-            if (e.key === 'Escape' && assetPickerOpen) {
-                setAssetPickerOpen(false);
-                setAssetSearch('');
-            }
-        };
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
+        if (!assetPickerOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closePicker(); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
     }, [assetPickerOpen]);
+    useEffect(() => { setPickerIndex(0); }, [assetSearch]);
+    useEffect(() => {
+        pickerListRef.current?.querySelector(`[data-picker-idx="${pickerIndex}"]`)?.scrollIntoView({ block: 'nearest' });
+    }, [pickerIndex]);
+    const onPickerKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); setPickerIndex(i => Math.min(i + 1, pickerOrder.length - 1)); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setPickerIndex(i => Math.max(i - 1, 0)); }
+        else if (e.key === 'Enter') {
+            const hit = pickerOrder[pickerIndex];
+            if (hit) { e.preventDefault(); setSelectedAssetId(hit.id); closePicker(); }
+        }
+    };
 
     // First-timer experience: the setup guide IS the page until data flows.
     // Every click in it performs real setup (register, measurement points,
@@ -655,19 +645,20 @@ export const PredictPage: React.FC = () => {
                     <button
                         onClick={() => openSetup(selectedAssetId || undefined)}
                         title="Step-by-step guide: register equipment, define measurements, get data flowing"
-                        className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-700 text-slate-600 font-semibold rounded-lg text-sm transition-colors"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-700 text-slate-600 font-semibold rounded-lg text-sm transition-colors whitespace-nowrap"
                     >
                         <HeartPulse size={16} /> Setup guide
                     </button>
-                    {/* #2: Reliability Advisor — grounded, cited PM proposal for this asset */}
-                    <button
-                        onClick={() => setAdvisorOpen(true)}
-                        disabled={!selectedAssetId}
-                        title="Run the Reliability Advisor: real Weibull RUL + cost-justified PM proposal you can approve"
-                        className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm transition-colors"
-                    >
-                        <Cpu size={16} /> Reliability Advisor
-                    </button>
+                    {/* #2: Reliability Advisor — grounded, cited PM proposal for this asset (appears once one is chosen) */}
+                    {selectedAssetId && (
+                        <button
+                            onClick={() => setAdvisorOpen(true)}
+                            title="Run the Reliability Advisor: real Weibull RUL + cost-justified PM proposal you can approve"
+                            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-semibold rounded-lg text-sm transition-colors whitespace-nowrap"
+                        >
+                            <Cpu size={16} /> Reliability Advisor
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -676,7 +667,7 @@ export const PredictPage: React.FC = () => {
 
             {/* ═══ Command Palette Modal ═══ */}
             {assetPickerOpen && (
-                <div className="fixed inset-0 z-[60] flex items-start justify-center pt-[12vh] bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => { setAssetPickerOpen(false); setAssetSearch(''); }}>
+                <div className="fixed inset-0 z-[60] flex items-start justify-center pt-[12vh] bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={closePicker}>
                     <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl shadow-black/30 border border-slate-200 overflow-hidden animate-in slide-in-from-top-4 duration-200" onClick={e => e.stopPropagation()}>
                         {/* Search Input */}
                         <div className="p-4 border-b border-slate-200">
@@ -684,9 +675,11 @@ export const PredictPage: React.FC = () => {
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input
                                     type="text"
-                                    placeholder="Search by tag, name, or system..."
+                                    placeholder="Search by tag, name or system…"
                                     value={assetSearch}
                                     onChange={e => setAssetSearch(e.target.value)}
+                                    onKeyDown={onPickerKeyDown}
+                                    aria-label="Find an asset"
                                     className="w-full pl-12 pr-20 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 focus:border-accent-cyan placeholder:text-slate-400 font-medium"
                                     autoFocus
                                 />
@@ -695,7 +688,7 @@ export const PredictPage: React.FC = () => {
                         </div>
 
                         {/* Results — grouped by system */}
-                        <div className="max-h-[50vh] overflow-y-auto">
+                        <div ref={pickerListRef} className="max-h-[50vh] overflow-y-auto">
                             {filteredAssets.length === 0 ? (
                                 <div className="p-8 text-center">
                                     <Search size={32} className="mx-auto mb-2 text-slate-300" />
@@ -703,15 +696,8 @@ export const PredictPage: React.FC = () => {
                                     <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
                                 </div>
                             ) : (() => {
-                                // Group filtered assets by system
-                                const systemGroups = new Map<string, typeof filteredAssets>();
-                                filteredAssets.forEach(asset => {
-                                    const sys = asset.system || 'Unassigned';
-                                    if (!systemGroups.has(sys)) systemGroups.set(sys, []);
-                                    systemGroups.get(sys)!.push(asset);
-                                });
-
-                                return Array.from(systemGroups.entries()).map(([systemName, assets]) => (
+                                let flatIdx = 0;
+                                return pickerGroups.map(([systemName, assets]) => (
                                     <div key={systemName}>
                                         {/* System Group Header */}
                                         <div className="sticky top-0 z-10 px-5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
@@ -722,6 +708,8 @@ export const PredictPage: React.FC = () => {
                                         </div>
                                         {assets.map((asset, idx) => {
                                             const isActive = asset.id === selectedAssetId;
+                                            const myIdx = flatIdx++;
+                                            const isCursor = myIdx === pickerIndex;
                                             const aCritColor = asset.criticality === 'A' ? 'bg-red-500/15 text-red-500 border-red-500/30' : asset.criticality === 'B' ? 'bg-yellow-500/15 text-yellow-600 border-yellow-500/30' : 'bg-slate-100 text-slate-500 border-slate-300';
                                             const fleetMatch = fleetData.find(f => f.asset_id === asset.id);
                                             const hi = fleetMatch?.health_index;
@@ -730,8 +718,10 @@ export const PredictPage: React.FC = () => {
                                             return (
                                                 <button
                                                     key={asset.id}
-                                                    onClick={() => { setSelectedAssetId(asset.id); setAssetPickerOpen(false); setAssetSearch(''); }}
-                                                    className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-all hover:bg-slate-50 ${isActive ? 'bg-accent-cyan/5 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'} ${idx > 0 ? 'border-t border-t-slate-50' : ''}`}
+                                                    data-picker-idx={myIdx}
+                                                    onMouseEnter={() => setPickerIndex(myIdx)}
+                                                    onClick={() => { setSelectedAssetId(asset.id); closePicker(); }}
+                                                    className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-all hover:bg-slate-50 ${isCursor ? 'bg-slate-50' : ''} ${isActive ? 'bg-accent-cyan/5 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'} ${idx > 0 ? 'border-t border-t-slate-50' : ''}`}
                                                 >
                                                     <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${healthDot}`} />
                                                     <div className="flex-1 min-w-0">
@@ -766,8 +756,8 @@ export const PredictPage: React.FC = () => {
                         <div className="p-2.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-[10px] text-slate-400">
                             <span>{filteredAssets.length} asset{filteredAssets.length !== 1 ? 's' : ''} · {new Set(filteredAssets.map(a => a.system)).size} system{new Set(filteredAssets.map(a => a.system)).size !== 1 ? 's' : ''}</span>
                             <div className="flex items-center gap-3">
-                                <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded font-mono text-[9px]">↑↓</kbd> Navigate</span>
-                                <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded font-mono text-[9px]">Ctrl+K</kbd> Toggle</span>
+                                <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded font-mono text-[9px]">↑↓</kbd> Move</span>
+                                <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded font-mono text-[9px]">Enter</kbd> Open</span>
                             </div>
                         </div>
                     </div>
@@ -910,34 +900,38 @@ export const PredictPage: React.FC = () => {
                 </div>
             )}
 
-            {/* ═══ ASSET BAR — search-first selector + New Prediction (replaces the old focused-asset banner) ═══ */}
+            {/* ═══ ASSET SWITCHER — the study's asset; "Change" opens the picker. Absent
+                until an asset is chosen: the fleet chooser below is the one search then. ═══ */}
+            {selectedAssetId && (
             <div className="flex items-stretch gap-3">
                 <button
-                    onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
+                    onClick={openPicker}
                     className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-accent-cyan/50 hover:shadow-md transition-all text-left group"
-                    title="Change asset · Ctrl+K"
+                    title="Change asset"
                 >
-                    <Search size={17} className="text-slate-400 group-hover:text-accent-cyan transition-colors shrink-0" />
+                    <Target size={17} className="text-slate-400 group-hover:text-accent-cyan transition-colors shrink-0" />
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-800 group-hover:text-accent-cyan transition-colors truncate">
-                            {selectedAsset ? selectedAsset.name : 'Search assets…'}
+                            {selectedAsset ? selectedAsset.name : selectedAssetId}
                         </p>
                         <p className="text-[10px] text-slate-400 truncate">
-                            {selectedAsset ? [selectedAsset.tag, selectedAsset.system].filter(Boolean).join(' · ') : 'by tag, name, or system'}
+                            {selectedAsset ? [selectedAsset.tag, selectedAsset.system].filter(Boolean).join(' · ') : 'Not in the register'}
                         </p>
                     </div>
-                    {!hasTwin && selectedAssetId && (
+                    {!hasTwin && (
                         <span className="hidden sm:inline text-[10px] font-semibold text-primary-600 shrink-0">Not connected yet</span>
                     )}
                     {selectedAsset && (
                         <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${critColor}`}>Crit {critLevel || '?'}</span>
                     )}
-                    <kbd className="hidden md:inline px-1.5 py-0.5 text-[10px] font-mono font-bold bg-slate-100 text-slate-400 border border-slate-200 rounded shrink-0">Ctrl+K</kbd>
+                    <span className="flex items-center gap-1 text-xs font-semibold text-primary-600 group-hover:text-primary-500 shrink-0">
+                        <Search size={13} /> Change
+                    </span>
                 </button>
                 <div className="flex flex-col items-stretch justify-center gap-0.5">
                     <button
-                        onClick={() => selectedAssetId && updateTwin(selectedAssetId, 'manual')}
-                        disabled={!selectedAssetId || !!twinUpdate?.running}
+                        onClick={() => updateTwin(selectedAssetId, 'manual')}
+                        disabled={!!twinUpdate?.running}
                         title="Snapshot health, update degradation, forecast remaining life and scan for alerts — all four steps, in order"
                         className="flex items-center gap-2 px-4 py-2 bg-accent-cyan hover:bg-primary-400 disabled:opacity-60 text-brand-900 font-semibold rounded-xl text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] whitespace-nowrap"
                     >
@@ -949,43 +943,22 @@ export const PredictPage: React.FC = () => {
                     </button>
                 </div>
             </div>
+            )}
             {twinUpdateLine && <div className="@min-[90rem]/page:hidden">{twinUpdateLine}</div>}
 
-            {/* ═══ PLAIN DEFAULT — no asset selected: choose what to study ═══ */}
+            {/* ═══ PLAIN DEFAULT — no asset selected: the fleet map IS the chooser, and its
+                search reaches the whole register (unmonitored matches offer set-up). ═══ */}
             {!selectedAssetId && (
-                <>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3">
-                        <div className="inline-flex p-2 bg-slate-50 rounded-lg text-slate-400 shrink-0">
-                            <Target size={18} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-800">Choose an asset or system to study</p>
-                            <p className="text-xs text-slate-500">Search above or pick from the fleet below.</p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                            <button
-                                onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
-                                className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-lg text-sm transition-colors"
-                            >
-                                <Search size={15} /> Select asset or system
-                            </button>
-                            <button
-                                onClick={() => openSetup()}
-                                className="@min-[90rem]/page:hidden flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-700 text-slate-600 font-semibold rounded-lg text-sm transition-colors"
-                            >
-                                <HeartPulse size={15} /> Set up new equipment
-                            </button>
-                        </div>
-                    </div>
-                    {visibleFleetData.length > 0 && (
-                        <FleetHealthMap
-                            selectedAssetId=""
-                            onAssetSelect={(id: string) => setSelectedAssetId(id)}
-                            fleetData={visibleFleetData}
-                            totalAssetCount={fleetData.length}
-                        />
-                    )}
-                </>
+                <FleetHealthMap
+                    selectedAssetId=""
+                    onAssetSelect={(id: string) => setSelectedAssetId(id)}
+                    fleetData={fleetData}
+                    totalAssetCount={fleetData.length}
+                    title="Choose an asset to study"
+                    autoFocusSearch
+                    unmonitored={unmonitoredAssets}
+                    onSetupAsset={(id) => openSetup(id)}
+                />
             )}
 
             {/* ═══ TAB NAVIGATION ═══ */}
@@ -1027,78 +1000,7 @@ export const PredictPage: React.FC = () => {
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
                     onAssetSelect={(id) => { setSelectedAssetId(id); setAssetPickerOpen(false); }}
                     fleetData={fleetData}
-                    visibleFleetData={visibleFleetData}
                     totalAssetCount={fleetData.length}
-                    filterSlot={
-                        <div className="relative" ref={fleetFilterRef}>
-                            <button
-                                onClick={() => { setManageFleetOpen(!manageFleetOpen); if (!manageFleetOpen) setFleetSearch(''); }}
-                                className={`flex items-center gap-2 px-3 py-1.5 border font-semibold rounded-lg text-xs transition-all ${hiddenFleetIds.size > 0 ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100' : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'}`}
-                            >
-                                <Filter size={14} />
-                                Filter
-                                {hiddenFleetIds.size > 0 && (
-                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-white rounded-full min-w-[18px] text-center">
-                                        {fleetData.length - hiddenFleetIds.size}/{fleetData.length}
-                                    </span>
-                                )}
-                            </button>
-
-                            {manageFleetOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-96 bg-white border border-slate-200 rounded-xl shadow-2xl shadow-black/20 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                    <div className="p-3 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                                        <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                                            <Activity size={14} className="text-accent-cyan" />
-                                            Fleet Assets
-                                            <span className="text-xs font-normal text-slate-400">({fleetData.length - hiddenFleetIds.size} of {fleetData.length})</span>
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                            <button onClick={() => setHiddenFleetIds(new Set())} className="text-xs text-accent-cyan hover:underline font-medium focus:outline-none">Show All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button onClick={() => setHiddenFleetIds(new Set(fleetData.map(a => a.asset_id)))} className="text-xs text-slate-500 hover:text-slate-800 hover:underline font-medium focus:outline-none">Hide All</button>
-                                        </div>
-                                    </div>
-                                    <div className="p-2 border-b border-slate-100">
-                                        <div className="relative">
-                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-                                            <input type="text" placeholder="Search assets..." value={fleetSearch} onChange={e => setFleetSearch(e.target.value)} className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-accent-cyan placeholder:text-slate-400" autoFocus />
-                                        </div>
-                                    </div>
-                                    <div className="max-h-72 overflow-y-auto p-1">
-                                        {filteredFleet.length === 0 ? (
-                                            <div className="p-4 text-center text-sm text-slate-400">{fleetData.length === 0 ? 'No assets available.' : 'No matching assets.'}</div>
-                                        ) : (
-                                            filteredFleet.map(asset => {
-                                                const isHidden = hiddenFleetIds.has(asset.asset_id);
-                                                const hi = asset.health_index;
-                                                const healthDotColor = hi >= 85 ? 'bg-emerald-500' : hi >= 70 ? 'bg-yellow-500' : hi >= 55 ? 'bg-orange-500' : 'bg-red-500';
-                                                const cColor = asset.criticality === 'A' ? 'bg-red-500/15 text-red-500 border-red-500/30' : asset.criticality === 'B' ? 'bg-yellow-500/15 text-yellow-600 border-yellow-500/30' : 'bg-slate-100 text-slate-500 border-slate-300';
-                                                return (
-                                                    <button key={asset.asset_id} onClick={() => toggleAssetVisibility(asset.asset_id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg transition-all group ${isHidden ? 'opacity-50 hover:opacity-75' : 'hover:bg-slate-50'}`}>
-                                                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${healthDotColor} ${isHidden ? 'opacity-40' : ''}`} />
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className={`text-sm font-medium truncate transition-colors ${isHidden ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-700 group-hover:text-accent-cyan'}`}>{asset.asset_name}</p>
-                                                            <div className="flex items-center gap-2 mt-0.5">
-                                                                <span className="text-[10px] text-slate-400 truncate">{asset.unit}</span>
-                                                                <span className="text-[10px] text-slate-400">·</span>
-                                                                <span className={`text-[10px] font-bold ${hi >= 70 ? 'text-slate-500' : 'text-red-500'}`}>HI: {hi.toFixed(0)}</span>
-                                                                {asset.rul_days > 0 && (<><span className="text-[10px] text-slate-400">·</span><span className={`text-[10px] ${asset.rul_days < 90 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>RUL: {asset.rul_days}d</span></>)}
-                                                            </div>
-                                                        </div>
-                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${cColor}`}>{asset.criticality}</span>
-                                                        <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border transition-all ${isHidden ? 'bg-white border-slate-300' : 'bg-accent-cyan border-accent-cyan text-white shadow-sm shadow-primary-500/20'}`}>{!isHidden && <Check size={14} strokeWidth={3} />}</div>
-                                                    </button>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                    <div className={`p-2.5 border-t text-xs text-center font-medium ${hiddenFleetIds.size > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-100 bg-slate-50 text-slate-400'}`}>
-                                        {hiddenFleetIds.size > 0 ? `${hiddenFleetIds.size} asset(s) hidden · Avg Health recalculated` : 'All assets visible'}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    }
                     systemHealth={systemHealth}
                     isHealthy={isHealthy}
                     rulDays={displayRul?.rul_days}
@@ -1250,7 +1152,7 @@ export const PredictPage: React.FC = () => {
             ) : (
                 <PredictSideRail
                     mode="chooser"
-                    fleet={visibleFleetData}
+                    fleet={fleetData}
                     onSetup={() => openSetup()}
                     rollups={rollups}
                     onSelectAsset={(id) => setSelectedAssetId(id)}

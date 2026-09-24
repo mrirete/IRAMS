@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Activity, AlertTriangle, TrendingDown, TrendingUp, Minus, Search, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, List, ArrowUpDown, SlidersHorizontal } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Activity, AlertTriangle, TrendingDown, TrendingUp, Minus, Search, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, List, ArrowUpDown, SlidersHorizontal, HeartPulse } from 'lucide-react';
 import type { FleetAssetHealth } from '../../types/intelligence';
 import { DEMO_DATA } from '../../config/demoMode';
 
@@ -41,24 +41,29 @@ const ITEMS_PER_PAGE = 8;
 //  Helpers
 // ─────────────────────────────────────────────────────────
 
+/** Health bands — the colours, the legend and "at risk" all read these. */
+export const HEALTH_BANDS = { good: 85, fair: 70, poor: 55 } as const;
+/** At risk = below the fair band (orange or red). */
+export const isAtRisk = (hi: number) => hi < HEALTH_BANDS.fair;
+
 function getHealthColor(hi: number): string {
-    if (hi >= 85) return 'from-accent-safe/20 to-accent-safe/5 border-accent-safe/30';
-    if (hi >= 70) return 'from-yellow-500/20 to-yellow-500/5 border-yellow-500/30';
-    if (hi >= 55) return 'from-orange-500/20 to-orange-500/5 border-orange-500/30';
+    if (hi >= HEALTH_BANDS.good) return 'from-accent-safe/20 to-accent-safe/5 border-accent-safe/30';
+    if (hi >= HEALTH_BANDS.fair) return 'from-yellow-500/20 to-yellow-500/5 border-yellow-500/30';
+    if (hi >= HEALTH_BANDS.poor) return 'from-orange-500/20 to-orange-500/5 border-orange-500/30';
     return 'from-red-500/20 to-red-500/5 border-red-500/30';
 }
 
 function getHealthTextColor(hi: number): string {
-    if (hi >= 85) return 'text-accent-safe';
-    if (hi >= 70) return 'text-yellow-500';
-    if (hi >= 55) return 'text-orange-400';
+    if (hi >= HEALTH_BANDS.good) return 'text-accent-safe';
+    if (hi >= HEALTH_BANDS.fair) return 'text-yellow-500';
+    if (hi >= HEALTH_BANDS.poor) return 'text-orange-400';
     return 'text-red-400';
 }
 
 function getHealthDot(hi: number): string {
-    if (hi >= 85) return 'bg-emerald-500';
-    if (hi >= 70) return 'bg-yellow-500';
-    if (hi >= 55) return 'bg-orange-500';
+    if (hi >= HEALTH_BANDS.good) return 'bg-emerald-500';
+    if (hi >= HEALTH_BANDS.fair) return 'bg-yellow-500';
+    if (hi >= HEALTH_BANDS.poor) return 'bg-orange-500';
     return 'bg-red-500';
 }
 
@@ -73,18 +78,36 @@ const TrendIcon: React.FC<{ trend: FleetAssetHealth['trend'] }> = ({ trend }) =>
 //  Component
 // ─────────────────────────────────────────────────────────
 
+/** A register asset with no health snapshot yet — offered when a search reaches past the fleet. */
+export interface UnmonitoredAsset {
+    id: string;
+    tag: string;
+    name: string;
+    system: string;
+}
+
 interface Props {
     selectedAssetId: string;
     onAssetSelect: (assetId: string) => void;
     fleetData?: FleetAssetHealth[];
-    filterSlot?: React.ReactNode;
     totalAssetCount?: number;
     /** When true, skip outer wrapper and header (used when embedded inside a collapsible parent) */
     embedded?: boolean;
+    /** Header title — the chooser calls itself "Choose an asset to study". */
+    title?: string;
+    /** Focus the search on mount (the chooser's one search field). */
+    autoFocusSearch?: boolean;
+    /** Register assets without a health snapshot; matching ones list under the cards. */
+    unmonitored?: UnmonitoredAsset[];
+    onSetupAsset?: (assetId: string) => void;
 }
 
-export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect, fleetData, filterSlot, totalAssetCount, embedded }) => {
+const UNMONITORED_LIMIT = 6;
+
+export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect, fleetData, totalAssetCount, embedded, title, autoFocusSearch, unmonitored, onSetupAsset }) => {
     const [search, setSearch] = useState('');
+    const searchRef = useRef<HTMLInputElement>(null);
+    useEffect(() => { if (autoFocusSearch) searchRef.current?.focus(); }, [autoFocusSearch]);
     const [sort, setSort] = useState<SortOption>('health_asc');
     const [critFilter, setCritFilter] = useState<CritFilter>('all');
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -103,7 +126,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
         const q = search.toLowerCase().trim();
         const filtered = effectiveData.filter(a => {
             if (critFilter !== 'all' && a.criticality !== critFilter) return false;
-            if (q && !a.asset_name.toLowerCase().includes(q) && !a.unit.toLowerCase().includes(q) && !a.asset_id.toLowerCase().includes(q)) return false;
+            if (q && !a.asset_name.toLowerCase().includes(q) && !a.unit.toLowerCase().includes(q) && !(a.tag || '').toLowerCase().includes(q)) return false;
             return true;
         });
 
@@ -128,7 +151,14 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
     if (safePage !== page) setPage(safePage);
     const paged = processed.slice(safePage * ITEMS_PER_PAGE, (safePage + 1) * ITEMS_PER_PAGE);
 
-    const criticalCount = effectiveData.filter(a => a.health_index < 70).length;
+    // A search that reaches past the fleet: register matches with no health yet.
+    const unmonitoredMatches = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        if (!q || !unmonitored) return [];
+        return unmonitored.filter(a => a.tag.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || (a.system || '').toLowerCase().includes(q));
+    }, [search, unmonitored]);
+
+    const criticalCount = effectiveData.filter(a => isAtRisk(a.health_index)).length;
     const avgHealth = effectiveData.length > 0 ? effectiveData.reduce((s, a) => s + a.health_index, 0) / effectiveData.length : 0;
     const totalCount = totalAssetCount ?? effectiveData.length;
 
@@ -149,28 +179,30 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                             <Activity size={20} />
                         </div>
                         <div>
-                            <h3 className="text-base font-semibold text-slate-800">Fleet Health Overview</h3>
+                            <h3 className="text-base font-semibold text-slate-800">{title || 'Fleet Health Overview'}</h3>
                             <p className="text-xs text-slate-400">
-                                {processed.length === totalCount
-                                    ? `${totalCount} assets monitored`
-                                    : `${processed.length} of ${totalCount} assets`
+                                {effectiveData.length === 0
+                                    ? 'Search the register by tag, name or system'
+                                    : processed.length === totalCount
+                                        ? `${totalCount} assets monitored · click one to study it`
+                                        : `${processed.length} of ${totalCount} assets`
                                 }
-                                {' · Click to drill down'}
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 text-xs">
-                        <div>
-                            <span className="text-slate-400">Avg Health: </span>
-                            <span className={`font-bold ${getHealthTextColor(avgHealth)}`}>{avgHealth.toFixed(1)}</span>
-                        </div>
+                        {effectiveData.length > 0 && (
+                            <div>
+                                <span className="text-slate-400">Avg Health: </span>
+                                <span className={`font-bold ${getHealthTextColor(avgHealth)}`}>{avgHealth.toFixed(1)}</span>
+                            </div>
+                        )}
                         {criticalCount > 0 && (
                             <div className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/30 rounded-full">
                                 <AlertTriangle size={12} className="text-red-400" />
                                 <span className="text-red-400 font-bold">{criticalCount} at risk</span>
                             </div>
                         )}
-                        {filterSlot}
                     </div>
                 </div>
 
@@ -180,8 +212,9 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
+                            ref={searchRef}
                             type="text"
-                            placeholder="Search by name, tag, or system..."
+                            placeholder="Search by tag, name or system…"
                             value={search}
                             onChange={e => { setSearch(e.target.value); setPage(0); }}
                             className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300/40 focus:border-primary-400 placeholder:text-slate-400 transition-all"
@@ -276,23 +309,28 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
 
             {/* ═══ Content: Grid or List ═══ */}
             {processed.length === 0 ? (
-                <div className="text-center py-16 px-5">
-                    <Search size={28} className="mx-auto mb-2 text-slate-300" />
-                    <p className="text-sm font-medium text-slate-500">{hasRealData ? 'No matching assets' : 'No assets in the register yet'}</p>
-                    <p className="text-xs text-slate-400 mt-1">{hasRealData ? 'Adjust your search or filters to find assets' : 'Import assets to see fleet health here.'}</p>
-                </div>
+                unmonitoredMatches.length > 0 ? null : (
+                    <div className="text-center py-12 px-5">
+                        <Search size={28} className="mx-auto mb-2 text-slate-300" />
+                        <p className="text-sm font-medium text-slate-500">
+                            {search || critFilter !== 'all' ? 'No matching assets' : unmonitored?.length ? 'No asset has a health reading yet' : 'No assets in the register yet'}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">
+                            {search || critFilter !== 'all' ? 'Try a different tag, name or system' : unmonitored?.length ? 'Search above for an asset to set up, or open the Setup guide.' : 'Import assets to see fleet health here.'}
+                        </p>
+                    </div>
+                )
             ) : viewMode === 'grid' ? (
                 /* ── Grid View ── */
                 <div className="px-5 pb-2">
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {paged.map(asset => {
                             const isSelected = asset.asset_id === selectedAssetId;
-                            const isCritical = asset.health_index < 60;
                             return (
                                 <button
                                     key={asset.asset_id}
                                     onClick={() => onAssetSelect(asset.asset_id)}
-                                    className={`relative bg-gradient-to-br ${getHealthColor(asset.health_index)} border rounded-lg p-3 text-left transition-all hover:scale-[1.02] hover:shadow-lg group ${isSelected ? 'ring-2 ring-accent-cyan shadow-[0_0_15px_rgba(6,182,212,0.2)]' : ''} ${isCritical ? 'animate-pulse' : ''}`}
+                                    className={`relative bg-gradient-to-br ${getHealthColor(asset.health_index)} border rounded-lg p-3 text-left transition-all hover:scale-[1.02] hover:shadow-lg group ${isSelected ? 'ring-2 ring-accent-cyan shadow-[0_0_15px_rgba(6,182,212,0.2)]' : ''}`}
                                 >
                                     <span className={`absolute top-2 right-2 text-[9px] font-bold px-1 py-0.5 rounded border ${asset.criticality === 'A' ? 'bg-red-500/15 text-red-400 border-red-500/30' : asset.criticality === 'B' ? 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30' : 'bg-slate-100 text-slate-500 border-slate-300'}`}>
                                         {asset.criticality}
@@ -394,14 +432,43 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                 </div>
             )}
 
+            {/* ═══ Register matches with no health yet — the search reaches the whole register ═══ */}
+            {unmonitoredMatches.length > 0 && (
+                <div className="px-5 pb-4 pt-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Not monitored yet · {unmonitoredMatches.length}</p>
+                    <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                        {unmonitoredMatches.slice(0, UNMONITORED_LIMIT).map(a => (
+                            <button
+                                key={a.id}
+                                onClick={() => (onSetupAsset ? onSetupAsset(a.id) : onAssetSelect(a.id))}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-slate-50 transition-colors group"
+                            >
+                                <span className="w-2 h-2 rounded-full shrink-0 bg-slate-300" />
+                                <span className="flex-1 min-w-0">
+                                    <span className="block text-xs font-semibold text-slate-700 truncate">{a.tag} — {a.name}</span>
+                                    <span className="block text-[10px] text-slate-400 truncate">{a.system || '—'}</span>
+                                </span>
+                                <span className="flex items-center gap-1 text-[11px] font-semibold text-primary-600 group-hover:text-primary-500 shrink-0">
+                                    <HeartPulse size={12} /> Set up →
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                    {unmonitoredMatches.length > UNMONITORED_LIMIT && (
+                        <p className="text-[10px] text-slate-400 mt-1.5">{unmonitoredMatches.length - UNMONITORED_LIMIT} more — narrow the search</p>
+                    )}
+                </div>
+            )}
+
             {/* ═══ Pagination Footer ═══ */}
+            {processed.length > 0 && (
             <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <div className="flex items-center gap-3 text-[10px] text-slate-400">
                     {/* Legend */}
-                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-accent-safe/30" /> ≥85</div>
-                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-yellow-500/30" /> 70–84</div>
-                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-orange-500/30" /> 55–69</div>
-                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-red-500/30" /> &lt;55</div>
+                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-accent-safe/30" /> ≥{HEALTH_BANDS.good}</div>
+                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-yellow-500/30" /> {HEALTH_BANDS.fair}–{HEALTH_BANDS.good - 1}</div>
+                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-orange-500/30" /> {HEALTH_BANDS.poor}–{HEALTH_BANDS.fair - 1}</div>
+                    <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-red-500/30" /> &lt;{HEALTH_BANDS.poor}</div>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="text-[11px] text-slate-500 font-medium">
@@ -441,6 +508,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                     </button>
                 </div>
             </div>
+            )}
         </div>
     );
 };

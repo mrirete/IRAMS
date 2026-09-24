@@ -241,6 +241,8 @@ export interface SensorTrend {
 export interface FleetAssetHealth {
     asset_id: string;
     asset_name: string;
+    /** Register tag, when the twin resolved to a register row — search matches on it. */
+    tag?: string;
     unit: string;
     criticality: 'A' | 'B' | 'C';
     health_index: number;

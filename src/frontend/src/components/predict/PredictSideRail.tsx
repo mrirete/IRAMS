@@ -22,6 +22,7 @@ import type { RollupNode } from '../../lib/predict/rollup';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import { healthModelFor } from '../../lib/predict/healthModels';
 import { STALE_DAYS } from '../../config/predict';
+import { isAtRisk } from './FleetHealthMap';
 
 type Breach = { name: string; unit?: string; value: number; level: 'WARNING' | 'CRITICAL'; detail: string; date?: string };
 
@@ -118,7 +119,7 @@ export const PredictSideRail: React.FC<Props> = (props) => {
     if (props.mode === 'chooser') {
         const fleet = props.fleet;
         const avg = fleet.length ? fleet.reduce((s, a) => s + a.health_index, 0) / fleet.length : 0;
-        const atRisk = fleet.filter((a) => a.health_index < 70).length;
+        const atRisk = fleet.filter((a) => isAtRisk(a.health_index)).length;
         const byCrit = (c: string) => fleet.filter((a) => a.criticality === c).length;
         const worst = [...fleet].sort((a, b) => a.health_index - b.health_index).slice(0, 5);
         return (

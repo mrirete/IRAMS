@@ -5,7 +5,7 @@ import {
     TrendingDown, TrendingUp, Minus, FileWarning, Wrench,
     CircleDot, BarChart3
 } from 'lucide-react';
-import { FleetHealthMap } from './FleetHealthMap';
+import { FleetHealthMap, isAtRisk } from './FleetHealthMap';
 import type { FleetAssetHealth, TwinState, SensorTrend } from '../../types/intelligence';
 import type { ConfidenceBand } from '../../eam/services/PredictionService';
 import { STALE_DAYS } from '../../config/predict';
@@ -27,9 +27,7 @@ interface PredictOverviewTabProps {
     selectedAssetName: string;
     onAssetSelect: (id: string) => void;
     fleetData: FleetAssetHealth[];
-    visibleFleetData: FleetAssetHealth[];
     totalAssetCount: number;
-    filterSlot: React.ReactNode;
 
     /* Asset KPIs */
     systemHealth: number;
@@ -218,7 +216,7 @@ function getISOZone(tag: string, value: number, vibZoning: boolean = true): { zo
 // ─────────────────────────────────────────────────────────
 
 export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
-    selectedAssetId, selectedAssetName, onAssetSelect, fleetData, visibleFleetData, totalAssetCount, filterSlot,
+    selectedAssetId, selectedAssetName, onAssetSelect, fleetData, totalAssetCount,
     systemHealth, isHealthy, rulDays, alertCount,
     rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
     groundedFit, equipmentClass, rollups = [], twinHealth, assetSensorTrends,
@@ -686,7 +684,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     </div>
                     <div className="flex items-center gap-3">
                         {(() => {
-                            const critCount = fleetData.filter(a => a.health_index < 70).length;
+                            const critCount = fleetData.filter(a => isAtRisk(a.health_index)).length;
                             const avgHi = fleetData.length > 0 ? fleetData.reduce((s, a) => s + a.health_index, 0) / fleetData.length : 0;
                             return (
                                 <>
@@ -706,9 +704,8 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     <FleetHealthMap
                         selectedAssetId={selectedAssetId}
                         onAssetSelect={onAssetSelect}
-                        fleetData={visibleFleetData}
+                        fleetData={fleetData}
                         totalAssetCount={totalAssetCount}
-                        filterSlot={filterSlot}
                         embedded
                     />
                 )}
