@@ -10,6 +10,7 @@ import {
     ReferenceLine
 } from 'recharts';
 import type { TwinState } from '../../types/intelligence';
+import { HEALTH_FAILURE_THRESHOLD } from '../../config/predict';
 
 interface Props {
     twinState: TwinState | null;
@@ -32,9 +33,11 @@ export const TwinHealthChart: React.FC<Props> = ({ twinState }) => {
         };
     });
 
-    // Dynamic Y-axis domain — computed from actual data
+    // Dynamic Y-axis domain — computed from actual data, but always showing
+    // the failure threshold so a healthy asset reads as "far above it", not
+    // as a line with no reference.
     const allValues = data.flatMap(d => [d.health_index, d.range[0], d.range[1]]);
-    const dataMin = Math.min(...allValues);
+    const dataMin = Math.min(...allValues, HEALTH_FAILURE_THRESHOLD);
     const yMin = Math.max(0, Math.floor((dataMin - 10) / 10) * 10); // round down to nearest 10, min 0
 
     const CustomTooltip = ({ active, payload }: any) => {
@@ -49,7 +52,7 @@ export const TwinHealthChart: React.FC<Props> = ({ twinState }) => {
                             <span>{data.health_index.toFixed(1)}</span>
                         </p>
                         <p className="text-slate-500 text-xs flex justify-between gap-4">
-                            <span>95% Confidence:</span>
+                            <span>Spread (directional):</span>
                             <span>{data.range[0].toFixed(1)} - {data.range[1].toFixed(1)}</span>
                         </p>
                     </div>
@@ -104,7 +107,7 @@ export const TwinHealthChart: React.FC<Props> = ({ twinState }) => {
                     <Tooltip content={<CustomTooltip />} />
 
                     {/* Critical Failure Threshold Line */}
-                    <ReferenceLine y={60} stroke="#ef4444" strokeDasharray="3 3" opacity={0.5} label={{ position: 'insideTopLeft', value: 'Failure Threshold (60)', fill: '#ef4444', fontSize: 10 }} />
+                    <ReferenceLine y={HEALTH_FAILURE_THRESHOLD} stroke="#ef4444" strokeDasharray="3 3" opacity={0.5} label={{ position: 'insideTopLeft', value: `Failure Threshold (${HEALTH_FAILURE_THRESHOLD})`, fill: '#ef4444', fontSize: 10 }} />
 
                     {/* Confidence Area (range) */}
                     <Area

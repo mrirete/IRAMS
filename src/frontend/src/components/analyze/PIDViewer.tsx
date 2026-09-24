@@ -48,6 +48,8 @@ interface PIDViewerProps {
     onMoveEquipment?: (eqId: string, x: number, y: number) => void;
     onAddConnection?: (fromId: string, toId: string, type: PIDConnection['type']) => void;
     onRemoveConnection?: (connId: string) => void;
+    /** Viewing surface (Predict, asset pages): no place/connect/upload tools, click only selects. */
+    readOnly?: boolean;
 }
 
 type DrawMode = 'select' | 'place' | 'connect';
@@ -330,6 +332,7 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
     onMoveEquipment,
     onAddConnection,
     onRemoveConnection,
+    readOnly = false,
 }) => {
     const [zoom, setZoom] = useState(1);
     const [showLabels, setShowLabels] = useState(true);
@@ -463,6 +466,7 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
                         {/* Drawing mode buttons */}
+                        {!readOnly && (<>
                         <button onClick={() => { setDrawMode('select'); setPlacingType(null); setConnectFrom(null); }}
                             className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors border ${drawMode === 'select' ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
                             <MousePointer size={12} /> Select
@@ -477,6 +481,7 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
                         </button>
 
                         <div className="w-px h-5 bg-slate-200 mx-1"></div>
+                        </>)}
 
                         {/* View toggles */}
                         <button onClick={() => setHeatMapOn(!heatMapOn)}

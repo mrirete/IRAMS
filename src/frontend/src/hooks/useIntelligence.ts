@@ -189,14 +189,16 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
 
                     if (cancelled) return;
 
+                    // A failed API call leaves the panel empty in production —
+                    // sample data only ever appears in demo mode.
                     if (alertsRes.ok) setAlerts(alertsRes.data as any);
-                    else setAlerts(mockAlerts);
+                    else if (USE_MOCK) setAlerts(mockAlerts);
 
                     if (fmeaRes.ok) setFmea(fmeaRes.data as any);
-                    else setFmea(mockFMEA);
+                    else if (USE_MOCK) setFmea(mockFMEA);
 
                     if (graphRes.ok) setNetwork(graphRes.data as any);
-                    else setNetwork(mockNetwork);
+                    else if (USE_MOCK) setNetwork(mockNetwork);
                 }
 
                 // Network graph — demo-only sample (no real graph backend yet)

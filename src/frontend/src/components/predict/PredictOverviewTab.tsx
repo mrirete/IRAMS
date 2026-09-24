@@ -83,17 +83,30 @@ function deriveOperatingState(sensors: SensorTrend[], twinHealth: TwinState | nu
 
     if (sensorValues.length === 0) return 'UNKNOWN';
 
-    const vibSensor = sensorValues.find(s => s.tag.toLowerCase().includes('vib'));
-    const flowSensor = sensorValues.find(s => s.tag.toLowerCase().includes('flow'));
-    const tempSensor = sensorValues.find(s => s.tag.toLowerCase().includes('temp'));
+    // Classify by kind (tag words, then unit, then ISA prefix) — DCS codes
+    // such as ZZQBCHLL (t/h) or YFJ3_AI (A) carry no English word, and a
+    // substring test read a running boiler as OFFLINE.
+    const byKind = (kind: ReturnType<typeof sensorKind>) => sensorValues.find(s => sensorKind(s.tag, s.unit) === kind);
+    const vibSensor = byKind('vibration');
+    const flowSensor = byKind('flow');
+    const currentSensor = byKind('current');
 
-    // If vibration AND flow are near zero → OFFLINE
-    const vibVal = vibSensor?.current ?? 0;
-    const flowVal = flowSensor?.current ?? 0;
-    const tempVal = tempSensor?.current ?? 0;
-
-    if (vibVal < 0.5 && flowVal < 10) return 'OFFLINE';
-    if (vibVal < 1.0 && flowVal < 50) return 'STANDBY';
+    // A machine is stopped when what it moves (flow) and what shakes when it
+    // runs (vibration, motor current) all read ~0. Only the kinds the asset
+    // actually has get a say; an asset with none of them is judged by
+    // whether anything at all is reading non-zero.
+    const stoppedVotes: boolean[] = [];
+    if (vibSensor) stoppedVotes.push((vibSensor.current ?? 0) < 0.5);
+    if (flowSensor) stoppedVotes.push((flowSensor.current ?? 0) <= 0);
+    if (currentSensor) stoppedVotes.push((currentSensor.current ?? 0) <= 0);
+    if (stoppedVotes.length === 0) {
+        const anyLive = sensorValues.some(s => Number.isFinite(s.current) && Math.abs(s.current) > 0);
+        if (!anyLive) return 'OFFLINE';
+    } else if (stoppedVotes.every(Boolean)) {
+        return 'OFFLINE';
+    } else if (vibSensor && flowSensor && (vibSensor.current ?? 0) < 1.0 && (flowSensor.current ?? 0) < 50) {
+        return 'STANDBY';
+    }
 
     // If any sensor is in alarm (rising trend + high value), check for tripped state
     const risingCount = sensorValues.filter(s => s.trend === 'rising').length;
@@ -611,7 +624,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                         <div>
                             <p className="text-sm font-semibold text-slate-800">Systems & Units</p>
                             <p className="text-[10px] text-slate-400">
-                                Rolled up from monitored equipment (criticality-weighted, dragged toward the weakest link) — redundancy not modeled; for series/parallel use Reliability Modelling
+                                Rolled up from monitored equipment (criticality-weighted, dragged toward the weakest link); parallel and standby pairs from saved block diagrams count once
                             </p>
                         </div>
                     </div>

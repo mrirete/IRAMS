@@ -10,12 +10,17 @@ import { screenRbi } from '../../lib/predict/rbi';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 import { DisgPanel } from './DisgPanel';
 import { SpectralAnalysisPanel } from './SpectralAnalysisPanel';
+import { TwinDrawingPanel } from './TwinDrawingPanel';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
     rulEstimate: RULEstimate | null;
     selectedAssetId: string;
     selectedAssetName: string;
+    /** Register tag — resolves the asset on the site's drawings. */
+    selectedAssetTag?: string | null;
+    /** A drawn component that resolves to another asset can be studied with one click. */
+    onSelectAsset?: (assetId: string) => void;
     /** Equipment-class resolution (Phase 2) */
     equipmentClass?: ClassResolution | null;
     /** API 570 thickness assessment — static assets with ≥2 thickness readings */
@@ -38,12 +43,21 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, selectedAssetTag, onSelectAsset, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
+
+            {/* ═══ The twin's picture: the site's drawing, register-resolved, health-badged ═══ */}
+            <TwinDrawingPanel
+                assetId={selectedAssetId}
+                assetTag={selectedAssetTag}
+                assetName={selectedAssetName}
+                twinHealth={twinHealth}
+                onSelectAsset={onSelectAsset}
+            />
 
             {/* ═══ Integrity (API 570) — the correct degradation surface for STATIC equipment ═══ */}
             {equipmentClass?.cls === 'static' && (
@@ -152,15 +166,18 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                         <div className="flex items-center space-x-2">
                             <HeartPulse className="text-accent-cyan" size={20} />
                             <h3 className="text-lg font-semibold text-slate-800">Digital Twin Trajectory</h3>
-                            <span className="text-[10px] font-mono bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-slate-500">T{rulEstimate?.governance_tier}</span>
+                            {rulEstimate?.governance_tier != null && (
+                                <span className="text-[10px] font-mono bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-slate-500" title="Governance tier">T{rulEstimate.governance_tier}</span>
+                            )}
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Directional</span>
                         </div>
                         <div className="flex items-center space-x-2 text-xs">
-                            <span className="flex items-center"><div className="w-2 h-2 rounded-full bg-accent-cyan mr-1.5" /> Predicted</span>
-                            <span className="flex items-center ml-3"><div className="w-2 h-2 rounded-full bg-blue-500/30 mr-1.5" /> 95% Confidence</span>
+                            <span className="flex items-center"><div className="w-2 h-2 rounded-full bg-accent-cyan mr-1.5" /> Projected</span>
+                            <span className="flex items-center ml-3"><div className="w-2 h-2 rounded-full bg-blue-500/30 mr-1.5" /> Spread</span>
                             <span className="flex items-center ml-3"><div className="w-2 h-2 rounded-full bg-red-500 mr-1.5" /> Failure Limit</span>
                         </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">This chart projects the asset's health index forward 30 days. The shaded band shows uncertainty — wider bands = less certainty. If the line approaches the red failure limit, schedule maintenance before it crosses.</p>
+                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">Projects the health index 30 days ahead at a fixed decay rate set by its current band — a direction, not a fitted forecast. The band is a widening spread, not a statistical confidence interval; the fitted life model (when the asset has failure history) lives in RUL &amp; Reliability.</p>
                 </div>
                 <div className="p-5 min-h-[350px]">
                     <TwinHealthChart twinState={twinHealth} />

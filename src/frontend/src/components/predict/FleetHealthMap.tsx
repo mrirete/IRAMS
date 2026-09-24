@@ -63,6 +63,7 @@ function getHealthDot(hi: number): string {
 }
 
 const TrendIcon: React.FC<{ trend: FleetAssetHealth['trend'] }> = ({ trend }) => {
+    if (!trend) return null;
     if (trend === 'improving') return <TrendingUp size={10} className="text-accent-safe" />;
     if (trend === 'degrading') return <TrendingDown size={10} className="text-red-400" />;
     return <Minus size={10} className="text-slate-500" />;

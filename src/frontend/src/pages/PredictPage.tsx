@@ -341,7 +341,7 @@ export const PredictPage: React.FC = () => {
                     predictionService.getAlerts(),
                 ]);
                 if (cancelled) return;
-                if (twins.length === 0) return; // will fall back to mock
+                if (twins.length === 0) return; // no snapshots yet — the chooser shows the setup path, never sample data
 
                 const rulMap = new Map(ruls.map(r => [r.asset_id, r]));
                 const alertCountMap = new Map<string, number>();
@@ -400,7 +400,8 @@ export const PredictPage: React.FC = () => {
                                 : (hi < 70 ? 'A' as const : hi < 85 ? 'B' as const : 'C' as const),
                             health_index: hi,
                             rul_days: rul ? Number(rul.rul_days) : 0,
-                            trend: hi < 70 ? 'degrading' as const : hi < 85 ? 'stable' as const : 'improving' as const,
+                            // No trend: a snapshot has one health value, and an
+                            // arrow derived from its band would be a guess.
                             active_alerts: alertCountMap.get(t.asset_id) || 0,
                         };
                     });
@@ -1041,6 +1042,8 @@ export const PredictPage: React.FC = () => {
                     rulEstimate={displayRul}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
+                    selectedAssetTag={selectedAsset?.tag ?? null}
+                    onSelectAsset={(id) => { setSelectedAssetId(id); setActiveTab('overview'); }}
                     equipmentClass={classRes}
                     integrity={integrity}
                     criticality={selectedAsset?.criticality}

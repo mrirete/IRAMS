@@ -245,7 +245,8 @@ export interface FleetAssetHealth {
     criticality: 'A' | 'B' | 'C';
     health_index: number;
     rul_days: number;
-    trend: 'improving' | 'stable' | 'degrading';
+    /** Only when measured (sample data carries one); absent = no arrow drawn, never a band-derived guess. */
+    trend?: 'improving' | 'stable' | 'degrading';
     active_alerts: number;
 }
 

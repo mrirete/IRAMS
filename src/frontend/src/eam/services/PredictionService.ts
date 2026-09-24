@@ -27,6 +27,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { buildSensorReading } from '../lib/sensorReading';
+import { HEALTH_FAILURE_THRESHOLD } from '../../config/predict';
 import { failureIntervalsHours, isFailure } from './reliabilityMetrics';
 import { groundedRulFromHistory } from '../../lib/pmRecommendation';
 import { conditionalRemainingQuantileHours } from '../utils/weibull';
@@ -757,7 +758,7 @@ class PredictionService {
         }
 
         // ── Fallback: health-index heuristic, honestly tagged ──
-        const remainingHealth = healthIndex - 30; // failure threshold at 30
+        const remainingHealth = healthIndex - HEALTH_FAILURE_THRESHOLD; // same line the twin trajectory draws
         const risingSensors = sensors.filter(s => s.trend === 'rising').length;
         const trendPenalty = 1 - risingSensors * 0.08;
         const baseRUL = Math.max(15, remainingHealth * 4.5 * trendPenalty);
