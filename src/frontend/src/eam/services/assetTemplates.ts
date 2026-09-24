@@ -151,7 +151,8 @@ const BOM_EXAMPLES = [
 
 // ─── Template Generation ────────────────────────────────────────
 
-export function downloadAssetTemplate(): void {
+/** The Asset import template as a workbook (ERS_Asset_Import_Template.xlsx). */
+export function buildAssetTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
 
     // Sheet 1 — Assets Data
@@ -271,10 +272,15 @@ export function downloadAssetTemplate(): void {
     keysWs['!cols'] = [{ wch: 24 }, { wch: 22 }, { wch: 34 }, { wch: 10 }, { wch: 30 }, { wch: 28 }];
     XLSX.utils.book_append_sheet(wb, keysWs, 'Parameter Keys');
 
-    downloadWorkbook(wb, 'ERS_Asset_Import_Template.xlsx');
+    return wb;
 }
 
-export function downloadBOMTemplate(): void {
+export function downloadAssetTemplate(): void {
+    downloadWorkbook(buildAssetTemplate(), 'ERS_Asset_Import_Template.xlsx');
+}
+
+/** The BOM import template as a workbook (ERS_BOM_Import_Template.xlsx). */
+export function buildBOMTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
 
     // Sheet 1 — BOM Data
@@ -305,7 +311,11 @@ export function downloadBOMTemplate(): void {
     instrWs['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 50 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_BOM_Import_Template.xlsx');
+    return wb;
+}
+
+export function downloadBOMTemplate(): void {
+    downloadWorkbook(buildBOMTemplate(), 'ERS_BOM_Import_Template.xlsx');
 }
 
 // ─── Recurring Job Template ─────────────────────────────────────
@@ -332,7 +342,8 @@ const RECURRING_JOB_EXAMPLES = [
     { code: 'INS-P101-THK', description: 'Thickness Measurement — Process Pipe', assetTag: 'P-101', scheduleType: 'TIME', frequencyInterval: 6, frequencyUnit: 'Months', priority: 'MEDIUM', jobType: 'INSPECTION', rcmStrategy: 'TIME_DIRECTED', estDuration: 1, costCenter: 'CC-005', department: 'Inspection', nextDueDate: '2026-07-01', leadTimeDays: 14 },
 ];
 
-export function downloadRecurringJobTemplate(): void {
+/** The RecurringJob import template as a workbook (ERS_Recurring_Jobs_Template.xlsx). */
+export function buildRecurringJobTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
     const dataHeaders = RECURRING_JOB_COLUMNS.map(c => c.header);
     const dataRows = RECURRING_JOB_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
@@ -357,7 +368,11 @@ export function downloadRecurringJobTemplate(): void {
     instrWs['!cols'] = [{ wch: 20 }, { wch: 10 }, { wch: 55 }, { wch: 50 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_Recurring_Jobs_Template.xlsx');
+    return wb;
+}
+
+export function downloadRecurringJobTemplate(): void {
+    downloadWorkbook(buildRecurringJobTemplate(), 'ERS_Recurring_Jobs_Template.xlsx');
 }
 
 // ─── People / Contacts Template ─────────────────────────────────
@@ -383,7 +398,8 @@ const PEOPLE_EXAMPLES = [
     { code: 'CON-001', name: 'Apex Services LLC', email: 'contact@apexservices.com', type: 'CONTRACTOR', title: 'Insulation Contractor', phone: '+1-555-0301', mobile: '', department: '', orgUnit: '', costCenter: 'CC-009', hourlyRate: 120, currency: 'USD', qualifications: '' },
 ];
 
-export function downloadPeopleTemplate(): void {
+/** The People import template as a workbook (ERS_People_Template.xlsx). */
+export function buildPeopleTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
     const dataHeaders = PEOPLE_COLUMNS.map(c => c.header);
     const dataRows = PEOPLE_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
@@ -402,7 +418,11 @@ export function downloadPeopleTemplate(): void {
     instrWs['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 55 }, { wch: 40 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_People_Template.xlsx');
+    return wb;
+}
+
+export function downloadPeopleTemplate(): void {
+    downloadWorkbook(buildPeopleTemplate(), 'ERS_People_Template.xlsx');
 }
 
 // ─── Inventory / Parts Template ─────────────────────────────────
@@ -429,7 +449,8 @@ const INVENTORY_EXAMPLES = [
     { code: 'LUB-0012', description: 'Synthetic Turbine Oil ISO VG 32', type: 'CONSUMABLE', uom: 'LTR', itemCost: 18.50, minLevel: 40, maxLevel: 200, qtyOnHand: 100, storeName: 'Chemical Store', binLocation: 'D1-05-2-1', manufacturer: 'Mobil', isCritical: 'NO', assetTag: '', preferredSupplier: 'LubeSupply Co' },
 ];
 
-export function downloadInventoryTemplate(): void {
+/** The Inventory import template as a workbook (ERS_Inventory_Template.xlsx). */
+export function buildInventoryTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
     const dataHeaders = INVENTORY_COLUMNS.map(c => c.header);
     const dataRows = INVENTORY_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
@@ -450,7 +471,11 @@ export function downloadInventoryTemplate(): void {
     instrWs['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 55 }, { wch: 40 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_Inventory_Template.xlsx');
+    return wb;
+}
+
+export function downloadInventoryTemplate(): void {
+    downloadWorkbook(buildInventoryTemplate(), 'ERS_Inventory_Template.xlsx');
 }
 
 // ─── Work Order Template ────────────────────────────────────────
@@ -518,7 +543,8 @@ const READINGS_EXAMPLES = [
     { assetTag: 'GT-301', readingType: 'TEMPERATURE', date: '2026-02-14', value: '72.5', unit: '°C', notes: '' },
 ];
 
-export function downloadReadingsTemplate(): void {
+/** The Readings import template as a workbook (ERS_Readings_Import_Template.xlsx). */
+export function buildReadingsTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
     const dataHeaders = READINGS_COLUMNS.map(c => c.header);
     const dataRows = READINGS_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
@@ -543,7 +569,11 @@ export function downloadReadingsTemplate(): void {
     instrWs['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 60 }, { wch: 45 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_Readings_Import_Template.xlsx');
+    return wb;
+}
+
+export function downloadReadingsTemplate(): void {
+    downloadWorkbook(buildReadingsTemplate(), 'ERS_Readings_Import_Template.xlsx');
 }
 
 // ─── Failure-Code Catalog Template ──────────────────────────────
@@ -601,7 +631,8 @@ const FAILURE_CODE_EXAMPLES = [
     { category: 'REMEDY_CODE', code: 'RPL', description: 'Replace', active: 'YES' },
 ];
 
-export function downloadFailureCodesTemplate(): void {
+/** The FailureCodes import template as a workbook (ERS_FailureCodes_Template.xlsx). */
+export function buildFailureCodesTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
     const dataHeaders = FAILURE_CODE_COLUMNS.map(c => c.header);
     const dataRows = FAILURE_CODE_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
@@ -629,7 +660,11 @@ export function downloadFailureCodesTemplate(): void {
     instrWs['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 80 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_FailureCodes_Template.xlsx');
+    return wb;
+}
+
+export function downloadFailureCodesTemplate(): void {
+    downloadWorkbook(buildFailureCodesTemplate(), 'ERS_FailureCodes_Template.xlsx');
 }
 
 /** Build a pre-filled catalog sheet from codes found in the user's own history. */
@@ -676,7 +711,8 @@ const JOB_PLAN_EXAMPLES = [
     { pmCode: 'PM-65320', operationNo: '0030', description: 'Record bearing temperature and vibration', longText: 'Take readings at DE and NDE bearings.', estHours: 0.5, workCentre: 'COND', controlKey: 'PM01', craft: 'INST', numPersons: 1 },
 ];
 
-export function downloadJobPlanTemplate(): void {
+/** The JobPlan import template as a workbook (ERS_JobPlan_Import_Template.xlsx). */
+export function buildJobPlanTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
     const dataHeaders = JOB_PLAN_COLUMNS.map(c => c.header);
     const dataRows = JOB_PLAN_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
@@ -704,7 +740,11 @@ export function downloadJobPlanTemplate(): void {
     instrWs['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 78 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_JobPlan_Import_Template.xlsx');
+    return wb;
+}
+
+export function downloadJobPlanTemplate(): void {
+    downloadWorkbook(buildJobPlanTemplate(), 'ERS_JobPlan_Import_Template.xlsx');
 }
 
 // ─── Purchase-Order Line Items Template ─────────────────────────
@@ -798,7 +838,8 @@ const VENDOR_EXAMPLES = [
     { code: 'VND-003', name: 'Apex Field Services', email: 'dispatch@apexfs.com', contactPerson: 'Tom Baker', phone: '+1-555-0501', address: '200 Service Way, Houston TX', paymentTerms: 'NET30', category: 'SERVICES', currency: 'USD' },
 ];
 
-export function downloadVendorTemplate(): void {
+/** The Vendor import template as a workbook (ERS_Vendors_Template.xlsx). */
+export function buildVendorTemplate(): XLSX.WorkBook {
     const wb = XLSX.utils.book_new();
     const dataHeaders = VENDOR_COLUMNS.map(c => c.header);
     const dataRows = VENDOR_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
@@ -818,7 +859,11 @@ export function downloadVendorTemplate(): void {
     instrWs['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 50 }, { wch: 35 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_Vendors_Template.xlsx');
+    return wb;
+}
+
+export function downloadVendorTemplate(): void {
+    downloadWorkbook(buildVendorTemplate(), 'ERS_Vendors_Template.xlsx');
 }
 
 // ─── Asset Data Export ──────────────────────────────────────────

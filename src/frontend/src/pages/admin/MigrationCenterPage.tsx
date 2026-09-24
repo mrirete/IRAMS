@@ -48,6 +48,8 @@ interface Phase {
     unit: string;
     /** Shown when the phase has landed nothing yet and order matters. */
     note?: string;
+    /** SAP-only advice (SAP field names, cockpit sheets) — shown only when the source is SAP PM. */
+    sapNote?: string;
     /**
      * The ordering constraint, enforced: prerequisites that must hold data
      * before this phase's importer opens. Data-driven (counts, not checkmarks) —
@@ -107,7 +109,8 @@ const PHASES: Phase[] = [
         n: 1, title: 'Assets & hierarchy', icon: <Wrench size={18} />,
         blurb: 'Your functional locations and equipment, as one tree. Everything else hangs off this — do it first.',
         importType: 'asset', count: c => c.assets, unit: 'assets',
-        note: 'Use hierarchyLevel + parentTag in the template so sites, systems and equipment land at the right level. SAP migration sheets (TPLNR/PLTXT functional locations, EQUNR/EQKTX equipment) import directly — the SAP field names auto-translate. Drop the whole Migration Cockpit workbook: the right sheet is picked for each step and description rows are skipped.',
+        note: 'Use hierarchyLevel + parentTag in the template so sites, systems and equipment land at the right level.',
+        sapNote: 'SAP migration sheets (TPLNR/PLTXT functional locations, EQUNR/EQKTX equipment) import directly — the SAP field names auto-translate. Drop the whole Migration Cockpit workbook: the right sheet is picked for each step and description rows are skipped.',
     },
     {
         n: 2, title: 'People', icon: <Users size={18} />,
@@ -118,13 +121,14 @@ const PHASES: Phase[] = [
         n: 3, title: 'Inventory & storerooms', icon: <Package size={18} />,
         blurb: 'Spare parts, unit costs and opening stock. Storerooms are created from the storeName column.',
         to: '/inventory?action=import', toLabel: 'Import inventory', count: c => c.inventory, unit: 'items',
-        note: 'SAP material-master sheets (MATNR/MAKTX headers) import directly — material types, ABC flags and price control auto-translate. Source-list sheets (MATNR/LIFNR) set preferred suppliers; inventory-balance sheets (MATNR/BUDAT) post opening stock as 561 movements.',
+        sapNote: 'SAP material-master sheets (MATNR/MAKTX headers) import directly — material types, ABC flags and price control auto-translate. Source-list sheets (MATNR/LIFNR) set preferred suppliers; inventory-balance sheets (MATNR/BUDAT) post opening stock as 561 movements.',
     },
     {
         n: 4, title: 'Bills of materials', icon: <Boxes size={18} />,
         blurb: 'Which spares belong to which equipment. Codes that match inventory link to the material; unknown codes become text BOM lines, promotable later.',
         importType: 'bom', count: c => c.bom, unit: 'BOM items',
-        note: 'Rows name an asset tag and an inventory code, so both registers must exist. SAP BOM sheets (EQUNR/IDNRK headers) import directly, and EQUNR references resolve by equipment number.',
+        note: 'Rows name an asset tag and an inventory code, so both registers must exist.',
+        sapNote: 'SAP BOM sheets (EQUNR/IDNRK headers) import directly, and EQUNR references resolve by equipment number.',
         requires: [NEEDS_REGISTER, { phase: 3, needs: 'inventory', met: c => c.inventory > 0 }],
     },
     {
@@ -157,7 +161,8 @@ const PHASES: Phase[] = [
         n: 9, title: 'Meter & condition history', icon: <Gauge size={18} />,
         blurb: 'Runtime hours, vibration and temperature logs. Reading points are created automatically.',
         importType: 'readings', count: c => c.readings, unit: 'readings',
-        note: 'Every reading row names an asset tag — without the register, every row fails. SAP measuring-point sheets (MPOBJ/ATNAM) create the points with alarm limits; measurement-document sheets (MPOBJ/IDATE) load the history, counters included.',
+        note: 'Every reading row names an asset tag — without the register, every row fails.',
+        sapNote: 'SAP measuring-point sheets (MPOBJ/ATNAM) create the points with alarm limits; measurement-document sheets (MPOBJ/IDATE) load the history, counters included.',
         requires: [NEEDS_REGISTER],
     },
     {
@@ -770,7 +775,11 @@ export const MigrationCenterPage: React.FC = () => {
                                 <span>Locked — import {blockersOf(sheet).map(b => `${b.needs} (step ${b.phase})`).join(' and ')} first.</span>
                             </p>
                         )}
-                        {sheet.note && <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">{sheet.note}</p>}
+                        {(sheet.note || (isSap && sheet.sapNote)) && (
+                            <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                {[sheet.note, isSap ? sheet.sapNote : undefined].filter(Boolean).join(' ')}
+                            </p>
+                        )}
 
                         {(sheet.n === 1 || sheet.n === 2 || sheet.n === 7) && (
                             <div className="flex flex-wrap gap-2">
@@ -813,8 +822,13 @@ export const MigrationCenterPage: React.FC = () => {
                                 </ul>
                             </div>
                         )}
-                        {sheet.n === 7 && sourceSystem !== 'spreadsheet' && sourceSystem !== 'other' && (
-                            <p className="text-xs text-slate-500">The wizard offers the {sourceLabel} history and register templates in your system’s own export layout.</p>
+                        {sheet.n === 7 && (
+                            <p className="text-xs text-slate-500">
+                                Work-order history has its own templates in the Import Work History wizard —
+                                {['sap_pm', 'maximo', 'maintainx'].includes(sourceSystem)
+                                    ? ` in ${sourceLabel}’s own export layout, so an export pasted in maps itself.`
+                                    : ' IREAMS’s work-order history template, which works for any system.'}
+                            </p>
                         )}
                     </div>
                 )}

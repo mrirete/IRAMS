@@ -11,12 +11,19 @@
  * the load-file layout with a "Field" header row). Every one of them imports
  * as it arrives — the round trip is tested in migrationTemplates.test.ts.
  *
- * Other systems export flat lists; they get the register/history pair the
- * CMMS Import Wizard already offers for that system, and the hierarchy is
- * built with IREAMS's own asset template inside the importer.
+ * Every other system — and any SAP step with no SAP file of its own (people,
+ * vendors, failure codes) — gets IREAMS's own template for the step: the
+ * same file the step's importer offers, with example rows and a Read-me,
+ * and it works whatever system the data comes from. Work-order history is
+ * the exception: it goes through the Import Work History wizard, which has
+ * its own per-system templates.
  */
 import { buildSapWorkbook, defaultParams } from '../../lib/sapLoad/build';
-import { downloadWorkbook } from '../../eam/services/assetTemplates';
+import {
+    downloadWorkbook, buildAssetTemplate, buildPeopleTemplate, buildInventoryTemplate, buildBOMTemplate,
+    buildVendorTemplate, buildRecurringJobTemplate, buildJobPlanTemplate, buildFailureCodesTemplate,
+    buildReadingsTemplate,
+} from '../../eam/services/assetTemplates';
 import { downloadSapPmLoadFile, SAP_PM_LOAD_FILE_LABELS, sapPmLoadFile } from '../../eam/services/sapPmLoadFiles';
 import * as XLSX from 'xlsx';
 
@@ -57,13 +64,43 @@ const sapLoadFile = (name: 'Maintenance_Plan_Item' | 'Measuring_Points' | 'Gener
     file: () => sapPmLoadFile(name),
 });
 
+const ireams = (id: string, label: string, filename: string, build: () => XLSX.WorkBook, hint: string): PhaseTemplate => ({
+    id: `ireams_${id}`,
+    label: `IREAMS ${label} template`,
+    hint,
+    download: () => downloadWorkbook(build(), filename),
+    file: () => new File([XLSX.write(build(), { bookType: 'xlsx', type: 'array' })], filename),
+});
+
+/** IREAMS's own template for each step — works for any source system. */
+const IREAMS_PHASE: Partial<Record<number, PhaseTemplate[]>> = {
+    1: [ireams('asset', 'asset register', 'ERS_Asset_Import_Template.xlsx', buildAssetTemplate,
+        'Sites, systems and equipment as one tree: hierarchyLevel and parentTag place each row. Example rows and a Read-me sheet included.')],
+    2: [ireams('people', 'people', 'ERS_People_Template.xlsx', buildPeopleTemplate,
+        'One row per person: type, department, qualifications and hourly rate. Invite them to log in afterwards.')],
+    3: [ireams('inventory', 'inventory', 'ERS_Inventory_Template.xlsx', buildInventoryTemplate,
+        'Spare parts, unit costs and opening stock; storerooms are created from the storeName column.')],
+    4: [ireams('bom', 'bill of materials', 'ERS_BOM_Import_Template.xlsx', buildBOMTemplate,
+        'Asset tag + inventory code per line; both registers must already exist.')],
+    5: [ireams('vendor', 'vendor', 'ERS_Vendors_Template.xlsx', buildVendorTemplate,
+        'Suppliers and contractors your purchase orders and warranties refer to.')],
+    6: [
+        ireams('recurring', 'PM schedule', 'ERS_Recurring_Jobs_Template.xlsx', buildRecurringJobTemplate,
+            'Recurring jobs with their interval and asset. Import these first.'),
+        ireams('jobplan', 'job plan', 'ERS_JobPlan_Import_Template.xlsx', buildJobPlanTemplate,
+            'The task steps a technician follows; they attach to the schedules by PM code.'),
+    ],
+    8: [ireams('failurecodes', 'failure-code', 'ERS_FailureCodes_Template.xlsx', buildFailureCodesTemplate,
+        'Failure modes, causes and remedies — or use "Export unresolved codes from history" to get your own codes pre-filled.')],
+    9: [ireams('readings', 'readings', 'ERS_Readings_Import_Template.xlsx', buildReadingsTemplate,
+        'Runtime hours, vibration and temperature logs; reading points are created from the rows.')],
+};
+
 /**
  * Templates for one phase of the Migration Center, for the chosen source
- * system. Only SAP PM has files shaped for these phases. Maximo, MaintainX
- * and the rest export flat lists that the CMMS Import Wizard (phase 7) maps
- * with its own per-system templates; their register is built here with the
- * IREAMS asset template inside the importer — a flat wizard template has no
- * hierarchy level and would fail this phase's importer.
+ * system. SAP PM gets its own cockpit and load files where SAP has them, and
+ * IREAMS's template for the steps SAP has no file for; every other system
+ * gets IREAMS's template for each step.
  */
 export function phaseTemplatesFor(sourceSystem: string, phase: number): PhaseTemplate[] {
     if (sourceSystem === 'sap_pm') {
@@ -79,8 +116,8 @@ export function phaseTemplatesFor(sourceSystem: string, phase: number): PhaseTem
                 sapLoadFile('Measuring_Points', 'Measuring points in the load-file layout: equipment from EQUNR, unit from MSEHI, MRMIN/MRMAX as the warning band.'),
                 sapCockpit('The Measuring Point and Measurement Document sheets are picked for this step — points with alarm limits, then history.'),
             ];
-            default: return [];
+            default: return IREAMS_PHASE[phase] ?? [];
         }
     }
-    return [];
+    return IREAMS_PHASE[phase] ?? [];
 }

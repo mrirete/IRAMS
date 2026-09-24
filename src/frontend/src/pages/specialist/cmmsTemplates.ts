@@ -250,7 +250,7 @@ const maintainxAssetRegister: CmmsTemplate = {
 
 // ── Generic spreadsheet (no CMMS) ─────────────────────────────────────────
 const genericWorkOrderHistory: CmmsTemplate = {
-    label: 'Work-order history (blank)',
+    label: 'IREAMS work-order history template',
     filename: 'IREAMS_WorkOrderHistory_Template.xlsx',
     build: () => makeWorkbook(
         'Work Order History',
@@ -281,7 +281,7 @@ const genericWorkOrderHistory: CmmsTemplate = {
 };
 
 const genericAssetRegister: CmmsTemplate = {
-    label: 'Asset register (blank)',
+    label: 'IREAMS asset register template',
     filename: 'IREAMS_AssetRegister_Template.xlsx',
     build: () => makeWorkbook(
         'Asset Register',
@@ -312,6 +312,15 @@ const TEMPLATES: Record<string, CmmsTemplate[]> = {
     maintainx: [maintainxWorkOrderHistory, maintainxAssetRegister],
     spreadsheet: [genericWorkOrderHistory, genericAssetRegister],
 };
+
+/**
+ * Whether the source has templates in its OWN export layout (SAP, Maximo,
+ * MaintainX). Every other system gets IREAMS's template pair — it carries
+ * example rows and a Read-me, and maps whatever system the data came from.
+ */
+export function hasOwnLayout(sourceSystem: string): boolean {
+    return sourceSystem !== 'spreadsheet' && sourceSystem in TEMPLATES;
+}
 
 export function templatesForSource(sourceSystem: string): CmmsTemplate[] {
     return TEMPLATES[sourceSystem] ?? TEMPLATES.spreadsheet;

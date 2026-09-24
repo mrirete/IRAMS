@@ -19,7 +19,7 @@ import {
     applyMapping, buildDqReport, parseMappingProposal,
     type AppliedImport, type DqReport, type ImportMapping, type AssetField, type WoField,
 } from '../../lib/importPipeline';
-import { templatesForSource, downloadCmmsTemplate } from './cmmsTemplates';
+import { templatesForSource, downloadCmmsTemplate, hasOwnLayout } from './cmmsTemplates';
 import { LookingFor } from '../../components/admin/DataDoors';
 import { supabase } from '../../eam/lib/supabase';
 
@@ -98,6 +98,7 @@ export const ImportWizardPage: React.FC = () => {
 
     const [step, setStep] = useState<Step>('upload');
     const [sourceSystem, setSourceSystem] = useState('sap_pm');
+    const sourceLabel = SOURCE_SYSTEMS.find((s) => s.value === sourceSystem)?.label ?? 'your system';
     // Registerless-history guard: history committed with no asset register
     // creates flat, unlevelled assets. The Migration Center hard-locks its
     // phase-7 link on the same condition; this advisory covers the sidebar
@@ -326,9 +327,14 @@ export const ImportWizardPage: React.FC = () => {
                     <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 max-w-2xl">
                         {SOURCE_SYSTEMS.find((s) => s.value === sourceSystem)?.exportHint}
                     </p>
-                    {/* No export handy? Pre-formatted sheets whose headers auto-map in step 2. */}
+                    {/* No export handy? Pre-formatted sheets whose headers auto-map in step 2.
+                        Systems without a layout of their own get IREAMS's pair, and say so. */}
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="text-slate-500">Or start from a template:</span>
+                        <span className={`text-slate-500 ${hasOwnLayout(sourceSystem) || sourceSystem === 'spreadsheet' ? '' : 'basis-full'}`}>
+                            {hasOwnLayout(sourceSystem) || sourceSystem === 'spreadsheet'
+                                ? 'No export handy? Start from a template:'
+                                : `${sourceLabel} has no layout of its own here — IREAMS’s templates work for any system:`}
+                        </span>
                         {templatesForSource(sourceSystem).map((t) => (
                             <button key={t.filename} onClick={() => downloadCmmsTemplate(t)}
                                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-colors">
@@ -347,8 +353,10 @@ export const ImportWizardPage: React.FC = () => {
                         className="w-full rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/40 hover:bg-primary-50 transition-colors p-10 flex flex-col items-center gap-3 text-primary-700"
                     >
                         {busy ? <Loader2 size={32} className="animate-spin" /> : <UploadCloud size={32} />}
-                        <span className="font-semibold">{busy ? 'Reading file & consulting your Specialist…' : 'Choose an export file'}</span>
-                        <span className="text-xs text-primary-600">.xlsx, .xls or .csv — work-order history and/or asset register</span>
+                        <span className="font-semibold">{busy ? 'Reading file & consulting your Specialist…' : 'Upload your file'}</span>
+                        <span className="text-xs text-primary-600">
+                            {sourceSystem === 'spreadsheet' ? 'Your spreadsheet' : `Your ${sourceLabel} export`}, or a filled-in template · .xlsx, .xls or .csv
+                        </span>
                     </button>
                     <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
                         onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ''; }} />
