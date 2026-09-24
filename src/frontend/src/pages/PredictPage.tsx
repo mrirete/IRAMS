@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, FileWarning, RefreshCw } from 'lucide-react';
 import { TwinDrawingPanel } from '../components/predict/TwinDrawingPanel';
+import { PredictSideRail } from '../components/predict/PredictSideRail';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
@@ -618,8 +619,28 @@ export const PredictPage: React.FC = () => {
     };
 
 
+    // One result line for the last Update-twin run — inline in the main column,
+    // or at the top of the side rail when the page is wide enough for one.
+    const twinUpdateLine = twinUpdate && !twinUpdate.running ? (
+        <div className={`flex items-start gap-2 px-4 py-2 rounded-lg border text-xs ${twinUpdate.failed.length ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+            {twinUpdate.failed.length ? <AlertTriangle size={14} className="shrink-0 mt-0.5" /> : <CheckCircle size={14} className="shrink-0 mt-0.5" />}
+            <p className="flex-1 leading-relaxed">
+                {twinUpdate.reason === 'auto' ? 'Twin updated automatically — ' : 'Twin updated — '}
+                {twinUpdate.done.length ? `${twinUpdate.done.join(', ')}.` : 'nothing completed.'}
+                {twinUpdate.failed.length > 0 && <span className="block mt-0.5">Not done: {twinUpdate.failed.join(' · ')}</span>}
+            </p>
+            <button onClick={() => setTwinUpdate(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+        </div>
+    ) : null;
+
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        // Centred like Reliability Modelling (ers-page-wide = 80rem). When the
+        // page itself — not the viewport; the sidebar takes 256 px — has room
+        // for a 68rem reading column plus a 19rem rail (and still some margin), the rail opens and takes the
+        // at-a-glance context; below that everything stays inline.
+        <div className="@container/page w-full animate-in fade-in duration-500">
+        <div className="mx-auto w-full max-w-[80rem] @min-[90rem]/page:max-w-[88.5rem] @min-[90rem]/page:grid @min-[90rem]/page:grid-cols-[minmax(0,1fr)_19rem] @min-[90rem]/page:gap-6 @min-[90rem]/page:items-start">
+        <div className="min-w-0 space-y-6">
             {/* Page Header */}
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
                 <div>
@@ -928,39 +949,29 @@ export const PredictPage: React.FC = () => {
                     </button>
                 </div>
             </div>
-            {twinUpdate && !twinUpdate.running && (
-                <div className={`flex items-start gap-2 px-4 py-2 rounded-lg border text-xs ${twinUpdate.failed.length ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
-                    {twinUpdate.failed.length ? <AlertTriangle size={14} className="shrink-0 mt-0.5" /> : <CheckCircle size={14} className="shrink-0 mt-0.5" />}
-                    <p className="flex-1 leading-relaxed">
-                        {twinUpdate.reason === 'auto' ? 'Twin updated automatically — ' : 'Twin updated — '}
-                        {twinUpdate.done.length ? `${twinUpdate.done.join(', ')}.` : 'nothing completed.'}
-                        {twinUpdate.failed.length > 0 && <span className="block mt-0.5">Not done: {twinUpdate.failed.join(' · ')}</span>}
-                    </p>
-                    <button onClick={() => setTwinUpdate(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
-                </div>
-            )}
+            {twinUpdateLine && <div className="@min-[90rem]/page:hidden">{twinUpdateLine}</div>}
 
             {/* ═══ PLAIN DEFAULT — no asset selected: choose what to study ═══ */}
             {!selectedAssetId && (
                 <>
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center">
-                        <div className="inline-flex p-3 bg-slate-50 rounded-xl text-slate-300 mb-3">
-                            <Target size={28} />
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3">
+                        <div className="inline-flex p-2 bg-slate-50 rounded-lg text-slate-400 shrink-0">
+                            <Target size={18} />
                         </div>
-                        <h2 className="text-lg font-bold text-slate-800">Choose an asset or system to study</h2>
-                        <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-                            Search above, pick from the fleet below — or set up new equipment for monitoring.
-                        </p>
-                        <div className="flex flex-wrap items-center justify-center gap-3 mt-5">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">Choose an asset or system to study</p>
+                            <p className="text-xs text-slate-500">Search above or pick from the fleet below.</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
                             <button
                                 onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
-                                className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-lg text-sm transition-colors"
+                                className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-lg text-sm transition-colors"
                             >
                                 <Search size={15} /> Select asset or system
                             </button>
                             <button
                                 onClick={() => openSetup()}
-                                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-700 text-slate-600 font-semibold rounded-lg text-sm transition-colors"
+                                className="@min-[90rem]/page:hidden flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-700 text-slate-600 font-semibold rounded-lg text-sm transition-colors"
                             >
                                 <HeartPulse size={15} /> Set up new equipment
                             </button>
@@ -1218,6 +1229,35 @@ export const PredictPage: React.FC = () => {
                     onClose={() => setAdvisorOpen(false)}
                 />
             )}
+        </div>
+        <aside className="hidden @min-[90rem]/page:block sticky top-4 self-start max-h-[calc(100vh-2rem)] overflow-y-auto pb-4" aria-label="Asset context">
+            {selectedAssetId ? (
+                <PredictSideRail
+                    mode="asset"
+                    asset={{ id: selectedAssetId, tag: selectedAsset?.tag || '', name: selectedAsset?.name || selectedAssetId, system: selectedAsset?.system, criticality: critLevel ?? null }}
+                    twinHealth={twinHealth}
+                    rulDays={displayRul?.rul_days != null ? Number(displayRul.rul_days) : null}
+                    fitted={groundedActive}
+                    equipmentClass={classRes}
+                    breaches={conditionAlarms?.breaches ?? []}
+                    alerts={assetAlerts}
+                    onInvestigate={() => { window.location.href = '/analyze'; }}
+                    onCreateWR={() => setRaiseOpen(true)}
+                    rollups={rollups}
+                    onSelectAsset={(id) => { setSelectedAssetId(id); setActiveTab('overview'); }}
+                    statusSlot={twinUpdateLine}
+                />
+            ) : (
+                <PredictSideRail
+                    mode="chooser"
+                    fleet={visibleFleetData}
+                    onSetup={() => openSetup()}
+                    rollups={rollups}
+                    onSelectAsset={(id) => setSelectedAssetId(id)}
+                />
+            )}
+        </aside>
+        </div>
         </div>
     );
 };

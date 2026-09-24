@@ -321,7 +321,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     {hasData && !groundedFit && (
                         <span
                             title="Health Index and RUL are heuristic estimates from condition trends — useful for triage, not for life decisions. A fitted Weibull RUL appears once ≥2 failures are on record; for manual life-data studies use Reliability Modelling."
-                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200"
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200 @min-[90rem]/page:hidden"
                         >
                             Directional · no fitted life model
                         </span>
@@ -329,7 +329,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     {isStale && dataAgeDays != null && (
                         <span
                             title="Values derived from old data are not presented as live. Reconnect the feed or log new readings."
-                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide bg-slate-50 text-slate-500 border-slate-200"
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide bg-slate-50 text-slate-500 border-slate-200 @min-[90rem]/page:hidden"
                         >
                             Last reading {dataAgeDays}d ago
                         </span>
@@ -621,7 +621,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
 
             {/* ═══ SECTION 3.5: SYSTEMS & UNITS — health roll-up (Phase 4) ═══ */}
             {rollups.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm @min-[90rem]/page:hidden">
                     <div className="flex items-center gap-2 mb-3">
                         <div className="p-1.5 bg-primary-50 rounded-lg text-primary-600 border border-primary-100">
                             <CircleDot size={16} />
