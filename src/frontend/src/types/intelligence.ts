@@ -247,6 +247,9 @@ export interface SensorTrend {
     alarm_low?: number;
     warn_high?: number;
     warn_low?: number;
+    /** Known for manual rounds / file loads — drives the per-point "stale" flag. */
+    last_reading_at?: string | null;
+    interval_days?: number | null;
 }
 
 // ---------------------------------------------------------

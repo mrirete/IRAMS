@@ -45,6 +45,7 @@ import {
 } from '../../lib/predict/regimeBaseline';
 import { alarmGates } from '../../lib/predict/alarmGates';
 import { sensorHealthScore } from '../../lib/predict/sensorScore';
+import { qualityFlags } from '../../lib/predict/dataQuality';
 import type { RegisterBearingRow } from '../../lib/predict/registerBearings';
 import type { AlertStatus, AlertOutcome } from '../../types/intelligence';
 
@@ -170,6 +171,9 @@ export interface SensorReading {
     /** Warning limits from the reading definition — zones only; the engine alarms on alarm_high/low. */
     warn_high?: number | null;
     warn_low?: number | null;
+    /** The point's own last reading time and interval — known for manual rounds / file loads (data-quality "stale"). */
+    last_reading_at?: string | null;
+    interval_days?: number | null;
     readings: number[];
     created_at: string;
     /** ISA-18.2 rationalization (0205) — per-point alarm hygiene + guidance. */
@@ -531,6 +535,8 @@ class PredictionService {
                 alarm_low: d.min_critical ?? d.min_warning ?? null,
                 warn_high: d.max_warning ?? null,
                 warn_low: d.min_warning ?? null,
+                last_reading_at: latest?.reading_date ?? null,
+                interval_days: d.monitoring_frequency_days ?? null,
                 readings: hist.slice(0, 20).map(h => Number(h.reading_value)).filter(v => !Number.isNaN(v)).reverse(),
                 created_at: latest?.reading_date || new Date().toISOString(),
                 // 0205 rationalization fields — undefined pre-migration (select *)
@@ -642,6 +648,23 @@ class PredictionService {
             return [];
         }
         return (data || []) as MeasurementPointOption[];
+    }
+
+    /**
+     * Saved health / RUL history (0392), oldest first. Empty — never an error —
+     * before 0392 is applied, so the screens simply show "the trend starts now".
+     */
+    async getHealthHistory(assetId: string, days = 90): Promise<{ metric: 'health_index' | 'rul_days'; value: number; basis: string | null; recorded_at: string }[]> {
+        const since = new Date(Date.now() - days * 86_400_000).toISOString();
+        const { data, error } = await supabase.from('ers_health_history')
+            .select('metric, value, basis, recorded_at')
+            .eq('asset_id', assetId).gte('recorded_at', since)
+            .order('recorded_at', { ascending: true }).limit(5000);
+        if (error) {
+            if (!/does not exist|schema cache/i.test(error.message)) console.warn('[PredictionService.getHealthHistory]', error.message);
+            return [];
+        }
+        return (data || []).map((r: any) => ({ ...r, value: Number(r.value) }));
     }
 
     async getWaveforms(assetId: string, limit = 10): Promise<WaveformCapture[]> {
@@ -756,7 +779,12 @@ class PredictionService {
         // too — the ISO 20816 vibration and temperature bands are high-only and
         // used to count as a flat 100. A point with no usable limit is left out
         // of the blend rather than counted as perfect.
-        const sensorScores = sensors.map(s => sensorHealthScore({ current: s.current_value, alarm_high: s.alarm_high, alarm_low: s.alarm_low }));
+        // Points with bad data (stale, flat-lined, implausible — lib/predict/dataQuality)
+        // are left out too: a stuck sensor reading "normal" is not health.
+        const sensorScores = sensors.map(s => qualityFlags({
+            current: s.current_value, readings: s.readings, alarm_high: s.alarm_high, alarm_low: s.alarm_low,
+            kind: sensorKind(s.tag, s.unit), lastReadingAt: s.last_reading_at, intervalDays: s.interval_days,
+        }).length ? null : sensorHealthScore({ current: s.current_value, alarm_high: s.alarm_high, alarm_low: s.alarm_low }));
 
         // Class-aware weighting (Phase 2): a static cooler's health is driven by
         // thickness/thermal/pressure, a rotating machine's by vibration — one

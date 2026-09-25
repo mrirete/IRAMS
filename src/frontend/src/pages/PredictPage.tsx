@@ -8,6 +8,7 @@ import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
 import { FleetHealthMap } from '../components/predict/FleetHealthMap';
 import { buildLineage } from '../components/predict/WhereItSits';
+import type { HistoryPoint } from '../lib/predict/healthTrend';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import { ScrollTabStrip } from '../eam/components/ui';
@@ -360,6 +361,22 @@ export const PredictPage: React.FC = () => {
 
     const assetAlerts = useMemo(() => getAssetAlerts(selectedAssetId), [getAssetAlerts, selectedAssetId]);
     const assetSensorTrends = useMemo(() => getSensorTrends(selectedAssetId), [getSensorTrends, selectedAssetId]);
+
+    // Saved health / RUL history (0392) — reloaded when the twin updates, since
+    // every update adds a point (the database trigger writes it).
+    const [history, setHistory] = useState<{ health: HistoryPoint[]; rul: HistoryPoint[] }>({ health: [], rul: [] });
+    useEffect(() => {
+        let alive = true;
+        if (!selectedAssetId) { setHistory({ health: [], rul: [] }); return; }
+        predictionService.getHealthHistory(selectedAssetId).then(rows => {
+            if (!alive) return;
+            setHistory({
+                health: rows.filter(r => r.metric === 'health_index').map(r => ({ at: r.recorded_at, value: r.value })),
+                rul: rows.filter(r => r.metric === 'rul_days').map(r => ({ at: r.recorded_at, value: r.value })),
+            });
+        });
+        return () => { alive = false; };
+    }, [selectedAssetId, twinHealth?.updated_at]);
 
     const filteredAssets = useMemo(() => {
         const q = assetSearch.toLowerCase();
@@ -1003,6 +1020,7 @@ export const PredictPage: React.FC = () => {
             )}
             {selectedAssetId && activeTab === 'overview' && (
                 <PredictOverviewTab
+                    healthHistory={history.health}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
                     onAssetSelect={(id) => { setSelectedAssetId(id); setAssetPickerOpen(false); }}
@@ -1040,6 +1058,7 @@ export const PredictPage: React.FC = () => {
                     groundedFit={groundedActive ? grounded : null}
                     onScheduleInspection={setInspectPrefill}
                     onAdoptPmInterval={setPmPrefill}
+                    healthHistory={history.health}
                 />
             )}
 
@@ -1047,6 +1066,7 @@ export const PredictPage: React.FC = () => {
                 <>
                     <RULReliabilityTab
                         rulEstimate={displayRul}
+                        rulHistory={history.rul}
                         assetAlerts={assetAlerts}
                         groundedFit={groundedActive ? grounded : null}
                         feedbackStats={feedbackStats}

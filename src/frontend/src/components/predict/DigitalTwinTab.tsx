@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { HeartPulse, AlertTriangle, Layers } from 'lucide-react';
 import { TwinHealthChart } from './TwinHealthChart';
 import { ScenarioSimulator } from './ScenarioSimulator';
@@ -12,6 +12,7 @@ import { DisgPanel } from './DisgPanel';
 import { SpectralAnalysisPanel } from './SpectralAnalysisPanel';
 import { MonitoringSetup } from './MonitoringSetup';
 import { useAssetPredictConfig } from './useAssetPredictConfig';
+import { fitHealthTrend, fittedProjection, MIN_FIT_POINTS, MIN_FIT_SPAN_DAYS, type HistoryPoint } from '../../lib/predict/healthTrend';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -30,6 +31,8 @@ interface DigitalTwinTabProps {
     onScheduleInspection?: (args: { title: string; contextNote: string; dueDate: string }) => void;
     /** What-If → WM link: adopt a simulated PM interval as a PM strategy. */
     onAdoptPmInterval?: (args: { intervalDays: number; rationale: string }) => void;
+    /** Saved health history (0392): with enough points the projection is fitted to it. */
+    healthHistory?: HistoryPoint[];
 }
 
 const RBI_BAND_TONE: Record<string, string> = {
@@ -40,11 +43,17 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval, healthHistory = [],
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
     const rotating = equipmentClass?.cls !== 'static';
+    // ≥ 5 saved points over ≥ 2 days → projection fitted to them; else the fixed-rate direction.
+    const fit = useMemo(() => fitHealthTrend(healthHistory), [healthHistory]);
+    const chartState = useMemo(
+        () => (fit && twinHealth ? { ...twinHealth, health_projection: fittedProjection(fit) } : twinHealth),
+        [fit, twinHealth],
+    );
     // The asset's saved monitoring setup — one owner for the pop-up and the capture panel.
     const { config: predictConfig, save: savePredictConfig } = useAssetPredictConfig(selectedAssetId);
     return (
@@ -170,7 +179,11 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                             {rulEstimate?.governance_tier != null && (
                                 <span className="text-[10px] font-mono bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-slate-500" title="Governance tier">T{rulEstimate.governance_tier}</span>
                             )}
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Directional</span>
+                            {fit ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">Fitted · {fit.n} points</span>
+                            ) : (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Directional</span>
+                            )}
                         </div>
                         <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs">
                             <span className="flex items-center"><div className="w-2 h-2 rounded-full bg-accent-cyan mr-1.5" /> Projected</span>
@@ -178,10 +191,14 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                             <span className="flex items-center"><div className="w-2 h-2 rounded-full bg-red-500 mr-1.5" /> Failure limit</span>
                         </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">Health for the next 30 days at a fixed rate for its band. A direction, not a forecast. The fitted forecast is on the Forecast tab.</p>
+                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                        {fit
+                            ? `Health for the next 30 days, fitted to ${fit.n} saved points over ${fit.spanDays} days (${fit.slopePerDay > 0 ? '+' : ''}${fit.slopePerDay} a day). The band is ±1.96 × their scatter.`
+                            : `Health for the next 30 days at a fixed rate for its band. A direction, not a forecast. It is fitted to saved history once there are ${MIN_FIT_POINTS} points over ${MIN_FIT_SPAN_DAYS} days (${healthHistory.length} so far).`}
+                    </p>
                 </div>
                 <div className="p-5 min-h-[350px]">
-                    <TwinHealthChart twinState={twinHealth} />
+                    <TwinHealthChart twinState={chartState} />
                 </div>
             </div>
 

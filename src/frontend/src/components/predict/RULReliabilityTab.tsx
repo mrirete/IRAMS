@@ -1,6 +1,8 @@
 import React from 'react';
 import { FileWarning, HelpCircle, BarChart3 } from 'lucide-react';
 import { AlertQueue } from './AlertQueue';
+import { HistoryTrend } from './HistoryTrend';
+import { seriesSpread, type HistoryPoint } from '../../lib/predict/healthTrend';
 import { WeibullChart } from './WeibullChart';
 import type { RULEstimate, PredictionAlert, AlertOutcome } from '../../types/intelligence';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
@@ -18,6 +20,8 @@ interface RULReliabilityTabProps {
     onRaiseWork: (a: PredictionAlert) => void;
     onCloseAlert: (a: PredictionAlert, outcome: AlertOutcome, notes: string) => Promise<{ ok: boolean; message?: string }>;
     rulEstimate: RULEstimate | null;
+    /** Saved RUL history (0392), oldest first. */
+    rulHistory?: HistoryPoint[];
     assetAlerts: PredictionAlert[];
     /** Grounded censored-Weibull fit (Phase 1) — drives the survival curve & method note. */
     groundedFit?: GroundedRul | null;
@@ -26,8 +30,9 @@ interface RULReliabilityTabProps {
 }
 
 export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
-    rulEstimate, assetAlerts, groundedFit, feedbackStats, canCloseAlert, onAcknowledgeAlert, onRaiseWork, onCloseAlert,
+    rulEstimate, rulHistory = [], assetAlerts, groundedFit, feedbackStats, canCloseAlert, onAcknowledgeAlert, onRaiseWork, onCloseAlert,
 }) => {
+    const rulMove = seriesSpread(rulHistory);
     const totalFeedback = (feedbackStats?.actionable || 0) + (feedbackStats?.falseAlarm || 0);
 
     return (
@@ -87,6 +92,17 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                                     </div>
                                 );
                             })}
+                        </div>
+
+                        {/* How the estimate changed — saved RUL history (0392) */}
+                        <div className="border-t border-slate-100 pt-4 mt-4 mb-4">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">How this estimate changed</p>
+                            <p className="text-[11px] text-slate-400 mb-1">
+                                {rulMove
+                                    ? `From ${Math.round(rulMove.first)} to ${Math.round(rulMove.last)} days over ${rulMove.n} updates (range ${Math.round(rulMove.min)}–${Math.round(rulMove.max)}). A steady line means a stable estimate.`
+                                    : 'Each update saves the estimate, so you can see whether it holds steady or jumps.'}
+                            </p>
+                            <HistoryTrend points={rulHistory} unit=" d" color="#6366f1" height={100} />
                         </div>
 
                         {/* Weibull Survival Curve — plotted only from the grounded fit */}

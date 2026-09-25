@@ -5,7 +5,7 @@ import {
     TrendingDown, TrendingUp, Minus, FileWarning, Wrench,
     CircleDot, BarChart3
 } from 'lucide-react';
-import { FleetHealthMap, isAtRisk } from './FleetHealthMap';
+import { FleetHealthMap, isAtRisk, HEALTH_BANDS } from './FleetHealthMap';
 import type { FleetAssetHealth, TwinState, SensorTrend } from '../../types/intelligence';
 import type { ConfidenceBand } from '../../eam/services/PredictionService';
 import { STALE_DAYS } from '../../config/predict';
@@ -15,6 +15,9 @@ import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import { healthModelFor, sensorKind, type ClassHealthModel } from '../../lib/predict/healthModels';
 import type { RollupNode } from '../../lib/predict/rollup';
 import { WhereItSits, type LineageNode } from './WhereItSits';
+import { HistoryTrend } from './HistoryTrend';
+import type { HistoryPoint } from '../../lib/predict/healthTrend';
+import { qualityFlags, FLAG_LABEL } from '../../lib/predict/dataQuality';
 import { sensorHealthScore, sensorZone, type ScoredPoint, type SensorZone } from '../../lib/predict/sensorScore';
 import { isVibrationUnit } from '../../lib/predict/limitLibrary';
 
@@ -50,6 +53,8 @@ interface PredictOverviewTabProps {
     rollups?: RollupNode[];
     /** The asset's own chain in the register — replaces the plant-wide roll-up list here. */
     lineage?: LineageNode[];
+    /** Saved health history (0392), oldest first. */
+    healthHistory?: HistoryPoint[];
 
     /* Sensors */
     twinHealth: TwinState | null;
@@ -168,7 +173,8 @@ function decomposeHealthIndex(
     // (lib/predict/sensorScore, one-sided limits included). No jitter:
     // a monitoring number must not change between renders of the same data.
     const categoryHealth = (list: typeof sensorValues): number => {
-        const scored = list.map(s => sensorHealthScore(s as ScoredPoint)).filter((v): v is number => v != null);
+        // Same rule as the engine: bad data (stale, flat-lined, implausible) is not health.
+        const scored = list.filter(s => !flagsFor(s).length).map(s => sensorHealthScore(s as ScoredPoint)).filter((v): v is number => v != null);
         // Fall back to the overall index when the category has no alarm bands.
         const base = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : systemHealth;
         return Math.max(0, Math.min(100, base - trendPenalty(list)));
@@ -194,6 +200,14 @@ function decomposeHealthIndex(
  * Alert / Danger for everything else. No limits → no badge — a fixed table
  * that may not fit this machine is worse than none.
  */
+/** Data-quality flags for one tile (lib/predict/dataQuality) — same rule the engine uses. */
+function flagsFor(s: { tag: string; current: number; unit?: string; readings?: number[]; alarm_high?: number; alarm_low?: number; last_reading_at?: string | null; interval_days?: number | null }) {
+    return qualityFlags({
+        current: s.current, readings: s.readings, alarm_high: s.alarm_high, alarm_low: s.alarm_low,
+        kind: sensorKind(s.tag, s.unit), lastReadingAt: s.last_reading_at, intervalDays: s.interval_days,
+    });
+}
+
 function pointZone(s: { tag: string; current: number; unit?: string; alarm_high?: number; alarm_low?: number; warn_high?: number; warn_low?: number }, vibZoning: boolean): SensorZone | null {
     const velocity = vibZoning && sensorKind(s.tag, s.unit) === 'vibration' && (!s.unit || isVibrationUnit(s.unit));
     return sensorZone(s, velocity);
@@ -207,7 +221,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     selectedAssetId, selectedAssetName, onAssetSelect, fleetData, totalAssetCount,
     systemHealth, isHealthy, rulDays, alertCount,
     rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
-    groundedFit, equipmentClass, rollups = [], lineage = [], twinHealth, assetSensorTrends,
+    groundedFit, equipmentClass, rollups = [], lineage = [], healthHistory = [], twinHealth, assetSensorTrends,
     onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
@@ -380,6 +394,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             const seen = new Set<string>();
                             return rawSensors.filter(s => { const k = s.tag.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
                         })().map((sensor, idx) => {
+                            const dq = flagsFor(sensor);
                             const trendColor = sensor.trend === 'rising' ? 'text-red-500' : sensor.trend === 'falling' ? 'text-yellow-500' : 'text-slate-400';
                             const trendIcon = sensor.trend === 'rising' ? <TrendingUp size={10} /> : sensor.trend === 'falling' ? <TrendingDown size={10} /> : <Minus size={10} />;
                             const strokeColor = sensor.trend === 'rising' ? '#ef4444' : sensor.trend === 'falling' ? '#eab308' : '#06b6d4';
@@ -429,6 +444,16 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                                     {sensor.unit && <span className="text-[10px] text-slate-400 font-medium">{sensor.unit}</span>}
                                                     <span className={`${trendColor}`}>{trendIcon}</span>
                                                 </div>
+                                                {dq.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mt-0.5">
+                                                        {dq.map(f => (
+                                                            <span key={f.flag} title={`${f.reason} Left out of the health score.`}
+                                                                className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-300 uppercase tracking-wide">
+                                                                {FLAG_LABEL[f.flag]}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         {/* ISO Zone badge */}
@@ -481,6 +506,18 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             <Zap size={15} /> Set up this asset
                         </button>
                     )}
+                </div>
+            )}
+
+            {/* ═══ Health trend — saved values (0392), one point per update, at most one an hour ═══ */}
+            {hasData && (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+                    <div className="flex items-baseline justify-between gap-2 flex-wrap mb-1">
+                        <p className="text-sm font-semibold text-slate-800">Health trend</p>
+                        <p className="text-[10px] text-slate-400">{healthHistory.length} saved point{healthHistory.length !== 1 ? 's' : ''} · last 90 days</p>
+                    </div>
+                    <HistoryTrend points={healthHistory} domain={[0, 100]} color="#0ea5e9"
+                        guides={[{ value: HEALTH_BANDS.good, label: `${HEALTH_BANDS.good}` }, { value: HEALTH_BANDS.fair, label: `${HEALTH_BANDS.fair} · at risk below` }]} />
                 </div>
             )}
 
