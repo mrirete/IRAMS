@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, LayoutGrid, Layers, BarChart3, FileWarning, RefreshCw } from 'lucide-react';
 import { TwinDrawingPanel } from '../components/predict/TwinDrawingPanel';
 import { PredictSideRail } from '../components/predict/PredictSideRail';
@@ -7,6 +7,7 @@ import { useIntelligence } from '../hooks/useIntelligence';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
 import { FleetHealthMap } from '../components/predict/FleetHealthMap';
+import { buildLineage } from '../components/predict/WhereItSits';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import { ScrollTabStrip } from '../eam/components/ui';
@@ -60,9 +61,34 @@ const PREDICT_TABS: { id: PredictTab; label: string; icon: React.ReactNode; desc
 ];
 
 export const PredictPage: React.FC = () => {
-    const [selectedAssetId, setSelectedAssetId] = useState('');
+    // The chosen asset and tab live in the address (?asset=&tab=), so Back from
+    // Reliability Modelling, a refresh or a shared link returns to the same
+    // asset. They used to be component state: leaving Predict lost the asset
+    // and Back always landed on the chooser.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const selectedAssetId = searchParams.get('asset') || '';
+    const tabParam = searchParams.get('tab');
+    const activeTab: PredictTab = tabParam === 'twin' || tabParam === 'rul' ? tabParam : 'overview';
+    /** One address update per change — two back-to-back setSearchParams calls would overwrite each other. */
+    const setSelectedAssetId = useCallback((id: string, tab?: PredictTab) => {
+        setSearchParams(prev => {
+            const n = new URLSearchParams(prev);
+            n.delete('point');
+            if (!id) { n.delete('asset'); n.delete('tab'); return n; }
+            n.set('asset', id);
+            const t = tab ?? (prev.get('tab') as PredictTab | null);
+            if (t && t !== 'overview') n.set('tab', t); else n.delete('tab');
+            return n;
+        }, { replace: true });
+    }, [setSearchParams]);
+    const setActiveTab = useCallback((t: PredictTab) => {
+        setSearchParams(prev => {
+            const n = new URLSearchParams(prev);
+            if (t !== 'overview') n.set('tab', t); else n.delete('tab');
+            return n;
+        }, { replace: true });
+    }, [setSearchParams]);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<PredictTab>('overview');
     const [assetSearch, setAssetSearch] = useState('');
     const [showNewInsight, setShowNewInsight] = useState(false);
     const [insightForm, setInsightForm] = useState<NewInsightForm>({ title: '', type: 'digital_twin', asset_id: '', description: '' });
@@ -120,7 +146,6 @@ export const PredictPage: React.FC = () => {
         const asset = params.get('asset');
         if (!asset) return;
         deepLinkDone.current = true;
-        setSelectedAssetId(asset);
         refetchPredict(asset);
         if (params.get('point') && !setup.connected.has(asset)) setSetupOpen({ assetId: asset });
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -489,7 +514,8 @@ export const PredictPage: React.FC = () => {
         const healthById = new Map(fleetData.map(a => [a.asset_id, a.health_index]));
         return rollupHierarchy(
             allRegisterAssets.map((a: any) => ({
-                id: a.id, name: a.name,
+                // A blank register name reads as its tag ("UNIT-200 · no name in register"), not "Unnamed unit".
+                id: a.id, name: (a.name || '').trim() || `${a.tag || 'Item'} · no name in register`,
                 parentId: a.parent_id ?? a.parentId,
                 hierarchyLevel: a.taxonomy_level ?? a.hierarchyLevel,
                 criticality: a.criticality,
@@ -498,6 +524,12 @@ export const PredictPage: React.FC = () => {
             redundancyGroups,
         );
     }, [fleetData, allRegisterAssets, redundancyGroups]);
+
+    // The selected asset's own chain, site down to the asset (Where it sits).
+    const lineage = useMemo(
+        () => buildLineage(selectedAssetId, allRegisterAssets as any[], rollups, fleetData, twinHealth?.asset_id === selectedAssetId ? twinHealth.health_index : null),
+        [selectedAssetId, allRegisterAssets, rollups, fleetData, twinHealth],
+    );
 
     // ── Asset picker keys ─────────────────────────────────
     // Ctrl+K is the global command palette's (AppLayout) — Predict used to claim
@@ -991,7 +1023,8 @@ export const PredictPage: React.FC = () => {
                     assetTag={selectedAsset?.tag ?? null}
                     assetName={selectedAsset?.name || selectedAssetId}
                     twinHealth={twinHealth}
-                    onSelectAsset={(id) => { setSelectedAssetId(id); setActiveTab('overview'); }}
+                    onSelectAsset={(id) => setSelectedAssetId(id, 'overview')}
+                    systemName={selectedAsset?.system ?? null}
                 />
             )}
             {selectedAssetId && activeTab === 'overview' && (
@@ -1011,6 +1044,7 @@ export const PredictPage: React.FC = () => {
                     groundedFit={groundedActive ? grounded : null}
                     equipmentClass={classRes}
                     rollups={rollups}
+                    lineage={lineage}
                     twinHealth={twinHealth}
                     assetSensorTrends={assetSensorTrends}
                     onInvestigate={() => window.location.href = '/analyze'}
@@ -1145,8 +1179,9 @@ export const PredictPage: React.FC = () => {
                     alerts={assetAlerts}
                     onInvestigate={() => { window.location.href = '/analyze'; }}
                     onCreateWR={() => setRaiseOpen(true)}
+                    lineage={lineage}
                     rollups={rollups}
-                    onSelectAsset={(id) => { setSelectedAssetId(id); setActiveTab('overview'); }}
+                    onSelectAsset={(id) => setSelectedAssetId(id, 'overview')}
                     statusSlot={twinUpdateLine}
                 />
             ) : (

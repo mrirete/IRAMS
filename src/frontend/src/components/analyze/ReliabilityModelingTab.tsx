@@ -116,11 +116,20 @@ interface ModelingTabProps {
     onSendToRAM?: (systemMtbf: number, systemMttr: number, systemAo: number) => void;
     /** Loaded data from saved analysis */
     loadedData?: { inputs: Record<string, any>; results: Record<string, any> } | null;
+    /** Deep link (from Predict): open the P&ID view on this drawing, or pre-fill a New drawing. */
+    pidEntry?: PidEntry | null;
+}
+
+/** Arrive in the P&ID view with the asset's drawing open — or the New drawing form pre-filled when none shows it. */
+export interface PidEntry {
+    drawingId?: string | null;
+    newTitle?: string | null;
+    assetId?: string | null;
 }
 
 // ═════════════════════════════════════════════════════════════
-export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChange, onSendToRAM, loadedData }) => {
-    const [reliabilityTab, setReliabilityTab] = useState<'rbd' | 'pid'>('rbd');
+export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChange, onSendToRAM, loadedData, pidEntry }) => {
+    const [reliabilityTab, setReliabilityTab] = useState<'rbd' | 'pid'>(pidEntry ? 'pid' : 'rbd');
     const importRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
     const [linkToast, setLinkToast] = useState<string | null>(null);
@@ -254,16 +263,20 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
     }, []);
 
     // ── P&ID CRUD handlers (mirror RBD pattern) ──
-    const handleCreatePidStudy = useCallback(async (title: string, description: string) => {
+    // A new drawing starts EMPTY. Only "Demo — Process Unit" asks for the
+    // sample (P-101, V-401, XV-201…) — a real "Compression Train A — P&ID"
+    // used to open with those seven invented items already on it.
+    const handleCreatePidStudy = useCallback(async (title: string, description: string, sample = false) => {
+        const start: PIDState = sample ? DEFAULT_PID : { equipment: [], connections: [], backgroundImage: null };
         const saved = await analyzeService.savePIDConfig({
             title, asset_id: null,
-            equipment: DEFAULT_PID.equipment as unknown[], connections: DEFAULT_PID.connections as unknown[],
+            equipment: start.equipment as unknown[], connections: start.connections as unknown[],
             show_heat_map: true, created_by: null,
         });
         if (saved) {
             const study = {
                 id: saved.id, title: saved.title, description,
-                equipment: DEFAULT_PID.equipment, connections: DEFAULT_PID.connections,
+                equipment: start.equipment, connections: start.connections,
                 show_heat_map: true, background_image: null as string | null,
                 created_at: saved.created_at, updated_at: saved.updated_at,
             };
@@ -299,6 +312,20 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
     const handleOpenPidStudy = useCallback((study: typeof pidStudies[0]) => {
         setActivePidStudy(study);
     }, []);
+
+    // Deep link from Predict, applied once the drawings have loaded: the named
+    // drawing, else the first one that carries the asset, else the New drawing
+    // form pre-filled (nothing is created until the user presses Create).
+    const pidEntryApplied = useRef(false);
+    useEffect(() => {
+        if (!pidEntry || pidEntryApplied.current || pidStudiesLoading) return;
+        pidEntryApplied.current = true;
+        const hit = (pidEntry.drawingId && pidStudies.find(s => s.id === pidEntry.drawingId))
+            || (pidEntry.assetId && pidStudies.find(s => s.equipment.some(e => e.assetId === pidEntry.assetId)))
+            || null;
+        if (hit) { setActivePidStudy(hit); return; }
+        if (pidEntry.newTitle) { setNewPidTitle(pidEntry.newTitle); setShowNewPidModal(true); }
+    }, [pidEntry, pidStudiesLoading, pidStudies]);
 
     // ── History-managed state ──
     const rbd = useHistory<RBDState>(activeStudy ? { blocks: activeStudy.blocks, groups: activeStudy.groups } : DEMO_RBD);
@@ -1264,7 +1291,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                     className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-500 transition-colors">
                                     <Plus size={12} /> Create New P&ID
                                 </button>
-                                <button onClick={() => handleCreatePidStudy('Demo — Process Unit', 'Sample P&ID with ISA 5.1 symbols')}
+                                <button onClick={() => handleCreatePidStudy('Demo — Process Unit', 'Sample P&ID with ISA 5.1 symbols', true)}
                                     className="flex items-center gap-1.5 px-4 py-2 bg-white text-slate-600 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
                                     <RotateCcw size={12} /> Load Demo
                                 </button>

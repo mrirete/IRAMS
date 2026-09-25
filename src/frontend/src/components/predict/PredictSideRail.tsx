@@ -14,7 +14,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CircleDot, FileWarning, Wrench, ExternalLink, HeartPulse, Gauge, Activity, CheckCircle } from 'lucide-react';
+import { AlertTriangle, CircleDot, FileWarning, Wrench, ArrowRight, HeartPulse, Gauge, Activity, CheckCircle } from 'lucide-react';
 import predictionService from '../../eam/services/PredictionService';
 import { DrawingsCard } from '../../eam/components/DrawingsCard';
 import type { FleetAssetHealth, PredictionAlert, TwinState } from '../../types/intelligence';
@@ -23,6 +23,8 @@ import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import { healthModelFor } from '../../lib/predict/healthModels';
 import { STALE_DAYS } from '../../config/predict';
 import { isAtRisk } from './FleetHealthMap';
+import { WhereItSits, type LineageNode } from './WhereItSits';
+import { drawingHref, newDrawingTitle } from '../../lib/predict/links';
 
 type Breach = { name: string; unit?: string; value: number; level: 'WARNING' | 'CRITICAL'; detail: string; date?: string };
 
@@ -37,6 +39,8 @@ interface AssetMode {
     alerts: PredictionAlert[];
     onInvestigate: () => void;
     onCreateWR: () => void;
+    /** The asset's own chain in the register (WhereItSits). */
+    lineage: LineageNode[];
 }
 interface ChooserMode {
     mode: 'chooser';
@@ -84,7 +88,7 @@ const RollupList: React.FC<{ rollups: RollupNode[]; onSelectAsset: (id: string) 
     if (!rollups.length) return null;
     return (
         <div className={card}>
-            <p className={heading}><CircleDot size={11} /> Systems &amp; units</p>
+            <p className={heading}><CircleDot size={11} /> Weakest systems</p>
             <ul className="space-y-1.5">
                 {rollups.slice(0, 6).map((r) => (
                     <li key={r.id} className="flex items-center gap-2" title={r.offenders.map((o) => `${o.name}: ${Math.round(o.health)}`).join('\n')}>
@@ -246,12 +250,20 @@ export const PredictSideRail: React.FC<Props> = (props) => {
                 </div>
             </div>
 
-            <RollupList rollups={rollups} onSelectAsset={onSelectAsset} />
+            {/* The asset's own place in the plant — not the plant-wide weakest list. */}
+            <WhereItSits lineage={props.lineage} rollups={rollups} onSelectAsset={onSelectAsset} />
 
             <div className="space-y-2">
-                <DrawingsCard assetId={asset.id} assetTag={asset.tag} />
-                <Link to="/reliability-modelling" className="flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-500 px-1">
-                    Open drawings in Reliability Modelling <ExternalLink size={11} />
+                <DrawingsCard
+                    assetId={asset.id}
+                    assetTag={asset.tag}
+                    pidHref={(pidId) => drawingHref({ assetId: asset.id, assetLabel: asset.tag || asset.name, drawingId: pidId })}
+                />
+                <Link
+                    to={drawingHref({ assetId: asset.id, assetLabel: asset.tag || asset.name, newTitle: newDrawingTitle(asset.system, asset.tag || asset.name) })}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-500 px-1"
+                >
+                    Open drawings in Reliability Modelling <ArrowRight size={11} />
                 </Link>
             </div>
         </div>

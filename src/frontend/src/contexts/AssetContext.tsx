@@ -30,6 +30,7 @@ function mapDbRowToAsset(row: any): Asset {
 
         // Classification — ISO 14224
         taxonomy_level: mapHierarchyLevel(row.category),
+        register_level: row.hierarchyLevel ?? null,
         equipment_type: 'mechanical',
         equipment_class: mapEquipmentClass(row.model),
         equipment_category: row.model ?? '',

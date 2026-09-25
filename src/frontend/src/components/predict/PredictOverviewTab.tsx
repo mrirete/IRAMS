@@ -14,6 +14,7 @@ import type { GroundedRul } from '../../lib/predict/groundedFit';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import { healthModelFor, sensorKind, type ClassHealthModel } from '../../lib/predict/healthModels';
 import type { RollupNode } from '../../lib/predict/rollup';
+import { WhereItSits, type LineageNode } from './WhereItSits';
 import { sensorHealthScore, sensorZone, type ScoredPoint, type SensorZone } from '../../lib/predict/sensorScore';
 import { isVibrationUnit } from '../../lib/predict/limitLibrary';
 
@@ -47,6 +48,8 @@ interface PredictOverviewTabProps {
     equipmentClass?: ClassResolution | null;
     /** System/unit health roll-ups (Phase 4) — worst-first. */
     rollups?: RollupNode[];
+    /** The asset's own chain in the register — replaces the plant-wide roll-up list here. */
+    lineage?: LineageNode[];
 
     /* Sensors */
     twinHealth: TwinState | null;
@@ -204,7 +207,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     selectedAssetId, selectedAssetName, onAssetSelect, fleetData, totalAssetCount,
     systemHealth, isHealthy, rulDays, alertCount,
     rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
-    groundedFit, equipmentClass, rollups = [], twinHealth, assetSensorTrends,
+    groundedFit, equipmentClass, rollups = [], lineage = [], twinHealth, assetSensorTrends,
     onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
@@ -602,53 +605,10 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                 </div>
             </div>
 
-            {/* ═══ SECTION 3.5: SYSTEMS & UNITS — health roll-up (Phase 4) ═══ */}
-            {rollups.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm @min-[90rem]/page:hidden">
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="p-1.5 bg-primary-50 rounded-lg text-primary-600 border border-primary-100">
-                            <CircleDot size={16} />
-                        </div>
-                        <div>
-                            <p className="text-sm font-semibold text-slate-800">Systems & Units</p>
-                            <p className="text-[10px] text-slate-400">
-                                Rolled up from monitored equipment (criticality-weighted, dragged toward the weakest link); parallel and standby pairs from saved block diagrams count once
-                            </p>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {rollups.slice(0, 6).map(node => {
-                            const tone = node.health >= 80 ? 'text-emerald-600' : node.health >= 60 ? 'text-amber-500' : 'text-red-500';
-                            return (
-                                <div
-                                    key={node.id}
-                                    className="border border-slate-200 rounded-lg p-3 hover:border-slate-300 hover:shadow-sm transition-all"
-                                    title={`Top contributors to deficit:\n${node.offenders.map(o => ` · ${o.name} — ${o.health.toFixed(0)}/100 (crit ${o.criticality})`).join('\n')}`}
-                                >
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 uppercase">{node.level}</span>
-                                        <span className="text-[10px] text-slate-400">{node.monitored} monitored</span>
-                                    </div>
-                                    <p className="text-xs font-semibold text-slate-800 truncate">{node.name}</p>
-                                    <div className="flex items-baseline gap-1 mt-1">
-                                        <span className={`text-xl font-bold tabular-nums ${tone}`}>{node.health.toFixed(0)}</span>
-                                        <span className="text-[10px] text-slate-400">/ 100</span>
-                                    </div>
-                                    {/* Roll-DOWN: the responsible child, one click away */}
-                                    {node.worst && (
-                                        <button
-                                            onClick={() => onAssetSelect(node.worst!.id)}
-                                            className="mt-1.5 w-full text-left text-[10px] px-2 py-1 rounded bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition-colors"
-                                        >
-                                            <span className="text-slate-400">worst: </span>
-                                            <span className="font-semibold text-slate-600">{node.worst.name}</span>
-                                            <span className={`font-bold ml-1 ${node.worst.health >= 80 ? 'text-emerald-600' : node.worst.health >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{node.worst.health.toFixed(0)}</span>
-                                        </button>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
+            {/* ═══ SECTION 3.5: WHERE IT SITS — the asset's own chain (the side rail carries it on wide pages) ═══ */}
+            {lineage.length > 1 && (
+                <div className="@min-[90rem]/page:hidden">
+                    <WhereItSits lineage={lineage} rollups={rollups} onSelectAsset={onAssetSelect} variant="inline" />
                 </div>
             )}
 

@@ -71,6 +71,8 @@ export interface Asset {
     name: string;              // e.g. "Gas Compressor K-601"
     description: string;
     taxonomy_level: TaxonomyLevel;
+    /** The register's own hierarchy_level (SITE…COMPONENT). taxonomy_level folds COMPONENT/SUBUNIT into 'equipment'. */
+    register_level?: string | null;
     parent_id: string | null;
 
     // Location & hierarchy

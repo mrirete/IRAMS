@@ -26,7 +26,7 @@ import {
 } from '../../eam/pages/ReliabilityToolkit';
 
 // RBD / P&ID modeling
-import ReliabilityModelingTab from './ReliabilityModelingTab';
+import ReliabilityModelingTab, { type PidEntry } from './ReliabilityModelingTab';
 
 // Monte Carlo
 import { MonteCarloSimTab } from '../../eam/components/MonteCarloSimTab';
@@ -326,9 +326,11 @@ interface DivisionProps {
     /** Open study (?study=<id>) — the launcher shows its workspace instead of the register. */
     studyId?: string | null;
     onStudyChange?: (id: string | null) => void;
+    /** Deep link into Block Diagram's P&ID view (from Predict): the drawing to open, or a New drawing title. */
+    pidEntry?: PidEntry | null;
 }
 
-export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange, seed, tool, onToolChange, studyId, onStudyChange }) => {
+export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange, seed, tool, onToolChange, studyId, onStudyChange, pidEntry }) => {
     const { profile, user } = useAuth();
     // Human-readable author stamped on saved studies (falls back gracefully).
     const currentAuthor = profile?.username || profile?.fullName || user?.email || null;
@@ -1000,7 +1002,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 onSentToRcm={info => recordOutcome({ kind: 'rcm', ref_id: null, ref_label: `RCM study seeded for ${info.assetTag}`, detail: { beta: info.beta, eta: info.eta } })} />}
             {activeCalc === 'spares' && <SparesTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset}
                 onMinLevelApplied={item => recordOutcome({ kind: 'spares', ref_id: item.id, ref_label: `Min ${item.minLevel} on ${item.code}`, detail: { min_level: item.minLevel, part: item.code } })} />}
-            {activeCalc === 'rbd' && <ReliabilityModelingTab onStateChange={handleStateChange} onSendToRAM={handleSendToRAM} />}
+            {activeCalc === 'rbd' && <ReliabilityModelingTab onStateChange={handleStateChange} onSendToRAM={handleSendToRAM} pidEntry={pidEntry} />}
             {activeCalc === 'montecarlo' && <MonteCarloSimTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} initialAsset={entryAsset} bridgeData={mcBridgeData} onSendToRAM={handleMCToRAM} onPMCreated={handlePMCreated} />}
 
             {/* Save Modal */}

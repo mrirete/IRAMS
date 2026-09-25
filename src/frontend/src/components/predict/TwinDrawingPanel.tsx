@@ -17,7 +17,7 @@
  */
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Map as MapIcon, ExternalLink, Box, Tag } from 'lucide-react';
+import { Map as MapIcon, ArrowRight, Box, Tag } from 'lucide-react';
 
 /** three is ~600 kB — only the 3D toggle pays for it. */
 const PlantScene3D = React.lazy(() => import('./PlantScene3D'));
@@ -30,6 +30,7 @@ import { collectSubtree } from '../../lib/assetSubtree';
 import { useAssetContext } from '../../contexts/AssetContext';
 import { STALE_DAYS } from '../../config/predict';
 import type { TwinState } from '../../types/intelligence';
+import { drawingHref, newDrawingTitle } from '../../lib/predict/links';
 
 interface Props {
     assetId: string;
@@ -39,6 +40,8 @@ interface Props {
     twinHealth: TwinState | null;
     /** Clicking a drawn component that resolves to another register asset studies that asset. */
     onSelectAsset?: (assetId: string) => void;
+    /** The system the asset sits in — names a new drawing ("Compression Train A — P&ID"). */
+    systemName?: string | null;
 }
 
 const norm = (s: unknown): string => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -62,7 +65,7 @@ const ageDays = (iso: string | null | undefined): number | null => {
     return Number.isFinite(d) ? d : null;
 };
 
-export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName, twinHealth, onSelectAsset }) => {
+export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName, twinHealth, onSelectAsset, systemName }) => {
     const { assets: register } = useAssetContext();
     const [drawings, setDrawings] = useState<PidDrawing[] | null>(null);
     const [twins, setTwins] = useState<Map<string, TwinLite>>(new Map());
@@ -170,6 +173,14 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
     }, [resolved.map((r) => r.drawing.id).join('|'), resolved.reduce((n, r) => n + r.linked, 0)]);
 
     const current = resolved[Math.min(active, Math.max(0, resolved.length - 1))];
+    // Straight to the drawing on screen, or to a New drawing form named after the
+    // system — never the general Reliability Modelling page. Back returns here.
+    const label = assetTag || assetName;
+    const rmHref = drawingHref({
+        assetId, assetLabel: label,
+        drawingId: current?.drawing.id ?? null,
+        newTitle: newDrawingTitle(systemName, label),
+    });
 
     return (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
@@ -178,9 +189,11 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
                     <MapIcon size={18} className="text-blue-500" />
                     Drawing — where {assetTag || assetName} sits
                 </h3>
-                <Link to="/reliability-modelling" className="text-[11px] font-medium text-primary-600 hover:text-primary-500 flex items-center gap-1">
-                    Open in Reliability Modelling <ExternalLink size={11} />
-                </Link>
+                {drawings !== null && (
+                    <Link to={rmHref} className="text-[11px] font-medium text-primary-600 hover:text-primary-500 flex items-center gap-1">
+                        {current ? 'Open this drawing' : 'Start a drawing'} <ArrowRight size={11} />
+                    </Link>
+                )}
             </div>
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
                 The stored P&amp;ID with every drawn component resolved to the register and badged with its health
@@ -200,6 +213,9 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
                         Draw or import the P&amp;ID in Reliability Modelling and link its components to the register
                         (by tag is enough) — the twin then has a picture, and permits can propose isolation from it.
                     </p>
+                    <Link to={rmHref} className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-xs font-semibold rounded-lg transition-colors">
+                        Start “{newDrawingTitle(systemName, label)}” <ArrowRight size={12} />
+                    </Link>
                 </div>
             )}
 

@@ -8,6 +8,7 @@
  * better than an empty one on a screen that is already busy.
  */
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { FileText, GitBranch } from 'lucide-react';
 import { DatabaseService, type AssetDrawings } from '../services/DatabaseService';
 
@@ -16,9 +17,11 @@ interface Props {
     assetTag: string | null | undefined;
     /** 'card' = section on the asset Details tab; 'inline' = chips on a work-order row. */
     variant?: 'card' | 'inline';
+    /** Where a P&ID chip opens (Predict passes its deep link); without it chips are labels only. */
+    pidHref?: (pidId: string) => string;
 }
 
-export const DrawingsCard: React.FC<Props> = ({ assetId, assetTag, variant = 'card' }) => {
+export const DrawingsCard: React.FC<Props> = ({ assetId, assetTag, variant = 'card', pidHref }) => {
     const [drawings, setDrawings] = useState<AssetDrawings | null>(null);
 
     useEffect(() => {
@@ -34,8 +37,12 @@ export const DrawingsCard: React.FC<Props> = ({ assetId, assetTag, variant = 'ca
 
     const chips = (
         <div className="flex flex-wrap gap-1.5">
-            {drawings.pids.map((p) => (
-                <span key={`pid-${p.id}`} title="P&ID stored in Analyze" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-50 text-cyan-800 border border-cyan-100">
+            {drawings.pids.map((p) => pidHref ? (
+                <Link key={`pid-${p.id}`} to={pidHref(p.id)} title="Open this P&ID in Reliability Modelling" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-50 text-cyan-800 border border-cyan-100 hover:bg-cyan-100 hover:border-cyan-300">
+                    <GitBranch size={11} /> {p.title} →
+                </Link>
+            ) : (
+                <span key={`pid-${p.id}`} title="P&ID stored in Reliability Modelling" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-50 text-cyan-800 border border-cyan-100">
                     <GitBranch size={11} /> {p.title}
                 </span>
             ))}

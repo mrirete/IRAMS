@@ -13,7 +13,8 @@
  */
 import React, { useState, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Search, HelpCircle, Database, HelpCircle as Question, Wrench } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Search, HelpCircle, Database, HelpCircle as Question, Wrench } from 'lucide-react';
+import { predictHref, type PredictTabId } from '../lib/predict/links';
 import ReliabilityModellingDivision from '../components/analyze/ReliabilityModellingDivision';
 import { Modal } from '../eam/components/ui';
 
@@ -66,15 +67,34 @@ const ReliabilityModellingPage: React.FC = () => {
     // An open study (?study=<id>) survives a tool round-trip, so "Start" on a
     // step and "All studies" come back to the same place.
     const studyId = searchParams.get('study');
+    const [pidEntry, setPidEntry] = useState(() => searchParams.get('view') === 'pid'
+        ? { drawingId: searchParams.get('drawing'), newTitle: searchParams.get('newTitle'), assetId: searchParams.get('asset') }
+        : null);
+    // Arrived from Predict (lib/predict/links): keep the way back across tool
+    // changes; the drawing to open is a one-time entry, read once below.
+    const fromPredict = searchParams.get('from') === 'predict' && !!searchParams.get('asset');
+    const backParams = useCallback((): Record<string, string> => {
+        if (!fromPredict) return {};
+        const keep: Record<string, string> = {};
+        for (const k of ['from', 'asset', 'label', 'ptab']) {
+            const v = searchParams.get(k);
+            if (v) keep[k] = v;
+        }
+        return keep;
+    }, [fromPredict, searchParams]);
     const handleToolChange = useCallback((t: ToolId | null) => {
-        const next: Record<string, string> = {};
+        setPidEntry(null); // one-time entry — coming back to Block Diagram later opens it normally
+        const next: Record<string, string> = backParams();
         if (t) next.tool = t;
         if (studyId) next.study = studyId;
         setSearchParams(next, { replace: false });
-    }, [setSearchParams, studyId]);
+    }, [setSearchParams, studyId, backParams]);
     const handleStudyChange = useCallback((id: string | null) => {
-        setSearchParams(id ? { study: id } : {}, { replace: false });
-    }, [setSearchParams]);
+        setSearchParams(id ? { ...backParams(), study: id } : backParams(), { replace: false });
+    }, [setSearchParams, backParams]);
+    const backToPredict = fromPredict
+        ? predictHref(searchParams.get('asset') as string, (searchParams.get('ptab') as PredictTabId | null) ?? null)
+        : null;
 
     const handleContextChange = useCallback((ctx: ModellingContext) => {
         setContext(ctx);
@@ -108,6 +128,15 @@ const ReliabilityModellingPage: React.FC = () => {
 
     return (
         <div className="ers-page-wide space-y-5 px-3 py-4 sm:p-6">
+            {/* ── The way back to the asset this visit started from ── */}
+            {backToPredict && (
+                <button
+                    onClick={() => navigate(backToPredict)}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary-50 hover:bg-primary-100 border border-primary-200 text-primary-700 rounded-lg text-sm font-semibold transition-colors"
+                >
+                    <ArrowLeft size={15} /> Back to Predict · {searchParams.get('label') || 'asset'}
+                </button>
+            )}
             {/* ── Page Header ─────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
                 <div>
@@ -152,6 +181,7 @@ const ReliabilityModellingPage: React.FC = () => {
                 onToolChange={handleToolChange}
                 studyId={studyId}
                 onStudyChange={handleStudyChange}
+                pidEntry={pidEntry}
             />
 
             {/* ── How this works — purpose & outcome, in three steps ── */}
