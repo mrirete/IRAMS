@@ -46,6 +46,7 @@ import {
 import { alarmGates } from '../../lib/predict/alarmGates';
 import { sensorHealthScore } from '../../lib/predict/sensorScore';
 import type { RegisterBearingRow } from '../../lib/predict/registerBearings';
+import type { AlertStatus, AlertOutcome } from '../../types/intelligence';
 
 /** A point the regime detector fired on, with what it needs to explain itself. */
 interface RegimeFired {
@@ -131,7 +132,31 @@ export interface PredictionAlert {
     diagnosis?: DiagnosisResult | null;
     /** Top hypothesis — denormalized for filtering (reference_codes FAILURE_MODE). */
     failure_mode_code?: string | null;
+    /** Lifecycle (0391): new → acknowledged → in_progress → closed + outcome. */
+    status?: AlertStatus;
+    outcome?: AlertOutcome | null;
+    outcome_notes?: string | null;
+    closed_at?: string | null;
+    work_request_id?: string | null;
+    work_order_id?: string | null;
+    /** Set when the linked work order closed — time to record the outcome. */
+    work_done_at?: string | null;
 }
+
+/** The outcome → precision verdict. Duplicate is not a verdict on the alert logic. */
+export const OUTCOME_VERDICT: Record<AlertOutcome, 'actionable' | 'false_alarm' | null> = {
+    confirmed_fault: 'actionable',
+    known_condition: 'actionable',
+    no_fault_found: 'false_alarm',
+    duplicate: null,
+};
+
+/** A readable reason when an alert write fails — the 0391 guard raises 42501 with a sentence. */
+const alertWriteError = (e: { code?: string; message?: string } | null | undefined): string => {
+    if (!e) return 'The alert was not updated.';
+    if (e.code === '42703' || /column .*status.* does not exist/i.test(e.message || '')) return 'Alert outcomes need database update 0391 — apply it first.';
+    return e.message || 'The alert was not updated.';
+};
 
 export interface SensorReading {
     id: string;
@@ -344,22 +369,45 @@ class PredictionService {
         }
     }
 
-    async acknowledgeAlert(alertId: string, userId: string): Promise<boolean> {
-        try {
-            const { error } = await supabase
-                .from('ers_prediction_alerts')
-                .update({
-                    acknowledged: true,
-                    acknowledged_by: userId,
-                    acknowledged_at: new Date().toISOString(),
-                })
-                .eq('id', alertId);
-            if (error) { console.error('PredictionService.acknowledgeAlert:', error); throw error; }
-            return true;
-        } catch (e) {
-            console.error('Error acknowledging alert:', e);
-            return false;
+    /**
+     * Alert lifecycle writes (0391). Keyed by alert_id (what the screen holds).
+     * Each asks for the row back: an RLS-filtered UPDATE succeeds with 0 rows
+     * and no error, so "no row" is reported as a failure, never as done.
+     */
+    async acknowledgeAlert(alertId: string): Promise<{ ok: boolean; message?: string }> {
+        const { data, error } = await supabase.from('ers_prediction_alerts')
+            .update({ status: 'acknowledged' })
+            .eq('alert_id', alertId).eq('status', 'new')
+            .select('alert_id');
+        if (error) return { ok: false, message: alertWriteError(error) };
+        return data?.length ? { ok: true } : { ok: false, message: 'Already acknowledged, or not visible to you.' };
+    }
+
+    async linkAlertWork(alertId: string, link: { workRequestId?: string | null; workOrderId?: string | null }): Promise<{ ok: boolean; message?: string }> {
+        const patch: Record<string, unknown> = { status: 'in_progress' };
+        if (link.workRequestId) patch.work_request_id = link.workRequestId;
+        if (link.workOrderId) patch.work_order_id = link.workOrderId;
+        const { data, error } = await supabase.from('ers_prediction_alerts')
+            .update(patch).eq('alert_id', alertId).neq('status', 'closed').select('alert_id');
+        if (error) return { ok: false, message: alertWriteError(error) };
+        return data?.length ? { ok: true } : { ok: false, message: 'The work was raised, but the alert could not be linked (closed, or not visible to you).' };
+    }
+
+    /** Close with an outcome; the verdict also lands in ers_prediction_feedback so precision has one source. */
+    async closeAlert(alertId: string, assetId: string, outcome: AlertOutcome, notes: string, closedBy: string): Promise<{ ok: boolean; message?: string }> {
+        const { data, error } = await supabase.from('ers_prediction_alerts')
+            .update({ status: 'closed', outcome, outcome_notes: notes.trim() || null, ...(OUTCOME_VERDICT[outcome] ? { feedback_status: OUTCOME_VERDICT[outcome] } : {}) })
+            .eq('alert_id', alertId).neq('status', 'closed')
+            .select('alert_id');
+        if (error) return { ok: false, message: alertWriteError(error) };
+        if (!data?.length) return { ok: false, message: 'Already closed, or not visible to you.' };
+        const verdict = OUTCOME_VERDICT[outcome];
+        if (verdict) {
+            const { error: fbErr } = await supabase.from('ers_prediction_feedback')
+                .insert({ alert_id: alertId, asset_id: assetId, feedback_type: verdict, feedback_by: closedBy, notes: `Closed: ${outcome}${notes.trim() ? ` — ${notes.trim()}` : ''}` });
+            if (fbErr) console.warn('[PredictionService.closeAlert] precision record not written:', fbErr.message);
         }
+        return { ok: true };
     }
 
     async createAlert(alert: Omit<PredictionAlert, 'id' | 'created_at' | 'acknowledged' | 'acknowledged_by' | 'acknowledged_at'>): Promise<PredictionAlert | null> {
@@ -888,10 +936,12 @@ class PredictionService {
             return { success: false, message: 'No sensor readings found — enter readings on Condition Data (Work Management), or connect an online sensor feed.' };
         }
 
-        // Tags that already have an unacknowledged alert — skip them (dedup).
+        // Tags that already have an OPEN alert — skip them (dedup). Open = not
+        // closed (0391); an acknowledged alert is still being worked, so it
+        // must not spawn a twin. Before 0391, the legacy flag decides.
         const existing = await this.getAlerts(assetId);
         const openTags = new Set(
-            existing.filter(a => !a.acknowledged)
+            existing.filter(a => (a.status ? a.status !== 'closed' : !a.acknowledged))
                 .map(a => (a.title.split(': ').pop() || '').trim().toLowerCase())
                 .filter(Boolean),
         );

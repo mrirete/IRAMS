@@ -22,7 +22,7 @@ const MOCK_FLEET: FleetAssetHealth[] = [
 //  Types & Config
 // ─────────────────────────────────────────────────────────
 
-type SortOption = 'health_asc' | 'health_desc' | 'rul_asc' | 'rul_desc' | 'name_asc' | 'crit_asc';
+type SortOption = 'health_asc' | 'health_desc' | 'rul_asc' | 'rul_desc' | 'name_asc' | 'crit_asc' | 'alerts_desc';
 type CritFilter = 'all' | 'A' | 'B' | 'C';
 type ViewMode = 'grid' | 'list';
 
@@ -33,6 +33,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
     { value: 'rul_desc', label: 'RUL ↓ (Longest first)' },
     { value: 'name_asc', label: 'Name A→Z' },
     { value: 'crit_asc', label: 'Criticality (A→C)' },
+    { value: 'alerts_desc', label: 'Open alerts (most first)' },
 ];
 
 const ITEMS_PER_PAGE = 8;
@@ -138,6 +139,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                 case 'rul_desc': return b.rul_days - a.rul_days;
                 case 'name_asc': return a.asset_name.localeCompare(b.asset_name);
                 case 'crit_asc': return a.criticality.localeCompare(b.criticality);
+                case 'alerts_desc': return b.active_alerts - a.active_alerts || a.health_index - b.health_index;
                 default: return 0;
             }
         });
@@ -159,6 +161,8 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
     }, [search, unmonitored]);
 
     const criticalCount = effectiveData.filter(a => isAtRisk(a.health_index)).length;
+    // Open alerts across the fleet (active_alerts counts only alerts not yet closed — 0391).
+    const openAlerts = effectiveData.reduce((n, a) => n + (a.active_alerts || 0), 0);
     const avgHealth = effectiveData.length > 0 ? effectiveData.reduce((s, a) => s + a.health_index, 0) / effectiveData.length : 0;
     const totalCount = totalAssetCount ?? effectiveData.length;
 
@@ -196,6 +200,15 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                 <span className="text-slate-400">Avg Health: </span>
                                 <span className={`font-bold ${getHealthTextColor(avgHealth)}`}>{avgHealth.toFixed(1)}</span>
                             </div>
+                        )}
+                        {openAlerts > 0 && (
+                            <button
+                                onClick={() => { setSort('alerts_desc'); setPage(0); }}
+                                title="Alerts waiting for an outcome — sort the fleet by them"
+                                className="flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full text-amber-700 font-bold hover:bg-amber-100"
+                            >
+                                <AlertTriangle size={12} /> {openAlerts} open alert{openAlerts !== 1 ? 's' : ''}
+                            </button>
                         )}
                         {criticalCount > 0 && (
                             <div className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/30 rounded-full">

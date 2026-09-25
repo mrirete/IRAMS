@@ -55,6 +55,10 @@ export interface RULEstimate {
     computed_at: string;
 }
 
+/** Alert lifecycle (0391). */
+export type AlertStatus = 'new' | 'acknowledged' | 'in_progress' | 'closed';
+export type AlertOutcome = 'confirmed_fault' | 'no_fault_found' | 'known_condition' | 'duplicate';
+
 export interface PredictionAlert {
     alert_id: string;
     asset_id: string;
@@ -69,6 +73,15 @@ export interface PredictionAlert {
     /** Diagnosis layer (0215): ranked failure-mode hypotheses with evidence. */
     diagnosis?: import('../lib/predict/diagnosisRules').DiagnosisResult | null;
     failure_mode_code?: string | null;
+    /** Lifecycle (0391): new → acknowledged → in_progress → closed + outcome. */
+    status?: AlertStatus;
+    outcome?: AlertOutcome | null;
+    outcome_notes?: string | null;
+    closed_at?: string | null;
+    work_request_id?: string | null;
+    work_order_id?: string | null;
+    /** Set when the linked work order closed — time to record the outcome. */
+    work_done_at?: string | null;
 }
 
 export interface SystemTopologyNode {

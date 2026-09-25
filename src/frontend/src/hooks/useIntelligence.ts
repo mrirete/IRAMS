@@ -110,6 +110,14 @@ function normalizeAlert(db: DbAlert): PredictionAlert {
         created_at: db.created_at,
         diagnosis: db.diagnosis ?? null,
         failure_mode_code: db.failure_mode_code ?? null,
+        // Before 0391 there is no status column: the legacy flag decides.
+        status: db.status ?? (db.acknowledged ? 'acknowledged' : 'new'),
+        outcome: db.outcome ?? null,
+        outcome_notes: db.outcome_notes ?? null,
+        closed_at: db.closed_at ?? null,
+        work_request_id: db.work_request_id ?? null,
+        work_order_id: db.work_order_id ?? null,
+        work_done_at: db.work_done_at ?? null,
     };
 }
 

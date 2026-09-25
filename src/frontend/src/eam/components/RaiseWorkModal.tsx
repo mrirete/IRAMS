@@ -41,6 +41,8 @@ interface Props {
     /** Stamped into work_orders.properties so the WO can be traced back to its source
      *  (e.g. { rca_id, rca_action_id }). The DE path stamps { de_task_id } the same way. */
     woProperties?: Record<string, unknown>;
+    /** Don't navigate to the new record after saving — the caller links it and the user keeps their place (Predict alerts). */
+    stayOnPage?: boolean;
 }
 
 const PRIORITIES = [{ v: 'LOW', l: 'Low' }, { v: 'MEDIUM', l: 'Medium' }, { v: 'HIGH', l: 'High' }];
@@ -48,7 +50,7 @@ const TIME_UNITS = ['Days', 'Weeks', 'Months', 'Years'];
 const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
 
-export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays, woProperties }) => {
+export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays, woProperties, stayOnPage }) => {
     const { showToast } = useToast();
     const { permissions } = useAuth();
     const navigate = useNavigate();
@@ -93,7 +95,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 if (onCreated) await onCreated('WO', (wo as any)?.id ?? null);
                 showToast('Work order raised.', 'success');
                 onClose();
-                if ((wo as any)?.id) navigate(`/work-orders/${(wo as any).id}`);
+                if ((wo as any)?.id && !stayOnPage) navigate(`/work-orders/${(wo as any).id}`);
             } else if (kind === 'REQUEST') {
                 if (asset.criticality === 'A' && !faultType) throw new Error('Criticality A needs a fault type (ISO 14224).');
                 const req = await db.createRequest({
@@ -117,7 +119,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 if (onCreated) await onCreated('REQUEST', (req as any)?.id ?? null);
                 showToast('Maintenance request raised.', 'success');
                 onClose();
-                if ((req as any)?.id) navigate('/requests');
+                if ((req as any)?.id && !stayOnPage) navigate('/requests');
             } else {
                 // 0365: a new calendar schedule is due today (date-only — the
                 // sweep compares on the calendar day); meter schedules carry none.
@@ -132,7 +134,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 if (onCreated) await onCreated('PM', (pm as any)?.id ?? null);
                 showToast('PM strategy created.', 'success');
                 onClose();
-                navigate('/recurring-work');
+                if (!stayOnPage) navigate('/recurring-work');
             }
         } catch (e: any) {
             setErr(e?.message || 'Failed to raise.');

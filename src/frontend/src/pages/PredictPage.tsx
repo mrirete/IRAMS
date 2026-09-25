@@ -15,7 +15,7 @@ import predictionService from '../eam/services/PredictionService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { RaiseWorkModal } from '../eam/components/RaiseWorkModal';
 import { useAuth } from '../eam/contexts/AuthContext';
-import type { FleetAssetHealth } from '../types/intelligence';
+import type { FleetAssetHealth, AlertOutcome } from '../types/intelligence';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { SetupJourney } from '../components/predict/SetupJourney';
 import { usePredictSetup } from '../hooks/usePredictSetup';
@@ -23,7 +23,6 @@ import { fetchGroundedFit, type GroundedRul } from '../lib/predict/groundedFit';
 import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
 import type { RULEstimate, PredictionAlert } from '../types/intelligence';
 import { agentService } from '../eam/services/AgentService';
-import type { PredictionAlert as ServiceAlert } from '../eam/services/PredictionService';
 import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
 import { AlertPrecisionCard } from '../components/predict/AlertPrecisionCard';
 import { KpiOutlook } from '../components/predict/KpiOutlook';
@@ -165,14 +164,12 @@ export const PredictPage: React.FC = () => {
     // the old banner's inline grounded-RUL display went with the banner).
     const [advisorOpen, setAdvisorOpen] = useState(false);
 
-    // ── 1.5.4: alert feedback → threshold-adapter loop (HITL) ──
-    // Actionable/false-alarm feedback feeds the threshold_adapter agent, whose
-    // band proposals land in the review panel below — never auto-applied.
-    const [alertFeedbackMap, setAlertFeedbackMap] = useState<Record<string, 'actionable' | 'false_alarm'>>({});
+    // ── 1.5.4: alert outcomes → precision + threshold-adapter loop (HITL) ──
+    // A "no fault found" outcome feeds the threshold_adapter agent, whose band
+    // proposals land in the review panel below — never auto-applied.
     const [feedbackStats, setFeedbackStats] = useState<{ actionable: number; falseAlarm: number; precision: number } | null>(null);
     const [adapterNudge, setAdapterNudge] = useState<string | null>(null);
     useEffect(() => {
-        setAlertFeedbackMap({});
         setAdapterNudge(null);
         if (!selectedAssetId) { setFeedbackStats(null); return; }
         let active = true;
@@ -182,59 +179,34 @@ export const PredictPage: React.FC = () => {
         return () => { active = false; };
     }, [selectedAssetId]);
 
-    const handleAlertFeedback = async (alertId: string, type: 'actionable' | 'false_alarm') => {
-        if (!selectedAssetId) return;
-        const user = profile?.username || profile?.fullName || 'user';
-        const saved = await predictionService.submitAlertFeedback(alertId, selectedAssetId, type, user);
-        if (!saved) return;
-        setAlertFeedbackMap(prev => ({ ...prev, [alertId]: type }));
-        const stats = await predictionService.getAlertFeedbackStats(selectedAssetId);
-        setFeedbackStats(stats);
-        if (type === 'false_alarm') {
-            // Surface the (previously dormant) threshold adapter: enough feedback
-            // → band proposals, pending human review in the panel below.
-            try {
-                const res = await agentService.proposeThresholdAdjustments(selectedAssetId);
-                if (res.agentAction) setAdapterNudge(res.message);
-            } catch { /* advisory only — feedback itself already saved */ }
-        }
+    // ── Alert lifecycle (0391): acknowledge → raise work → close with outcome ──
+    // Anyone may acknowledge or raise work; closing needs reliability edit or
+    // work-order approve (the database enforces the same rule).
+    const { permissions, role } = useAuth() as any;
+    const canCloseAlert = ['SUPER_ADMIN', 'SYS_ADMIN'].includes(String(role || '').toUpperCase())
+        || permissions?.reliability?.edit === true || permissions?.workOrders?.approve === true;
+    const [raiseForAlert, setRaiseForAlert] = useState<PredictionAlert | null>(null);
+
+    const handleAcknowledgeAlert = async (alert: PredictionAlert) => {
+        const r = await predictionService.acknowledgeAlert(alert.alert_id);
+        if (r.ok) await refetchPredict(alert.asset_id);
+        return r;
     };
 
-    // Alert → work: drafts a work request through the alert_to_wo agent for
-    // human review in the Agent Review panel. This handler existed as a service
-    // method with no caller (launch review): the button never rendered.
-    const handleCreateWorkOrder = async (alert: PredictionAlert) => {
-        if (!selectedAsset) return;
-        const a = selectedAsset as any;
-        // The UI alert (types/intelligence) and the persisted alert
-        // (PredictionService) differ in severity vocabulary and nullability;
-        // map explicitly rather than cast.
-        const sev = alert.severity === 'emergency' ? 'critical' : alert.severity === 'info' ? 'low' : alert.severity;
-        const persisted: ServiceAlert = {
-            id: alert.alert_id,
-            alert_id: alert.alert_id,
-            asset_id: alert.asset_id,
-            alert_type: alert.alert_type as ServiceAlert['alert_type'],
-            severity: sev,
-            title: alert.title,
-            description: alert.description ?? null,
-            confidence: alert.confidence ?? null,
-            dqs_impact: alert.dqs_impact ?? null,
-            governance_tier: typeof alert.governance_tier === 'number' ? alert.governance_tier : null,
-            acknowledged: false, acknowledged_by: null, acknowledged_at: null,
-            created_at: alert.created_at,
-            diagnosis: alert.diagnosis ?? null,
-        } as ServiceAlert;
-        const res = await agentService.draftWorkOrderFromAlert(persisted, {
-            assetName: a.name || a.tag || 'Asset',
-            assetTag: a.tag,
-            assetCriticality: a.criticality,
-            assetType: a.asset_class || a.assetClass || a.type,
-        });
-        setAdapterNudge(res.success
-            ? `${res.message} Review it in the Agent Review panel below.`
-            : `Could not draft a work order from this alert: ${res.message}`);
-        if (!res.success) throw new Error(res.message);
+    const handleCloseAlert = async (alert: PredictionAlert, outcome: AlertOutcome, notes: string) => {
+        const user = profile?.username || profile?.fullName || 'user';
+        const r = await predictionService.closeAlert(alert.alert_id, alert.asset_id, outcome, notes, user);
+        if (!r.ok) return r;
+        await refetchPredict(alert.asset_id);
+        setFeedbackStats(await predictionService.getAlertFeedbackStats(alert.asset_id));
+        if (outcome === 'no_fault_found') {
+            // A false alarm feeds the threshold adapter: band proposals wait for review below.
+            try {
+                const res = await agentService.proposeThresholdAdjustments(alert.asset_id);
+                if (res.agentAction) setAdapterNudge(res.message);
+            } catch { /* advisory only — the outcome itself is saved */ }
+        }
+        return r;
     };
 
     // ── #3: REAL condition alarms from R-4 measurement-point bands (not synthetic) ──
@@ -421,7 +393,9 @@ export const PredictPage: React.FC = () => {
 
                 const rulMap = new Map(ruls.map(r => [r.asset_id, r]));
                 const alertCountMap = new Map<string, number>();
-                dbAlerts.forEach(a => alertCountMap.set(a.asset_id, (alertCountMap.get(a.asset_id) || 0) + 1));
+                // Open alerts only — a closed alert has its outcome and needs nobody (0391).
+                dbAlerts.filter(a => (a.status ? a.status !== 'closed' : !a.acknowledged))
+                    .forEach(a => alertCountMap.set(a.asset_id, (alertCountMap.get(a.asset_id) || 0) + 1));
 
                 // Build FleetAssetHealth array, enriching each with register data
                 // Only include equipment-level assets (exclude SITE/UNIT/SYSTEM hierarchy items)
@@ -1076,9 +1050,10 @@ export const PredictPage: React.FC = () => {
                         assetAlerts={assetAlerts}
                         groundedFit={groundedActive ? grounded : null}
                         feedbackStats={feedbackStats}
-                        alertFeedbackMap={alertFeedbackMap}
-                        onAlertFeedback={handleAlertFeedback}
-                        onCreateWorkOrder={handleCreateWorkOrder}
+                        canCloseAlert={canCloseAlert}
+                        onAcknowledgeAlert={handleAcknowledgeAlert}
+                        onRaiseWork={setRaiseForAlert}
+                        onCloseAlert={handleCloseAlert}
                     />
                     {/* Measure → Forecast bridge: SMRP + PSC KPIs, measured vs simulated */}
                     <div className="mt-4">
@@ -1122,6 +1097,32 @@ export const PredictPage: React.FC = () => {
                     faultTypes={predictFaultTypes}
                     contextNote={`From Predict — Health ${systemHealth.toFixed(1)}/100 · RUL ${rulEstimate?.rul_days?.toFixed(0) || 'N/A'}d · Criticality ${critLevel || 'B'} · ${effectiveAlertCount} condition alarm(s).`}
                     onClose={() => setRaiseOpen(false)}
+                />
+            )}
+
+            {/* Alert → work request (0391): raised here, linked back to the alert; stays on Predict */}
+            {raiseForAlert && selectedAssetId && (
+                <RaiseWorkModal
+                    asset={{ id: selectedAssetId, tag: selectedAsset?.tag || '', name: selectedAsset?.name || selectedAssetId, criticality: (critLevel as any) } as any}
+                    kind="REQUEST"
+                    actor={profile?.username || profile?.fullName || 'user'}
+                    requesterId={profile?.id}
+                    sourceLabel="Predict · alert"
+                    faultTypes={predictFaultTypes}
+                    initialTitle={raiseForAlert.title}
+                    contextNote={[
+                        `From Predict alert ${raiseForAlert.alert_id} (${raiseForAlert.severity}).`,
+                        raiseForAlert.description,
+                        raiseForAlert.diagnosis?.hypotheses?.[0] ? `Most likely cause: ${raiseForAlert.diagnosis.hypotheses[0].failure_mode_code} ${raiseForAlert.diagnosis.hypotheses[0].failure_mode_label}.` : null,
+                    ].filter(Boolean).join(' ')}
+                    stayOnPage
+                    onCreated={async (kind, id) => {
+                        if (!id || kind === 'PM') return;
+                        const r = await predictionService.linkAlertWork(raiseForAlert.alert_id, kind === 'REQUEST' ? { workRequestId: id } : { workOrderId: id });
+                        if (!r.ok) setAdapterNudge(r.message || 'The work was raised but not linked to the alert.');
+                        await refetchPredict(raiseForAlert.asset_id);
+                    }}
+                    onClose={() => setRaiseForAlert(null)}
                 />
             )}
 

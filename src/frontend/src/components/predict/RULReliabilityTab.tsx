@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { FileWarning, ShieldCheck, HelpCircle, CheckCircle2, XCircle, Wrench, BarChart3, Loader2 } from 'lucide-react';
+import React from 'react';
+import { FileWarning, HelpCircle, BarChart3 } from 'lucide-react';
+import { AlertQueue } from './AlertQueue';
 import { WeibullChart } from './WeibullChart';
-import type { RULEstimate, PredictionAlert } from '../../types/intelligence';
+import type { RULEstimate, PredictionAlert, AlertOutcome } from '../../types/intelligence';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 
 interface FeedbackStats {
@@ -11,40 +12,22 @@ interface FeedbackStats {
 }
 
 interface RULReliabilityTabProps {
+    /** Alert lifecycle (0391) — see AlertQueue. */
+    canCloseAlert: boolean;
+    onAcknowledgeAlert: (a: PredictionAlert) => Promise<{ ok: boolean; message?: string }>;
+    onRaiseWork: (a: PredictionAlert) => void;
+    onCloseAlert: (a: PredictionAlert, outcome: AlertOutcome, notes: string) => Promise<{ ok: boolean; message?: string }>;
     rulEstimate: RULEstimate | null;
     assetAlerts: PredictionAlert[];
     /** Grounded censored-Weibull fit (Phase 1) — drives the survival curve & method note. */
     groundedFit?: GroundedRul | null;
     /** Feedback stats for the current asset — drives precision display */
     feedbackStats?: FeedbackStats | null;
-    /** Called when user marks an alert as Actionable or False Alarm */
-    onAlertFeedback?: (alertId: string, type: 'actionable' | 'false_alarm') => Promise<void>;
-    /** Called when user wants to draft a Work Order from an alert */
-    onCreateWorkOrder?: (alert: PredictionAlert) => Promise<void>;
-    /** Map of alert_id → feedback_status for visual state */
-    alertFeedbackMap?: Record<string, 'actionable' | 'false_alarm'>;
 }
 
 export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
-    rulEstimate, assetAlerts, groundedFit, feedbackStats, onAlertFeedback, onCreateWorkOrder, alertFeedbackMap = {},
+    rulEstimate, assetAlerts, groundedFit, feedbackStats, canCloseAlert, onAcknowledgeAlert, onRaiseWork, onCloseAlert,
 }) => {
-    const [loadingFeedback, setLoadingFeedback] = useState<Record<string, boolean>>({});
-    const [loadingWO, setLoadingWO] = useState<string | null>(null);
-
-    const handleFeedback = async (alertId: string, type: 'actionable' | 'false_alarm') => {
-        if (!onAlertFeedback) return;
-        setLoadingFeedback(prev => ({ ...prev, [alertId]: true }));
-        try { await onAlertFeedback(alertId, type); }
-        finally { setLoadingFeedback(prev => ({ ...prev, [alertId]: false })); }
-    };
-
-    const handleCreateWO = async (alert: PredictionAlert) => {
-        if (!onCreateWorkOrder) return;
-        setLoadingWO(alert.alert_id);
-        try { await onCreateWorkOrder(alert); }
-        finally { setLoadingWO(null); }
-    };
-
     const totalFeedback = (feedbackStats?.actionable || 0) + (feedbackStats?.falseAlarm || 0);
 
     return (
@@ -116,10 +99,10 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
                         <h3 className="text-base font-semibold text-slate-800 mb-2 flex items-center gap-2">
                             <FileWarning size={18} className="text-red-400" />
-                            Prediction Alerts
-                            <span className="text-xs font-normal text-slate-400 ml-auto">This Asset</span>
+                            Alerts
+                            <span className="text-xs font-normal text-slate-400 ml-auto">This asset</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Warnings when readings near their limits or drift. Each shows its confidence and governance tier.</p>
+                        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Warnings when readings near their limits or drift. Each one ends with a recorded outcome.</p>
 
                         {/* ── Alert Precision Banner ── */}
                         {totalFeedback > 0 && (
@@ -146,115 +129,57 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                             </div>
                         )}
 
-                        <div className="space-y-4">
-                            {assetAlerts.length === 0 ? (
-                                <div className="text-center py-6">
-                                    <ShieldCheck size={28} className="mx-auto text-accent-safe/50 mb-2" />
-                                    <p className="text-sm text-slate-400">No active alerts for this asset.</p>
-                                </div>
-                            ) : (
-                                assetAlerts.map(alert => {
-                                    const feedbackStatus = alertFeedbackMap[alert.alert_id];
-                                    const isLoading = loadingFeedback[alert.alert_id];
-                                    const isHighSeverity = alert.severity === 'high' || (alert.severity as string) === 'critical';
-
-                                    return (
-                                        <div key={alert.alert_id} className="relative pl-4 border-l-2 border-slate-200 pb-3 last:pb-0">
-                                            <div className={`absolute -left-1.5 top-1.5 w-2.5 h-2.5 rounded-full ${alert.severity === 'high' || (alert.severity as string) === 'critical' ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]' : alert.severity === 'medium' ? 'bg-yellow-500' : 'bg-brand-400'}`} />
-                                            <p className="text-xs text-slate-400 mb-0.5">
-                                                {new Date(alert.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                            </p>
-                                            <p className={`text-sm font-semibold ${alert.severity === 'high' || (alert.severity as string) === 'critical' ? 'text-red-400' : alert.severity === 'medium' ? 'text-yellow-500' : 'text-brand-300'}`}>
-                                                {alert.title}
-                                            </p>
-                                            <p className="text-xs text-slate-500 mt-1 mb-2 leading-relaxed">{alert.description}</p>
-
-                                            {/* Probable causes — diagnosis layer (0215), ranked with evidence */}
-                                            {(alert.diagnosis?.hypotheses?.length ?? 0) > 0 && (
-                                                <div className="mb-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Probable causes</p>
-                                                    <div className="space-y-1.5">
-                                                        {alert.diagnosis!.hypotheses.slice(0, 3).map(h => (
-                                                            <div key={h.failure_mode_code}>
-                                                                <div className="flex items-center gap-1.5 text-[11px]">
-                                                                    <span className="font-mono font-bold text-slate-600">{h.failure_mode_code}</span>
-                                                                    <span className="text-slate-600 truncate">{h.failure_mode_label}</span>
-                                                                    <span className={`px-1 py-0.5 rounded border text-[8px] font-bold shrink-0 ${h.basis === 'deterministic-rule' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}
-                                                                        title={h.basis === 'deterministic-rule' ? 'Specific signature matched a rule' : 'Coarse association — screening only'}>
-                                                                        {h.basis === 'deterministic-rule' ? 'RULE' : 'SCREEN'}
-                                                                    </span>
-                                                                    <span className="ml-auto font-bold tabular-nums text-slate-500 shrink-0">{Math.round(h.confidence * 100)}%</span>
-                                                                </div>
-                                                                {h.evidence.slice(0, 2).map((e, j) => (
-                                                                    <p key={j} className="text-[10px] text-slate-400 pl-1 leading-snug">· {e.summary}</p>
-                                                                ))}
-                                                            </div>
+                        <AlertQueue
+                            alerts={assetAlerts}
+                            canClose={canCloseAlert}
+                            onAcknowledge={onAcknowledgeAlert}
+                            onRaiseWork={onRaiseWork}
+                            onClose={onCloseAlert}
+                            renderDetail={(alert) => (
+                                <>
+                                    {/* Probable causes — diagnosis layer (0215), ranked with evidence */}
+                                    {(alert.diagnosis?.hypotheses?.length ?? 0) > 0 && (
+                                        <div className="mb-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Probable causes</p>
+                                            <div className="space-y-1.5">
+                                                {alert.diagnosis!.hypotheses.slice(0, 3).map(h => (
+                                                    <div key={h.failure_mode_code}>
+                                                        <div className="flex items-center gap-1.5 text-[11px]">
+                                                            <span className="font-mono font-bold text-slate-600">{h.failure_mode_code}</span>
+                                                            <span className="text-slate-600 truncate">{h.failure_mode_label}</span>
+                                                            <span className={`px-1 py-0.5 rounded border text-[8px] font-bold shrink-0 ${h.basis === 'deterministic-rule' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}
+                                                                title={h.basis === 'deterministic-rule' ? 'Specific signature matched a rule' : 'Coarse association — screening only'}>
+                                                                {h.basis === 'deterministic-rule' ? 'RULE' : 'SCREEN'}
+                                                            </span>
+                                                            <span className="ml-auto font-bold tabular-nums text-slate-500 shrink-0">{Math.round(h.confidence * 100)}%</span>
+                                                        </div>
+                                                        {h.evidence.slice(0, 2).map((e, j) => (
+                                                            <p key={j} className="text-[10px] text-slate-400 pl-1 leading-snug">· {e.summary}</p>
                                                         ))}
                                                     </div>
-                                                    <p className="text-[9px] text-slate-300 mt-1.5">diagnosis-rules-v1 · deterministic — confirm before intervening</p>
-                                                </div>
-                                            )}
-
-                                            {/* Metadata badges */}
-                                            <div className="flex flex-wrap gap-1.5 text-[10px] font-medium mb-2">
-                                                <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-brand-300">
-                                                    AI Conf: {(alert.confidence * 100).toFixed(0)}%
-                                                </span>
-                                                <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 font-mono">
-                                                    T{alert.governance_tier}
-                                                </span>
-                                                {alert.dqs_impact > 0 && (
-                                                    <span className="bg-slate-50 border border-yellow-500/30 px-1.5 py-0.5 rounded text-yellow-600">
-                                                        DQS: -{(alert.dqs_impact * 100).toFixed(0)}%
-                                                    </span>
-                                                )}
-                                                {/* Feedback status badge */}
-                                                {feedbackStatus && (
-                                                    <span className={`px-1.5 py-0.5 rounded font-semibold ${feedbackStatus === 'actionable'
-                                                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                                                        : 'bg-orange-50 border border-orange-200 text-orange-600'
-                                                    }`}>
-                                                        {feedbackStatus === 'actionable' ? '✓ CONFIRMED' : '✕ DISMISSED'}
-                                                    </span>
-                                                )}
+                                                ))}
                                             </div>
-
-                                            {/* ── Agentic Action Buttons ── */}
-                                            {!feedbackStatus && onAlertFeedback && (
-                                                <div className="flex flex-wrap gap-1.5 mt-1">
-                                                    <button
-                                                        onClick={() => handleFeedback(alert.alert_id, 'actionable')}
-                                                        disabled={isLoading}
-                                                        className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-50"
-                                                    >
-                                                        {isLoading ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />}
-                                                        Actionable
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleFeedback(alert.alert_id, 'false_alarm')}
-                                                        disabled={isLoading}
-                                                        className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 transition-colors disabled:opacity-50"
-                                                    >
-                                                        {isLoading ? <Loader2 size={10} className="animate-spin" /> : <XCircle size={10} />}
-                                                        False Alarm
-                                                    </button>
-                                                    {isHighSeverity && onCreateWorkOrder && (
-                                                        <button
-                                                            onClick={() => handleCreateWO(alert)}
-                                                            disabled={loadingWO === alert.alert_id}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50"
-                                                        >
-                                                            {loadingWO === alert.alert_id ? <Loader2 size={10} className="animate-spin" /> : <Wrench size={10} />}
-                                                            Create WO
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
+                                            <p className="text-[9px] text-slate-300 mt-1.5">diagnosis-rules-v1 · deterministic — confirm before intervening</p>
                                         </div>
-                                    );
-                                })
+                                    )}
+
+                                    {/* Metadata badges */}
+                                    <div className="flex flex-wrap gap-1.5 text-[10px] font-medium mb-2">
+                                        <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-brand-300">
+                                            AI Conf: {(alert.confidence * 100).toFixed(0)}%
+                                        </span>
+                                        <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 font-mono">
+                                            T{alert.governance_tier}
+                                        </span>
+                                        {alert.dqs_impact > 0 && (
+                                            <span className="bg-slate-50 border border-yellow-500/30 px-1.5 py-0.5 rounded text-yellow-600">
+                                                DQS: -{(alert.dqs_impact * 100).toFixed(0)}%
+                                            </span>
+                                        )}
+                                    </div>
+                                </>
                             )}
-                        </div>
+                        />
                     </div>
                 </div>
             </div>
