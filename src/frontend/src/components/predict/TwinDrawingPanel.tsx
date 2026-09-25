@@ -195,10 +195,12 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
                     </Link>
                 )}
             </div>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                The stored P&amp;ID with every drawn component resolved to the register and badged with its health
-                snapshot. Click a component to study it; the heat-map toggle shows open work orders.
-            </p>
+            {/* Only when a drawing is on screen: it names the drawing's own Heat Map button. */}
+            {current && (
+                <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                    Each part shows its health. Click a part to study it. <b className="font-semibold text-slate-500">Heat Map</b> colours parts by open work orders.
+                </p>
+            )}
 
             {error && <p className="text-xs text-red-600">Could not load drawings: {error}</p>}
 
@@ -207,11 +209,10 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
             )}
 
             {!error && drawings !== null && !current && (
-                <div className="border border-dashed border-slate-300 rounded-lg p-5 text-center">
+                <div className="mt-3 border border-dashed border-slate-300 rounded-lg p-5 text-center">
                     <p className="text-sm font-medium text-slate-500">No drawing shows {assetTag || assetName} yet</p>
                     <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
-                        Draw or import the P&amp;ID in Reliability Modelling and link its components to the register
-                        (by tag is enough) — the twin then has a picture, and permits can propose isolation from it.
+                        Draw the P&amp;ID once and tag its parts. Predict then shows where the asset sits.
                     </p>
                     <Link to={rmHref} className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-xs font-semibold rounded-lg transition-colors">
                         Start “{newDrawingTitle(systemName, label)}” <ArrowRight size={12} />

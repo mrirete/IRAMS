@@ -124,6 +124,7 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
         }
     };
 
+    const sampleCount = useMemo(() => (rawText.trim() ? parseWaveformText(rawText).length : 0), [rawText]);
     const handleAnalyze = () => run(parseWaveformText(rawText), false);
     const handleDemo = () => {
         setFs('5120');
@@ -171,9 +172,8 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                 <span className="text-[10px] font-normal text-slate-400 ml-auto">{assetName}</span>
             </h3>
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                FFT + envelope demodulation on a time-waveform: 1×/2× lines flag imbalance and misalignment;
-                impulsive kurtosis with an envelope tone flags rolling-element bearing defects. Screening aid
-                (ISO 13373-style) — findings are candidates for an analyst, not verdicts.
+                Paste a vibration waveform to see its spectrum. It flags imbalance, misalignment and bearing
+                defects. Findings are screening hints for an analyst (ISO 13373), not verdicts.
             </p>
 
             {/* Capture inputs — fixed widths; the asset's speed and bearings come from Monitoring setup */}
@@ -209,13 +209,19 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                     value={rawText}
                     onChange={e => setRawText(e.target.value)}
                     rows={4}
-                    placeholder={'Paste values (one per line or comma-separated), or time,value CSV rows.\nMost analyzers and data collectors export this directly.'}
+                    placeholder={'0.012\n-0.034\n0.051\n…\nor  0.012, -0.034, 0.051, …\nor  time,value rows'}
                     className="w-full mt-1 p-2.5 border border-slate-200 rounded-lg text-xs font-mono resize-none focus:border-primary-400 focus:outline-none"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">
+                {/* What the parser actually read — the format question answers itself. */}
+                <p className={`text-[10px] mt-0.5 ${sampleCount > 0 && sampleCount < 64 ? 'text-amber-700' : 'text-slate-400'}`}>
+                    {sampleCount === 0
+                        ? 'Readings evenly spaced at the sample rate, any unit (g, mm/s). At least 64 values. Header lines are skipped.'
+                        : `${sampleCount.toLocaleString()} values read · ${(sampleCount / (Number(fs) || 1)).toFixed(2)} s at ${Number(fs) || '?'} Hz${sampleCount < 64 ? ' · need at least 64' : ''}`}
+                </p>
+                <p className="text-[10px] text-slate-400">
                     {bearings.length > 0
-                        ? `${bearings.length} bearing spec${bearings.length !== 1 ? 's' : ''} from Monitoring setup name envelope tones.`
-                        : 'Add bearings in Monitoring setup to name envelope tones (outer race, inner race, ball, cage).'}
+                        ? `${bearings.length} bearing${bearings.length !== 1 ? 's' : ''} from Monitoring setup will name defect tones.`
+                        : 'Add bearings in Monitoring setup to name defect tones.'}
                 </p>
             </div>
 

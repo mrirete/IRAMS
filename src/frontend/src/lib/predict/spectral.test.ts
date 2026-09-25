@@ -82,6 +82,12 @@ describe('parseWaveformText', () => {
     it('parses bare numbers, CSV pairs, and skips headers', () => {
         expect(parseWaveformText('1.5\n-2.5\n3')).toEqual([1.5, -2.5, 3]);
         expect(parseWaveformText('time,value\n0.001, 0.42\n0.002, -0.13')).toEqual([0.42, -0.13]);
-        expect(parseWaveformText('# comment\n0.1 0.2 0.9')).toEqual([0.9]);
+        expect(parseWaveformText('# comment\n0.1 0.2 0.9')).toEqual([0.1, 0.2, 0.9]);
+    });
+
+    it('a comma list is every value, one line or wrapped (it used to keep only the last)', () => {
+        expect(parseWaveformText('0.1, 0.2, 0.3, 0.4')).toEqual([0.1, 0.2, 0.3, 0.4]);
+        expect(parseWaveformText('0.1, 0.2, 0.3\n0.4, 0.5, 0.6')).toEqual([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+        expect(parseWaveformText('0.1, 0.2')).toEqual([0.1, 0.2]);   // one line = a list, not one time,value row
     });
 });

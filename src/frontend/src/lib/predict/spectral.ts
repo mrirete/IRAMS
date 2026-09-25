@@ -370,24 +370,27 @@ export function decimateForPlot(spec: Spectrum, maxPoints = 400, fMaxHz?: number
     return out;
 }
 
-/** Parse pasted/CSV waveform text: bare numbers, or rows whose LAST numeric column is the value. */
+/**
+ * Parse pasted/CSV waveform text. Accepts one value per line, a comma/space
+ * list (one line or wrapped), or time,value rows. A row of exactly two
+ * numbers is time,value (the value is kept); three or more is a list. A single
+ * line is always a list — the hint said "comma-separated" while a one-line
+ * list used to keep only its last number. Lines starting with a letter or #
+ * (headers, comments) are skipped.
+ */
 export function parseWaveformText(text: string): number[] {
+    const rows = text.split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l && !/^[a-zA-Z#]/.test(l))
+        .map(l => l.split(/[,;\t ]+/).filter(Boolean));
     const out: number[] = [];
-    for (const rawLine of text.split(/\r?\n/)) {
-        const line = rawLine.trim();
-        if (!line || /^[a-zA-Z#]/.test(line)) continue;   // headers/comments
-        const cells = line.split(/[,;\t ]+/).filter(Boolean);
-        if (cells.length === 1) {
-            const v = Number(cells[0]);
-            if (Number.isFinite(v)) out.push(v);
-        } else {
-            // time,value style — take the last numeric cell per row
-            const v = Number(cells[cells.length - 1]);
-            if (Number.isFinite(v)) out.push(v);
-        }
+    const push = (c: string) => { const v = Number(c); if (Number.isFinite(v)) out.push(v); };
+    for (const cells of rows) {
+        if (rows.length > 1 && cells.length === 2) push(cells[1]);   // time,value
+        else cells.forEach(push);                                     // one value, or a list
         if (out.length >= MAX_SAMPLES) break;
     }
-    return out;
+    return out.slice(0, MAX_SAMPLES);
 }
 
 /**
