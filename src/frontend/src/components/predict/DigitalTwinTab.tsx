@@ -163,8 +163,8 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
             {/* Digital Twin Trajectory Chart */}
             <div className="bg-white border border-slate-200 rounded-xl shadow-lg flex flex-col">
                 <div className="p-5 border-b border-slate-200">
-                    <div className="flex justify-between items-center">
-                        <div className="flex items-center space-x-2">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <div className="flex items-center flex-wrap gap-2">
                             <HeartPulse className="text-accent-cyan" size={20} />
                             <h3 className="text-lg font-semibold text-slate-800">Digital Twin Trajectory</h3>
                             {rulEstimate?.governance_tier != null && (
@@ -172,13 +172,13 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                             )}
                             <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Directional</span>
                         </div>
-                        <div className="flex items-center space-x-2 text-xs">
+                        <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs">
                             <span className="flex items-center"><div className="w-2 h-2 rounded-full bg-accent-cyan mr-1.5" /> Projected</span>
-                            <span className="flex items-center ml-3"><div className="w-2 h-2 rounded-full bg-blue-500/30 mr-1.5" /> Spread</span>
-                            <span className="flex items-center ml-3"><div className="w-2 h-2 rounded-full bg-red-500 mr-1.5" /> Failure Limit</span>
+                            <span className="flex items-center"><div className="w-2 h-2 rounded-full bg-blue-500/30 mr-1.5" /> Spread</span>
+                            <span className="flex items-center"><div className="w-2 h-2 rounded-full bg-red-500 mr-1.5" /> Failure limit</span>
                         </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">Projects the health index 30 days ahead at a fixed decay rate set by its current band — a direction, not a fitted forecast. The band is a widening spread, not a statistical confidence interval; the fitted life model (when the asset has failure history) lives in RUL &amp; Reliability.</p>
+                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">Health for the next 30 days at a fixed rate for its band. A direction, not a forecast. The fitted forecast is on the Forecast tab.</p>
                 </div>
                 <div className="p-5 min-h-[350px]">
                     <TwinHealthChart twinState={twinHealth} />
@@ -192,7 +192,7 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                         <AlertTriangle size={18} className="text-yellow-500" />
                         Active Degradation Mechanisms
                     </h3>
-                    <p className="text-xs text-slate-400 mb-4 leading-relaxed">Indicative wear mechanisms inferred from the health trend — directional, not fitted physics (thickness-based corrosion rates live in the Integrity panel; fitted life models in RUL & Reliability). The bar shows estimated life consumed; projected failure is when damage reaches 100%.</p>
+                    <p className="text-xs text-slate-400 mb-4 leading-relaxed">Likely wear, read from the health trend. Not fitted physics. The bar shows life used; failure is at 100%.</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {twinHealth.degradation_models.map((model, idx) => (
                             <div key={idx} className="bg-slate-50 border border-slate-200 rounded-lg p-4">

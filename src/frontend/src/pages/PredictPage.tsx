@@ -669,7 +669,7 @@ export const PredictPage: React.FC = () => {
                     <div className="flex items-center gap-2.5">
                         <h1 className="text-2xl font-bold text-slate-800 font-sans tracking-tight">Predictive Insights</h1>
                     </div>
-                    <p className="text-slate-500 text-sm mt-1">Condition-based health monitoring & failure forecasting — fitted Weibull RUL where failure history exists, directional heuristics otherwise</p>
+                    <p className="text-slate-500 text-sm mt-1">See each asset's health and when it may fail.</p>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -935,7 +935,7 @@ export const PredictPage: React.FC = () => {
             {/* ═══ ASSET SWITCHER — the study's asset; "Change" opens the picker. Absent
                 until an asset is chosen: the fleet chooser below is the one search then. ═══ */}
             {selectedAssetId && (
-            <div className="flex items-stretch gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-stretch gap-2 sm:gap-3">
                 <button
                     onClick={openPicker}
                     className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-accent-cyan/50 hover:shadow-md transition-all text-left group"

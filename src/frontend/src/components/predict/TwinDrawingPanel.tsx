@@ -189,9 +189,9 @@ export const TwinDrawingPanel: React.FC<Props> = ({ assetId, assetTag, assetName
                     <MapIcon size={18} className="text-blue-500" />
                     Drawing — where {assetTag || assetName} sits
                 </h3>
-                {drawings !== null && (
+                {current && (
                     <Link to={rmHref} className="text-[11px] font-medium text-primary-600 hover:text-primary-500 flex items-center gap-1">
-                        {current ? 'Open this drawing' : 'Start a drawing'} <ArrowRight size={11} />
+                        Open this drawing <ArrowRight size={11} />
                     </Link>
                 )}
             </div>

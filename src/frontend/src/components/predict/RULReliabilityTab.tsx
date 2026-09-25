@@ -53,8 +53,8 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                 {/* RUL Estimate Card — takes 2/3 width */}
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-                        <h3 className="text-base font-semibold text-slate-800 mb-2 flex items-center justify-between">
-                            Remaining Useful Life
+                        <h3 className="text-base font-semibold text-slate-800 mb-2 flex items-center justify-between flex-wrap gap-2">
+                            Remaining useful life
                             {/* No live fit → heuristic, whatever a legacy row's label claims */}
                             <span className={`text-xs font-normal px-2 py-1 rounded ${groundedFit ? 'text-primary-700 bg-primary-50 border border-primary-100' : 'text-amber-700 bg-amber-50 border border-amber-200'}`}>
                                 {groundedFit ? 'WEIBULL MRL · FITTED' : 'HEURISTIC · DIRECTIONAL'}
@@ -63,7 +63,7 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                         <p className="text-xs text-slate-400 mb-4 leading-relaxed">
                             {groundedFit
                                 ? groundedFit.note
-                                : 'Directional estimate from the health-index trend — not a fitted life model. It becomes a fitted Weibull automatically once this asset has ≥2 recorded failures.'}
+                                : 'An estimate from the health trend, not a fitted model. It becomes a fitted Weibull once the asset has 2 recorded failures.'}
                         </p>
 
                         <div className="flex items-baseline justify-center gap-1 my-6">
@@ -119,7 +119,7 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                             Prediction Alerts
                             <span className="text-xs font-normal text-slate-400 ml-auto">This Asset</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mb-4 leading-relaxed">AI-generated warnings when sensor readings approach alarm limits or show anomalous trends. Each alert includes confidence score and ISO 55000 governance tier.</p>
+                        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Warnings when readings near their limits or drift. Each shows its confidence and governance tier.</p>
 
                         {/* ── Alert Precision Banner ── */}
                         {totalFeedback > 0 && (
@@ -263,7 +263,7 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
             <div className="flex items-start gap-3 bg-slate-50 border border-slate-200/50 rounded-lg p-4">
                 <HelpCircle size={16} className="text-slate-400 mt-0.5 shrink-0" />
                 <p className="text-xs text-slate-500 leading-relaxed">
-                    <strong>ISO 55000 Governance:</strong> These predictions are generated under <span className="font-mono bg-brand-800 px-1 rounded">Tier {rulEstimate?.governance_tier}</span> governance. They are advisory and should complement, not replace, engineering judgment. A Data Quality Score (DQS) impact penalty has been applied to confidence intervals where sensor reliability is degraded.
+                    <strong>ISO 55000 governance · Tier {rulEstimate?.governance_tier}.</strong> These predictions are advisory. They support engineering judgment; they don't replace it. Confidence is reduced where sensor data quality is poor.
                 </p>
             </div>
         </div>

@@ -166,10 +166,10 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
 
     return (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-            <h3 className="text-base font-semibold text-slate-800 mb-1 flex items-center gap-2">
+            <h3 className="text-base font-semibold text-slate-800 mb-1 flex items-center flex-wrap gap-x-2 gap-y-0.5">
                 <AudioWaveform size={18} className="text-primary-500" />
-                Spectral Analysis — Vibration Waveform (DM layer)
-                <span className="text-[10px] font-normal text-slate-400 ml-auto">{assetName}</span>
+                Vibration spectrum
+                <span className="text-[10px] font-normal text-slate-400 w-full sm:w-auto sm:ml-auto">{assetName}</span>
             </h3>
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
                 Paste a vibration waveform to see its spectrum. It flags imbalance, misalignment and bearing
@@ -208,7 +208,7 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                 <textarea
                     value={rawText}
                     onChange={e => setRawText(e.target.value)}
-                    rows={4}
+                    rows={6}
                     placeholder={'0.012\n-0.034\n0.051\n…\nor  0.012, -0.034, 0.051, …\nor  time,value rows'}
                     className="w-full mt-1 p-2.5 border border-slate-200 rounded-lg text-xs font-mono resize-none focus:border-primary-400 focus:outline-none"
                 />

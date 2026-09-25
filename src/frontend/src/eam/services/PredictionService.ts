@@ -45,6 +45,7 @@ import {
 } from '../../lib/predict/regimeBaseline';
 import { alarmGates } from '../../lib/predict/alarmGates';
 import { sensorHealthScore } from '../../lib/predict/sensorScore';
+import type { RegisterBearingRow } from '../../lib/predict/registerBearings';
 
 /** A point the regime detector fired on, with what it needs to explain itself. */
 interface RegimeFired {
@@ -564,6 +565,23 @@ class PredictionService {
         const seen = new Set<string>();
         return (data || []).map((r: any) => ({ tag: String(r.tag), unit: r.unit ?? '' }))
             .filter(t => { const k = t.tag.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    }
+
+    /**
+     * Register rows that may be this asset's bearings: its children, and — when
+     * the asset is itself a component/subunit — its siblings on the same
+     * machine. lib/predict/registerBearings decides which are bearings.
+     */
+    async getRegisterBearingRows(assetId: string): Promise<RegisterBearingRow[]> {
+        const { data: self } = await supabase.from('assets').select('id, parent_id, hierarchy_level').eq('id', assetId).maybeSingle();
+        const parent = self && ['COMPONENT', 'SUBUNIT'].includes(String(self.hierarchy_level).toUpperCase()) ? self.parent_id : null;
+        const or = [`id.eq.${assetId}`, `parent_id.eq.${assetId}`, ...(parent ? [`parent_id.eq.${parent}`] : [])].join(',');
+        const { data, error } = await supabase.from('assets').select('id, tag, name, manufacturer, model').or(or).limit(200);
+        if (error) {
+            console.warn('[PredictionService.getRegisterBearingRows]', error.message);
+            return [];
+        }
+        return (data || []) as RegisterBearingRow[];
     }
 
     /** Active measurement points on the asset, for pickers. */

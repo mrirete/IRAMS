@@ -372,7 +372,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             })()}
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 min-[480px]:grid-cols-2 md:grid-cols-4 gap-3">
                         {(() => {
                             const rawSensors = assetSensorTrends.length > 0
                                 ? assetSensorTrends
@@ -417,13 +417,13 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
 
                             return (
                                 <div key={`${sensor.tag}-${idx}`} className="bg-slate-50/50 border border-slate-200/70 rounded-lg px-4 py-3 hover:border-slate-300 hover:shadow-sm transition-all">
-                                    <div className="flex items-start justify-between mb-1">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="p-1.5 bg-white rounded-lg text-slate-500 border border-slate-100">
+                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                            <div className="p-1.5 bg-white rounded-lg text-slate-500 border border-slate-100 shrink-0">
                                                 {getSensorIcon(sensor.tag)}
                                             </div>
-                                            <div>
-                                                <p className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">{sensor.tag}</p>
+                                            <div className="min-w-0">
+                                                <p className="text-[11px] text-slate-500 uppercase tracking-wide font-medium break-words">{sensor.tag}</p>
                                                 <div className="flex items-center gap-1.5">
                                                     <p className="text-lg font-bold text-slate-800 tabular-nums">{typeof sensor.current === 'number' ? sensor.current.toLocaleString() : sensor.current}</p>
                                                     {sensor.unit && <span className="text-[10px] text-slate-400 font-medium">{sensor.unit}</span>}
@@ -433,7 +433,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                         </div>
                                         {/* ISO Zone badge */}
                                         {isoZone && (
-                                            <span title={isoZone.basis} className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isoZone.bgColor} ${isoZone.color} border-current/20`}>
+                                            <span title={isoZone.basis} className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border ${isoZone.bgColor} ${isoZone.color} border-current/20`}>
                                                 {isoZone.zone}
                                             </span>
                                         )}

@@ -9,12 +9,13 @@
  * was not a live tag), rated speed only when a bearing was added or removed.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Settings2, Pencil, AlertTriangle, X, Gauge, Cog, Activity } from 'lucide-react';
+import { Settings2, Pencil, AlertTriangle, X, Gauge, Cog, Activity, Database, Check } from 'lucide-react';
 import { Modal, Field, Input, Select } from '../../eam/components/ui';
 import { useAuth } from '../../eam/contexts/AuthContext';
 import { predictionService, type AssetPredictConfig } from '../../eam/services/PredictionService';
 import { faultFrequencies, type BearingSpec } from '../../lib/predict/bearingFaults';
 import { BEARING_CATALOG } from '../../lib/predict/bearingCatalog';
+import { registerBearingSuggestions, type BearingSuggestion } from '../../lib/predict/registerBearings';
 
 interface Props {
     assetId: string;
@@ -50,12 +51,19 @@ export const MonitoringSetup: React.FC<Props> = ({ assetId, assetName, rotating,
     const [open, setOpen] = useState(false);
     const [liveTags, setLiveTags] = useState<{ tag: string; unit: string }[] | null>(null);
 
+    const [registerBearings, setRegisterBearings] = useState<BearingSuggestion[]>([]);
+
     useEffect(() => {
         let alive = true;
         setLiveTags(null);
+        setRegisterBearings([]);
         predictionService.getLiveTags(assetId).then(t => { if (alive) setLiveTags(t); });
+        if (rotating) {
+            predictionService.getRegisterBearingRows(assetId)
+                .then(rows => { if (alive) setRegisterBearings(registerBearingSuggestions(rows)); });
+        }
         return () => { alive = false; };
-    }, [assetId]);
+    }, [assetId, rotating]);
 
     const savedLoad = config?.regime?.loadTag?.trim() || '';
     const loadIsLive = !savedLoad || !liveTags || liveTags.some(t => t.tag.toLowerCase() === savedLoad.toLowerCase());
@@ -101,6 +109,7 @@ export const MonitoringSetup: React.FC<Props> = ({ assetId, assetName, rotating,
                     rotating={rotating}
                     config={config}
                     liveTags={liveTags ?? []}
+                    registerBearings={registerBearings}
                     onClose={() => setOpen(false)}
                     onSave={async (patch) => {
                         const ok = await onSave({ ...patch, saved_at: new Date().toISOString(), saved_by: profile?.fullName || profile?.username || null });
@@ -118,9 +127,10 @@ const SetupDialog: React.FC<{
     rotating: boolean;
     config: AssetPredictConfig;
     liveTags: { tag: string; unit: string }[];
+    registerBearings: BearingSuggestion[];
     onClose: () => void;
     onSave: (patch: Partial<AssetPredictConfig>) => Promise<boolean>;
-}> = ({ assetName, rotating, config, liveTags, onClose, onSave }) => {
+}> = ({ assetName, rotating, config, liveTags, registerBearings, onClose, onSave }) => {
     const initial = useMemo(() => draftFrom(config), [config]);
     const [draft, setDraft] = useState<Draft>(initial);
     const [saving, setSaving] = useState(false);
@@ -191,7 +201,7 @@ const SetupDialog: React.FC<{
                     <section>
                         <p className={SECTION}><Gauge size={11} /> Machine</p>
                         <Field label="Rated running speed (rpm)" error={rpmError}
-                            hint="Default speed for vibration captures; turns bearing orders into defect frequencies.">
+                            hint="Default speed for vibration captures.">
                             <div className="w-40">
                                 <Input type="number" inputMode="decimal" value={draft.rpm} onChange={e => set('rpm', e.target.value)} placeholder="e.g. 1480" />
                             </div>
@@ -202,15 +212,15 @@ const SetupDialog: React.FC<{
                 {rotating && (
                     <section>
                         <p className={SECTION}><Cog size={11} /> Bearings</p>
-                        <BearingEditor bearings={draft.bearings} onChange={b => set('bearings', b)} />
+                        <BearingEditor bearings={draft.bearings} onChange={b => set('bearings', b)} suggestions={registerBearings} />
                     </section>
                 )}
 
                 <section>
                     <p className={SECTION}><Activity size={11} /> Operating load</p>
                     <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
-                        Pick the live tag that sets the duty (steam flow, throughput, motor load). The alert scan then
-                        flags a point that is inside its band but off this asset's own baseline <em>at the current load</em>.
+                        Pick the live tag that sets the duty, like steam flow or motor load. Other points are then
+                        judged at the current load, not only against fixed bands.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_8rem] gap-3 items-start">
                         <Field label="Load tag">
@@ -235,21 +245,25 @@ const SetupDialog: React.FC<{
 };
 
 /**
- * Bearing list: pick from the seed catalog or enter BPFO/BPFI orders straight
- * from the manufacturer datasheet. Edits the pop-up's draft — nothing is
- * stored until Save setup.
+ * Bearing list. Three ways in, in order of preference: the asset's own
+ * bearings from the register (one click when the model is in the catalog;
+ * the datasheet row pre-filled when it is not), the seed catalog, or BPFO/BPFI
+ * typed from the maker's datasheet. Fluid-film bearings are named as such —
+ * defect frequencies do not apply to them. Edits the pop-up's draft; nothing
+ * is stored until Save setup.
  */
-const BearingEditor: React.FC<{ bearings: BearingSpec[]; onChange: (next: BearingSpec[]) => void }> = ({ bearings, onChange }) => {
+const BearingEditor: React.FC<{ bearings: BearingSpec[]; onChange: (next: BearingSpec[]) => void; suggestions: BearingSuggestion[] }> = ({ bearings, onChange, suggestions }) => {
     const [catalogSel, setCatalogSel] = useState(BEARING_CATALOG[0].designation);
     const [position, setPosition] = useState('DE');
     const [dsName, setDsName] = useState('');
     const [dsBpfo, setDsBpfo] = useState('');
     const [dsBpfi, setDsBpfi] = useState('');
+    const bpfoRef = React.useRef<HTMLInputElement>(null);
 
-    const addFromCatalog = () => {
-        const entry = BEARING_CATALOG.find(e => e.designation === catalogSel);
+    const addFromCatalog = (designation = catalogSel, pos = position) => {
+        const entry = BEARING_CATALOG.find(e => e.designation === designation);
         if (!entry) return;
-        onChange([...bearings, { ...entry.spec, position: position.trim() || undefined }]);
+        onChange([...bearings, { ...entry.spec, position: pos.trim() || undefined }]);
     };
     const addFromDatasheet = () => {
         const bpfo = Number(dsBpfo), bpfi = Number(dsBpfi);
@@ -257,18 +271,26 @@ const BearingEditor: React.FC<{ bearings: BearingSpec[]; onChange: (next: Bearin
         onChange([...bearings, { designation: dsName.trim(), position: position.trim() || undefined, orders: { bpfo, bpfi }, source: 'datasheet' }]);
         setDsName(''); setDsBpfo(''); setDsBpfi('');
     };
-    const small = 'w-full p-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-400';
-    const lbl = 'text-[10px] font-semibold text-slate-500';
+    const fillDatasheet = (sug: BearingSuggestion) => {
+        setDsName(sug.designation ?? sug.model ?? '');
+        if (sug.position) setPosition(sug.position);
+        setTimeout(() => bpfoRef.current?.focus(), 0);
+    };
+    const isAdded = (sug: BearingSuggestion) => bearings.some(b =>
+        (b.designation ?? '') === (sug.designation ?? '') && (b.position ?? '') === (sug.position ?? ''));
+
+    const rolling = suggestions.filter(x => x.kind !== 'fluid-film');
+    const fluid = suggestions.filter(x => x.kind === 'fluid-film');
+    const allFluid = suggestions.length > 0 && rolling.length === 0;
+
+    const ctl = 'w-full h-10 px-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-400';
+    const lbl = 'block text-[11px] font-semibold text-slate-500 mb-1';
+    const addBtn = 'h-10 px-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white text-sm font-bold rounded-lg shrink-0';
 
     return (
-        <div className="space-y-3">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-                Names envelope tones as outer race / inner race / ball / cage defects. Best source is the manufacturer
-                datasheet; catalog entries marked APPROX use ball count only and read as hints.
-            </p>
-            {bearings.length === 0 ? (
-                <p className="text-[11px] text-slate-400 italic">No bearings yet.</p>
-            ) : (
+        <div className="space-y-4">
+            {/* What is on the list now */}
+            {bearings.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                     {bearings.map((b, i) => {
                         const f = faultFrequencies(b, 1);
@@ -287,24 +309,77 @@ const BearingEditor: React.FC<{ bearings: BearingSpec[]; onChange: (next: Bearin
                         );
                     })}
                 </div>
+            ) : allFluid ? (
+                <p className="text-[12px] text-slate-600 leading-relaxed bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    This machine runs on <b>fluid-film bearings</b> (tilting-pad or journal). Rolling-element defect
+                    frequencies don't apply to them. Watch them with shaft-orbit (proximity-probe) monitoring instead.
+                </p>
+            ) : (
+                <p className="text-[12px] text-slate-500">
+                    Optional. Bearings let the vibration check name defect tones (outer race, inner race, ball, cage).
+                </p>
             )}
-            <div className="grid grid-cols-[5rem_minmax(0,1fr)_4rem] gap-2 items-end">
-                <div><label className={lbl}>Position</label><input value={position} onChange={e => setPosition(e.target.value)} placeholder="DE" className={small} /></div>
-                <div><label className={lbl}>From catalog</label>
-                    <select value={catalogSel} onChange={e => setCatalogSel(e.target.value)} className={small}>
-                        {BEARING_CATALOG.map(e => <option key={e.designation} value={e.designation}>{e.label}</option>)}
-                    </select>
+
+            {/* From the register — the asset's own bearing components */}
+            {suggestions.length > 0 && (
+                <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-1.5"><Database size={11} /> From the asset register</p>
+                    <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                        {[...rolling, ...fluid].map(sug => (
+                            <li key={sug.id} className="flex items-center gap-3 px-3 py-2">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[12px] font-semibold text-slate-700 truncate">{sug.name}</p>
+                                    <p className="text-[11px] text-slate-400 truncate">{[sug.maker, sug.model].filter(Boolean).join(' ') || 'No model in the register'}{sug.position ? ` · ${sug.position}` : ''}</p>
+                                </div>
+                                {sug.kind === 'fluid-film' ? (
+                                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 shrink-0" title="Tilting-pad / journal bearings have no BPFO/BPFI">Fluid-film · n/a</span>
+                                ) : isAdded(sug) ? (
+                                    <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 shrink-0"><Check size={12} /> Added</span>
+                                ) : sug.kind === 'catalog' ? (
+                                    <button onClick={() => addFromCatalog(sug.designation!, sug.position ?? '')} className="text-[12px] font-bold text-primary-600 hover:text-primary-500 shrink-0">Add</button>
+                                ) : sug.kind === 'datasheet' ? (
+                                    <button onClick={() => fillDatasheet(sug)} className="text-[12px] font-bold text-primary-600 hover:text-primary-500 shrink-0" title="Pre-fills the datasheet row below — add BPFO/BPFI from the maker">Fill below</button>
+                                ) : (
+                                    <span className="text-[10px] text-slate-400 shrink-0">Add model in register</span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
                 </div>
-                <button onClick={addFromCatalog} className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg">Add</button>
-            </div>
-            <p className="text-[10px] text-slate-400 -mb-1">or from the manufacturer datasheet</p>
-            <div className="grid grid-cols-[4.5rem_4.5rem_4rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_4rem] gap-2 items-end">
-                <div className="col-span-3 sm:col-span-1"><label className={lbl}>Designation</label><input value={dsName} onChange={e => setDsName(e.target.value)} placeholder="e.g. 6309" className={small} /></div>
-                <div><label className={lbl}>BPFO ×</label><input type="number" value={dsBpfo} onChange={e => setDsBpfo(e.target.value)} placeholder="3.05" className={small} /></div>
-                <div><label className={lbl}>BPFI ×</label><input type="number" value={dsBpfi} onChange={e => setDsBpfi(e.target.value)} placeholder="4.95" className={small} /></div>
-                <button onClick={addFromDatasheet} disabled={!dsName.trim() || !Number(dsBpfo) || !Number(dsBpfi)}
-                    className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg">Add</button>
-            </div>
+            )}
+
+            {/* Manual entry — hidden behind nothing, but quiet when the machine is all fluid-film */}
+            {!allFluid && (
+                <>
+                    <div className="space-y-2">
+                        <div>
+                            <label className={lbl} htmlFor="brg-catalog">From catalog</label>
+                            <select id="brg-catalog" value={catalogSel} onChange={e => setCatalogSel(e.target.value)} className={ctl}>
+                                {BEARING_CATALOG.map(e => <option key={e.designation} value={e.designation}>{e.label}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex items-end gap-2">
+                            <div className="w-28">
+                                <label className={lbl} htmlFor="brg-position">Position</label>
+                                <input id="brg-position" value={position} onChange={e => setPosition(e.target.value)} placeholder="DE" className={ctl} />
+                            </div>
+                            <button onClick={() => addFromCatalog()} className={addBtn}>Add</button>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <p className="text-[11px] text-slate-400">or from the manufacturer's datasheet (orders × running speed)</p>
+                        <div>
+                            <label className={lbl} htmlFor="brg-ds">Designation</label>
+                            <input id="brg-ds" value={dsName} onChange={e => setDsName(e.target.value)} placeholder="e.g. 6309" className={ctl} />
+                        </div>
+                        <div className="flex items-end gap-2">
+                            <div className="w-24"><label className={lbl} htmlFor="brg-bpfo">BPFO ×</label><input id="brg-bpfo" ref={bpfoRef} type="number" value={dsBpfo} onChange={e => setDsBpfo(e.target.value)} placeholder="3.05" className={ctl} /></div>
+                            <div className="w-24"><label className={lbl} htmlFor="brg-bpfi">BPFI ×</label><input id="brg-bpfi" type="number" value={dsBpfi} onChange={e => setDsBpfi(e.target.value)} placeholder="4.95" className={ctl} /></div>
+                            <button onClick={addFromDatasheet} disabled={!dsName.trim() || !Number(dsBpfo) || !Number(dsBpfi)} className={addBtn}>Add</button>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };

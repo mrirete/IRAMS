@@ -136,7 +136,9 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                 )}
             </div>
 
-            {/* Tabs */}
+            {/* Tabs — a fade on the right edge says there are more on narrow screens */}
+            <div className="relative">
+            <div aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-px w-10 bg-gradient-to-l from-white to-transparent z-10 md:hidden" />
             <div className="flex border-b border-slate-100 px-2 overflow-x-auto">
                 {TABS.map(tab => {
                     const Icon = tab.icon;
@@ -161,6 +163,7 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                         </button>
                     );
                 })}
+            </div>
             </div>
 
             {/* Actions List */}

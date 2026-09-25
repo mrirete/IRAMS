@@ -173,7 +173,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
         <div className={embedded ? 'overflow-hidden' : 'bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden animate-in fade-in duration-300'}>
             {/* ═══ Header (hidden when embedded) ═══ */}
             {!embedded && (<div className="px-5 pt-5 pb-4">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mb-4">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-accent-cyan/10 rounded-lg text-accent-cyan">
                             <Activity size={20} />
@@ -207,9 +207,9 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                 </div>
 
                 {/* ═══ Toolbar: Search + Sort + Criticality + View Toggle ═══ */}
-                <div className="flex flex-col sm:flex-row gap-3">
-                    {/* Search */}
-                    <div className="relative flex-1">
+                <div className="flex flex-wrap gap-3">
+                    {/* Search — its own row on phones; sort and view share the next */}
+                    <div className="relative w-full sm:w-auto sm:flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             ref={searchRef}
@@ -462,8 +462,8 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
 
             {/* ═══ Pagination Footer ═══ */}
             {processed.length > 0 && (
-            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                <div className="flex items-center gap-3 text-[10px] text-slate-400">
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400">
                     {/* Legend */}
                     <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-accent-safe/30" /> ≥{HEALTH_BANDS.good}</div>
                     <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-yellow-500/30" /> {HEALTH_BANDS.fair}–{HEALTH_BANDS.good - 1}</div>

@@ -74,9 +74,8 @@ export const WeibullChart: React.FC<Props> = ({ rulEstimate, groundedFit }) => {
                 <div className="border border-dashed border-slate-300 rounded-lg p-6 text-center">
                     <p className="text-sm font-medium text-slate-500">No fitted curve yet</p>
                     <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto leading-relaxed">
-                        A survival curve needs a fitted life distribution — at least 2 recorded failures on this
-                        asset's work-order history. It appears automatically once corrective work orders exist.
-                        For manual life-data studies, use Reliability Modelling.
+                        It needs 2 recorded failures on this asset. It appears once corrective work orders
+                        exist. For a manual study, use Reliability Modelling.
                     </p>
                 </div>
             </div>

@@ -101,15 +101,14 @@ export const DisgPanel: React.FC<Props> = ({ assetId, assetName, groundedFit }) 
 
     return (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mb-1">
                 <Compass size={18} className="text-primary-500" />
-                <h3 className="text-base font-semibold text-slate-800">D-I-S-G Curve — success trajectory</h3>
-                <span className="text-[10px] font-normal text-slate-400 ml-auto">{assetName}</span>
+                <h3 className="text-base font-semibold text-slate-800">D-I-S-G curve — success trajectory</h3>
+                <span className="text-[10px] font-normal text-slate-400 w-full sm:w-auto sm:ml-auto">{assetName}</span>
             </div>
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                Design → Installation → Success → Golden Spot (PSC framework) — the success-side mirror of the
-                P-F curve: design & installation quality decide how fast the asset reaches stable operation,
-                then the question becomes how long it HOLDS the Golden Spot.
+                Design → Installation → Success → Golden Spot (PSC). How fast the asset reached stable running,
+                and how long it holds there.
             </p>
 
             {loading ? (
