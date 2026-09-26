@@ -12,7 +12,8 @@ import { DisgPanel } from './DisgPanel';
 import { SpectralAnalysisPanel } from './SpectralAnalysisPanel';
 import { MonitoringSetup } from './MonitoringSetup';
 import { useAssetPredictConfig } from './useAssetPredictConfig';
-import { fitHealthTrend, fittedProjection, MIN_FIT_POINTS, MIN_FIT_SPAN_DAYS, type HistoryPoint } from '../../lib/predict/healthTrend';
+import { fitHealthTrend, fittedProjection, daysToLimit, MIN_FIT_POINTS, MIN_FIT_SPAN_DAYS, type HistoryPoint } from '../../lib/predict/healthTrend';
+import { HEALTH_FAILURE_THRESHOLD } from '../../config/predict';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -33,6 +34,8 @@ interface DigitalTwinTabProps {
     onAdoptPmInterval?: (args: { intervalDays: number; rationale: string }) => void;
     /** Saved health history (0392): with enough points the projection is fitted to it. */
     healthHistory?: HistoryPoint[];
+    /** A saved vibration capture opened an alert — refresh the queue. */
+    onAlertRaised?: () => void;
 }
 
 const RBI_BAND_TONE: Record<string, string> = {
@@ -43,7 +46,7 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval, healthHistory = [],
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval, healthHistory = [], onAlertRaised,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
@@ -54,6 +57,19 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
         () => (fit && twinHealth ? { ...twinHealth, health_projection: fittedProjection(fit) } : twinHealth),
         [fit, twinHealth],
     );
+    // Where the fitted line meets the failure limit — the date the scheduling hangs on.
+    const crossing = useMemo(() => {
+        if (!fit) return null;
+        const d = daysToLimit(fit, HEALTH_FAILURE_THRESHOLD);
+        if (d === 0) return { text: `Already at the failure limit (${HEALTH_FAILURE_THRESHOLD}).`, urgent: true };
+        if (d == null) return { text: 'Not falling, so it does not reach the failure limit on this trend.', urgent: false };
+        const when = new Date(new Date(fit.latestAt).getTime() + d * 86_400_000);
+        return {
+            text: `At this rate it reaches ${HEALTH_FAILURE_THRESHOLD} around ${when.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}` +
+                `${d > 30 ? ', beyond the chart, so an extrapolation' : ''}.`,
+            urgent: d <= 30,
+        };
+    }, [fit]);
     // The asset's saved monitoring setup — one owner for the pop-up and the capture panel.
     const { config: predictConfig, save: savePredictConfig } = useAssetPredictConfig(selectedAssetId);
     return (
@@ -166,7 +182,7 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
             {/* ═══ Spectral Analysis (ISO 13374 DM) — ROTATING equipment's counterpart to Integrity ═══ */}
             {/* Keyed by asset: a switch starts clean — no spectrum or speed carried over from the last asset. */}
             {rotating && (
-                <SpectralAnalysisPanel key={selectedAssetId} assetId={selectedAssetId} assetName={selectedAssetName} config={predictConfig} />
+                <SpectralAnalysisPanel key={selectedAssetId} assetId={selectedAssetId} assetName={selectedAssetName} config={predictConfig} onAlertRaised={onAlertRaised} />
             )}
 
             {/* Digital Twin Trajectory Chart */}
@@ -196,6 +212,9 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                             ? `Health for the next 30 days, fitted to ${fit.n} saved points over ${fit.spanDays} days (${fit.slopePerDay > 0 ? '+' : ''}${fit.slopePerDay} a day). The band is ±1.96 × their scatter.`
                             : `Health for the next 30 days at a fixed rate for its band. A direction, not a forecast. It is fitted to saved history once there are ${MIN_FIT_POINTS} points over ${MIN_FIT_SPAN_DAYS} days (${healthHistory.length} so far).`}
                     </p>
+                    {crossing && (
+                        <p className={`text-xs mt-1 font-medium ${crossing.urgent ? 'text-red-600' : 'text-slate-600'}`}>{crossing.text}</p>
+                    )}
                 </div>
                 <div className="p-5 min-h-[350px]">
                     <TwinHealthChart twinState={chartState} />

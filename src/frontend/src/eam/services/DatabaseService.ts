@@ -3459,7 +3459,7 @@ export class DatabaseService {
             }
         }
 
-        return this.insertTolerant('service_requests', req, ['work_center_id']);
+        return this.insertTolerant('service_requests', req, ['work_center_id', 'needed_by']);
     }
 
     public async updateRequest(id: string, updates: Partial<ServiceRequestRecord>, actor: string): Promise<ServiceRequestRecord> {
@@ -3514,6 +3514,8 @@ export class DatabaseService {
             requestId,
             workCenterId: req.work_center_id ?? undefined,
             costCenterId: req.cost_center_id ?? undefined,
+            // 0393: the date the requester needs it by becomes the order's due date.
+            ...(req.needed_by ? { dueDate: String(req.needed_by) } : {}),
             createdBy: actor && actor.length > 10 ? actor : null,
             costFrozen: false, frozenLaborCost: 0, frozenMaterialCost: 0,
             properties: { source: 'service_request', request_number: req.request_number || null, risk_score: Number.isFinite(risk) ? risk : null },

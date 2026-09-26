@@ -36,6 +36,8 @@ interface Props {
     initialTitle?: string;
     initialWorkType?: string;
     dueDate?: string;
+    /** Why that date (or why none) — shows the "Needed by" field with its basis (Predict alerts). */
+    dueDateNote?: string;
     /** Prefill for kind=PM (e.g. Predict What-If → adopt simulated interval). */
     initialPmIntervalDays?: number;
     /** Stamped into work_orders.properties so the WO can be traced back to its source
@@ -50,7 +52,7 @@ const TIME_UNITS = ['Days', 'Weeks', 'Months', 'Years'];
 const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
 
-export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays, woProperties, stayOnPage }) => {
+export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, dueDateNote, initialPmIntervalDays, woProperties, stayOnPage }) => {
     const { showToast } = useToast();
     const { permissions } = useAuth();
     const navigate = useNavigate();
@@ -64,6 +66,11 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
     const [priority, setPriority] = useState('MEDIUM');
     const [workType, setWorkType] = useState(initialWorkType || 'CM');
     const [faultType, setFaultType] = useState(faultTypes[0]?.id || ''); // dictionary UUID
+    // Needed by: shown when the caller brings a date or a reason; editable. A
+    // request keeps it (0393 service_requests.needed_by) and the converted
+    // order takes it as its due date.
+    const showNeededBy = dueDate !== undefined || dueDateNote !== undefined;
+    const [neededBy, setNeededBy] = useState(dueDate ? dueDate.slice(0, 10) : '');
     // PM-specific
     const [scheduleType, setScheduleType] = useState<'TIME' | 'READING'>('TIME');
     const [interval, setInterval] = useState(initialPmIntervalDays ?? 1);
@@ -89,7 +96,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 const wo = await db.createWorkOrder(buildWorkOrder({
                     title, description, assetId: asset.id, type: workType,
                     priorityCode: priority, status: 'OPEN', workCenterId: workCenterId || null,
-                    ...(dueDate ? { dueDate } : {}),
+                    ...(neededBy ? { dueDate: neededBy } : {}),
                     ...(woProperties ? { properties: woProperties } : {}),
                 }), actor);
                 if (onCreated) await onCreated('WO', (wo as any)?.id ?? null);
@@ -102,7 +109,9 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                     id: crypto.randomUUID(),
                     request_number: `REQ-${Date.now().toString(36).toUpperCase()}`,
                     status: 'NEW' as any,
-                    description,
+                    description: neededBy ? `${description}
+Needed by: ${neededBy}` : description,
+                    ...(neededBy ? { needed_by: neededBy } : {}),
                     asset_id: asset.id,
                     requester_id: requesterId || actor,
                     functional_failure_id: faultType,
@@ -264,6 +273,14 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                             </div>
                         )}
                     </div>
+
+                    {showNeededBy && kind !== 'PM' && (
+                        <div>
+                            <label htmlFor="raise-needed-by" className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Needed by</label>
+                            <input id="raise-needed-by" type="date" value={neededBy} onChange={e => setNeededBy(e.target.value)} className={inputCls} />
+                            {dueDateNote && <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{dueDateNote}</p>}
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Description</label>

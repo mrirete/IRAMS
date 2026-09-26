@@ -47,6 +47,7 @@ import { alarmGates } from '../../lib/predict/alarmGates';
 import { sensorHealthScore } from '../../lib/predict/sensorScore';
 import { qualityFlags } from '../../lib/predict/dataQuality';
 import type { RegisterBearingRow } from '../../lib/predict/registerBearings';
+import { captureAlertDraft, openAlertPoints, CAPTURE_ALERT_PREFIX } from '../../lib/predict/vibrationCaptures';
 import type { AlertStatus, AlertOutcome } from '../../types/intelligence';
 
 /** A point the regime detector fired on, with what it needs to explain itself. */
@@ -681,6 +682,45 @@ class PredictionService {
     }
 
     /**
+     * A saved capture that screens "investigate" opens an alert on its
+     * measurement point (lib/predict/vibrationCaptures) — one open alert per
+     * point, the scan's rule. The diagnosis layer reads this capture as its
+     * spectral evidence, so the alert arrives ranked like a scan alert.
+     */
+    async raiseCaptureAlert(capture: WaveformCapture): Promise<
+        | { kind: 'raised'; severity: 'high' | 'medium'; title: string }
+        | { kind: 'covered'; point: string }
+        | { kind: 'none'; severity: 'ok' | 'watch' }
+        | { kind: 'failed'; message: string }
+    > {
+        const draft = captureAlertDraft(capture.features, capture.tag);
+        if (!draft) return { kind: 'none', severity: capture.features?.diagnosis?.severity === 'watch' ? 'watch' : 'ok' };
+        if (openAlertPoints(await this.getAlerts(capture.asset_id)).has(capture.tag.trim().toLowerCase())) {
+            return { kind: 'covered', point: capture.tag.trim() };
+        }
+        const diagnosis = await this._diagnoseFiring(capture.asset_id, [], capture);
+        const created = await this.createAlert({
+            alert_id: `${CAPTURE_ALERT_PREFIX}${Date.now()}-${capture.tag.replace(/[^a-zA-Z0-9]/g, '')}`,
+            asset_id: capture.asset_id,
+            alert_type: 'pattern_detected',
+            severity: draft.severity,
+            title: draft.title,
+            description: draft.description,
+            confidence: draft.confidence,
+            dqs_impact: 0.02,
+            governance_tier: draft.severity === 'high' ? 2 : 3,
+            diagnosis,
+            // The alert is about the bearing, so it files as BRG even when the
+            // ranking puts another mode first (a strong 1× line ranks BAL higher);
+            // the ranked hypotheses stay on the alert as the evidence.
+            failure_mode_code: 'BRG',
+        });
+        return created
+            ? { kind: 'raised', severity: draft.severity, title: draft.title }
+            : { kind: 'failed', message: 'The alert could not be saved (check your access to Predict alerts).' };
+    }
+
+    /**
      * CSV connector — upsert imported sensor readings into ers_sensor_readings
      * (the online feed the Predict twin reads). Idempotent: existing rows for the
      * same (asset, tag) are updated in place rather than duplicated, so re-importing
@@ -967,12 +1007,7 @@ class PredictionService {
         // Tags that already have an OPEN alert — skip them (dedup). Open = not
         // closed (0391); an acknowledged alert is still being worked, so it
         // must not spawn a twin. Before 0391, the legacy flag decides.
-        const existing = await this.getAlerts(assetId);
-        const openTags = new Set(
-            existing.filter(a => (a.status ? a.status !== 'closed' : !a.acknowledged))
-                .map(a => (a.title.split(': ').pop() || '').trim().toLowerCase())
-                .filter(Boolean),
-        );
+        const openTags = openAlertPoints(await this.getAlerts(assetId));
 
         let suppressed = 0;
         const fired: FiredPoint[] = [];
@@ -1147,6 +1182,8 @@ class PredictionService {
     private async _diagnoseFiring(
         assetId: string,
         fired: FiredPoint[],
+        /** A capture raising its own alert: it is the spectral evidence (not "the latest"). */
+        capture?: WaveformCapture,
     ): Promise<DiagnosisResult | null> {
         const { data: assetRow } = await supabase.from('assets')
             .select('name, tag, asset_class, asset_category, asset_type_code')
@@ -1156,6 +1193,9 @@ class PredictionService {
             name: assetRow.name, tag: assetRow.tag,
             assetClass: assetRow.asset_class, assetCategory: assetRow.asset_category, assetType: assetRow.asset_type_code,
         } : null).cls;
+        // A bearing tone is a rotating-element fact whatever the register class
+        // says (a motor files as electrical, a fan under its boiler).
+        const diagClass = capture ? 'rotating' : cls;
 
         const sensors: SensorEvidence[] = fired.map(({ s, breachHigh, breachLow, regime }) => regime
             ? {
@@ -1184,7 +1224,7 @@ class PredictionService {
         // Latest waveform capture → spectral evidence (flags derived from the
         // same persisted features the panel computed).
         let spectral: SpectralEvidence | null = null;
-        const caps = await this.getWaveforms(assetId, 1);
+        const caps = capture ? [capture] : await this.getWaveforms(assetId, 1);
         if (caps.length > 0) {
             const f = caps[0].features || {};
             const findings: { label?: string }[] = f.diagnosis?.findings ?? [];
@@ -1232,7 +1272,7 @@ class PredictionService {
             if (Object.keys(counts).length > 0) priors.historyCodes = counts;
         } catch { /* no coded failure history */ }
 
-        const result = diagnoseEvidence({ equipmentClass: cls, sensors, spectral, priors });
+        const result = diagnoseEvidence({ equipmentClass: diagClass, sensors, spectral, priors });
         return result.hypotheses.length > 0 ? result : null;
     }
 

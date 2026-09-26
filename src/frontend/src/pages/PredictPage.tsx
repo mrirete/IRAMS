@@ -8,7 +8,8 @@ import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
 import { FleetHealthMap } from '../components/predict/FleetHealthMap';
 import { buildLineage } from '../components/predict/WhereItSits';
-import type { HistoryPoint } from '../lib/predict/healthTrend';
+import { fitHealthTrend, suggestNeededBy, type HistoryPoint } from '../lib/predict/healthTrend';
+import { HEALTH_FAILURE_THRESHOLD } from '../config/predict';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import { ScrollTabStrip } from '../eam/components/ui';
@@ -377,6 +378,16 @@ export const PredictPage: React.FC = () => {
         });
         return () => { alive = false; };
     }, [selectedAssetId, twinHealth?.updated_at]);
+
+    // Work raised from an alert gets a needed-by date: the fitted health trend's
+    // crossing of the failure limit, else the remaining-life estimate, less the
+    // planning lead — with the basis shown next to the field.
+    const neededBy = useMemo(() => suggestNeededBy({
+        fit: fitHealthTrend(history.health),
+        limit: HEALTH_FAILURE_THRESHOLD,
+        rulDays: displayRul?.rul_days ?? null,
+        rulBasis: groundedActive ? 'fitted to failure history' : displayRul?.distribution_type === 'heuristic' ? 'directional heuristic' : displayRul?.distribution_type ?? null,
+    }), [history.health, displayRul, groundedActive]);
 
     const filteredAssets = useMemo(() => {
         const q = assetSearch.toLowerCase();
@@ -1059,6 +1070,7 @@ export const PredictPage: React.FC = () => {
                     onScheduleInspection={setInspectPrefill}
                     onAdoptPmInterval={setPmPrefill}
                     healthHistory={history.health}
+                    onAlertRaised={() => refetchPredict(selectedAssetId)}
                 />
             )}
 
@@ -1130,6 +1142,8 @@ export const PredictPage: React.FC = () => {
                     sourceLabel="Predict · alert"
                     faultTypes={predictFaultTypes}
                     initialTitle={raiseForAlert.title}
+                    dueDate={neededBy.date ?? ''}
+                    dueDateNote={neededBy.note}
                     contextNote={[
                         `From Predict alert ${raiseForAlert.alert_id} (${raiseForAlert.severity}).`,
                         raiseForAlert.description,

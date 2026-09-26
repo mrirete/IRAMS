@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fitHealthTrend, fittedProjection, seriesSpread } from './healthTrend';
+import { fitHealthTrend, fittedProjection, seriesSpread, daysToLimit, suggestNeededBy, PLANNING_LEAD_DAYS } from './healthTrend';
 import { qualityFlags } from './dataQuality';
 
 const day = (d: number) => new Date(Date.UTC(2026, 8, 1) + d * 86_400_000).toISOString();
@@ -50,5 +50,39 @@ describe('qualityFlags', () => {
         expect(qualityFlags({ current: 1, kind: 'pressure', lastReadingAt: new Date(now - 20 * 86_400_000).toISOString(), intervalDays: 7 }, now)[0].flag).toBe('stale');
         expect(qualityFlags({ current: 1, kind: 'pressure', lastReadingAt: new Date(now - 10 * 86_400_000).toISOString(), intervalDays: 7 }, now)).toEqual([]);
         expect(qualityFlags({ current: 1, kind: 'pressure' }, now)).toEqual([]);
+    });
+});
+
+describe('needed-by date', () => {
+    // 90 → 85 over 10 days: −0.5 a day, latest 85 at day 10.
+    const fit = fitHealthTrend([0, 2, 4, 6, 8, 10].map(d => ({ at: day(d), value: 90 - 0.5 * d })))!;
+    const now = new Date(day(10));
+
+    it('days to the limit from the fitted line', () => {
+        expect(daysToLimit(fit, 30)).toBeCloseTo(110, 6);           // (85 − 30) / 0.5
+        expect(daysToLimit({ ...fit, slopePerDay: 0.1 }, 30)).toBeNull();
+        expect(daysToLimit({ ...fit, latest: 28 }, 30)).toBe(0);
+    });
+
+    it('fitted trend: the crossing less the planning lead, and says so', () => {
+        const s = suggestNeededBy({ fit, limit: 30, rulDays: 20, now });
+        expect(s.date).toBe(day(110 - PLANNING_LEAD_DAYS + 10).slice(0, 10));
+        expect(s.note).toContain('fitted to 6 points');
+        expect(s.note).toContain('extrapolation');
+    });
+
+    it('falls back to remaining life, then to no date with the reason', () => {
+        const noFall = { ...fit, slopePerDay: 0 };
+        const r = suggestNeededBy({ fit: noFall, limit: 30, rulDays: 20, rulBasis: 'heuristic', now });
+        expect(r.date).toBe(day(10 + 20 - PLANNING_LEAD_DAYS).slice(0, 10));
+        expect(r.note).toContain('Remaining life 20 days (heuristic)');
+        const none = suggestNeededBy({ fit: null, limit: 30, rulDays: null, now });
+        expect(none.date).toBeNull();
+        expect(none.note).toContain('no fitted health trend');
+    });
+
+    it('never before today; at the limit means now', () => {
+        expect(suggestNeededBy({ fit: null, limit: 30, rulDays: 3, now }).date).toBe(day(10).slice(0, 10));
+        expect(suggestNeededBy({ fit: { ...fit, latest: 25 }, limit: 30, now }).date).toBe(day(10).slice(0, 10));
     });
 });

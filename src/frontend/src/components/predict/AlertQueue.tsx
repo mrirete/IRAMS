@@ -7,11 +7,18 @@
  * verdict (confirmed fault / known condition = real, no fault found = false
  * alarm, duplicate = not counted), so the precision number comes from real
  * results rather than optional clicks.
+ *
+ * An alert raised by a vibration capture asks for a follow-up capture once
+ * its work is done, and the close pop-up sets the two side by side (RepairCheck).
  */
 import React, { useMemo, useState } from 'react';
 import { ShieldCheck, CheckCircle2, Wrench, Flag, Loader2, Eye, ClipboardCheck } from 'lucide-react';
 import type { PredictionAlert, AlertOutcome, AlertStatus } from '../../types/intelligence';
 import { Modal } from '../../eam/components/ui';
+import { RepairCheck } from './RepairCheck';
+import { CAPTURE_ALERT_PREFIX, alertPointOf } from '../../lib/predict/vibrationCaptures';
+
+const fromCapture = (a: PredictionAlert) => a.alert_id.startsWith(CAPTURE_ALERT_PREFIX);
 
 type Filter = 'open' | AlertStatus;
 
@@ -100,7 +107,7 @@ export const AlertQueue: React.FC<Props> = ({ alerts, canClose, onAcknowledge, o
                                 {s === 'in_progress' && (
                                     <p className={`text-[11px] mb-2 flex items-center gap-1.5 ${a.work_done_at ? 'text-emerald-700 font-semibold' : 'text-blue-700'}`}>
                                         {a.work_done_at
-                                            ? <><ClipboardCheck size={12} /> Work done — record the outcome.</>
+                                            ? <><ClipboardCheck size={12} /> Work done — {fromCapture(a) ? `take a capture on ${alertPointOf(a.title)} to confirm, then record the outcome.` : 'record the outcome.'}</>
                                             : <><Wrench size={12} /> {a.work_order_id ? 'Work order open.' : 'Work request raised.'}</>}
                                     </p>
                                 )}
@@ -196,6 +203,7 @@ const CloseAlertModal: React.FC<{
         >
             <div className="space-y-4">
                 <p className="text-sm font-semibold text-slate-800">{alert.title}</p>
+                {fromCapture(alert) && <RepairCheck alert={alert} />}
                 <fieldset>
                     <legend className="text-xs font-semibold text-slate-600 mb-2">What did you find?</legend>
                     <div className="space-y-2">

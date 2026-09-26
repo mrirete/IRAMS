@@ -108,6 +108,7 @@ export interface ServiceRequestRecord {
     authorized_at?: string; // Timestamp of authorization
 
     work_center_id?: string | null; // 0178 — responsible work group (SAP Main Work Center)
+    needed_by?: string | null; // 0393 — date the work is needed by; the converted WO's due date
 
     created_at: string;
     updated_at: string;

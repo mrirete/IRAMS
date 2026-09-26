@@ -10,6 +10,10 @@
  * when an online waveform feed lands, it writes the same table and this
  * panel needs nothing new.
  *
+ * A saved capture that screens "investigate" opens an alert on its point
+ * (PredictionService.raiseCaptureAlert), so a route finding reaches the
+ * Forecast tab's queue by itself. History trends the chosen point's captures.
+ *
  * Per-capture inputs only. The asset's rated speed, bearings and load tag are
  * Monitoring setup (MonitoringSetup.tsx, explicit Save) and arrive as props.
  * The Model tab keys this panel by asset, so switching asset starts clean —
@@ -27,6 +31,7 @@ import {
 } from '../../lib/predict/spectral';
 import { predictionService, type WaveformCapture, type AssetPredictConfig, type MeasurementPointOption } from '../../eam/services/PredictionService';
 import { sensorKind } from '../../lib/predict/healthModels';
+import { captureTrend, samePoint, MIN_TREND_CAPTURES, type TrendVerdict } from '../../lib/predict/vibrationCaptures';
 
 interface Props {
     assetId: string;
@@ -34,6 +39,8 @@ interface Props {
     currentUser?: string | null;
     /** Saved Monitoring setup — rated speed and bearing specs. */
     config: AssetPredictConfig | null;
+    /** A saved capture opened an alert — the page refreshes its alert queue. */
+    onAlertRaised?: () => void;
 }
 
 /** Vibration points first (by name or unit); the rest stay pickable. */
@@ -45,6 +52,13 @@ const TONE_STYLES: Record<string, string> = {
     watch: 'bg-amber-50 text-amber-700 border-amber-200',
     investigate: 'bg-red-50 text-red-600 border-red-200',
 };
+
+const VERDICT_TONE: Record<TrendVerdict, string> = {
+    growing: 'bg-red-50 text-red-600 border-red-200',
+    steady: 'bg-slate-50 text-slate-600 border-slate-200',
+    falling: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+};
+const fmt = (v: number | null) => (v == null ? '—' : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : String(Number(v.toPrecision(2))));
 
 const Chip: React.FC<{ label: string; value: string; hint?: string; alarm?: boolean }> = ({ label, value, hint, alarm }) => (
     <div className={`rounded-lg border p-2.5 ${alarm ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`} title={hint}>
@@ -71,7 +85,7 @@ const SpectrumChart: React.FC<{ data: { freqHz: number; amp: number }[]; color: 
     </div>
 );
 
-export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, currentUser, config }) => {
+export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, currentUser, config, onAlertRaised }) => {
     const [rawText, setRawText] = useState('');
     const [fs, setFs] = useState('5120');
     const [rpm, setRpm] = useState('');
@@ -84,7 +98,7 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
     const [isDemo, setIsDemo] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    const [savedMsg, setSavedMsg] = useState<string | null>(null);
+    const [savedMsg, setSavedMsg] = useState<{ text: string; tone: 'ok' | 'alert' | 'warn' } | null>(null);
     const [history, setHistory] = useState<WaveformCapture[] | null>(null);
     const bearings = config?.bearings ?? [];
 
@@ -152,11 +166,33 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
             },
             created_by: currentUser ?? null,
         });
+        if (!saved) {
+            setSaving(false);
+            setSavedMsg({ text: 'Save failed — apply migration 0206 (ers_waveforms) first', tone: 'warn' });
+            return;
+        }
+        const r = await predictionService.raiseCaptureAlert(saved);
         setSaving(false);
-        setSavedMsg(saved ? 'Capture saved — feature history builds per asset ✓' : 'Save failed — apply migration 0206 (ers_waveforms) first');
+        if (r.kind === 'raised') {
+            setSavedMsg({ text: `Capture saved. It opened a ${r.severity} alert on ${tag} — work it from Forecast › Alerts.`, tone: 'alert' });
+            onAlertRaised?.();
+        } else if (r.kind === 'covered') {
+            setSavedMsg({ text: `Capture saved. An alert on ${r.point} is already open, so no second one.`, tone: 'ok' });
+        } else if (r.kind === 'failed') {
+            setSavedMsg({ text: `Capture saved, but the alert was not raised: ${r.message}`, tone: 'warn' });
+        } else {
+            setSavedMsg({
+                text: r.severity === 'watch'
+                    ? 'Capture saved. A watch finding does not raise an alert. The next capture on this point shows whether it is growing.'
+                    : 'Capture saved. No fault signature.',
+                tone: 'ok',
+            });
+        }
+        if (history) setHistory(await predictionService.getWaveforms(assetId, 30));
     };
 
-    const loadHistory = async () => setHistory(await predictionService.getWaveforms(assetId));
+    const loadHistory = async () => setHistory(await predictionService.getWaveforms(assetId, 30));
+    const trend = useMemo(() => (history && tag ? captureTrend(history, tag) : null), [history, tag]);
 
     const specPlot = useMemo(() => analysis ? decimateForPlot(analysis.spectrum) : [], [analysis]);
     const envPlot = useMemo(
@@ -248,7 +284,9 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
             </div>
 
             {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
-            {savedMsg && <p className="text-xs text-emerald-700 mt-2">{savedMsg}</p>}
+            {savedMsg && (
+                <p className={`text-xs mt-2 ${savedMsg.tone === 'alert' ? 'text-red-600 font-semibold' : savedMsg.tone === 'warn' ? 'text-amber-700' : 'text-emerald-700'}`}>{savedMsg.text}</p>
+            )}
 
             {/* Results */}
             {analysis && (
@@ -327,6 +365,34 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
             {/* Capture history */}
             {history && (
                 <div className="mt-4 border-t border-slate-100 pt-3">
+                    {trend && (
+                        <div className="mb-3">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Trend on {tag}</p>
+                            {trend.points.length < MIN_TREND_CAPTURES ? (
+                                <p className="text-xs text-slate-400">
+                                    {trend.points.length} capture{trend.points.length !== 1 ? 's' : ''} on this point. The trend starts at {MIN_TREND_CAPTURES}.
+                                </p>
+                            ) : (
+                                <>
+                                    <div className="space-y-1">
+                                        {([['kurtosis', 'Kurtosis'], ['rms', 'RMS'], ['toneAmp', 'Bearing tone']] as const).map(([k, label]) => {
+                                            const vals = trend.points.map(p => p[k]).filter((v): v is number => v != null);
+                                            if (vals.length === 0) return null;
+                                            const v = trend.verdicts[k];
+                                            return (
+                                                <div key={k} className="flex items-center gap-2 text-xs min-w-0">
+                                                    <span className="w-24 shrink-0 text-slate-500">{label}</span>
+                                                    <span className="font-mono text-slate-700 truncate min-w-0">{vals.slice(-5).map(fmt).join(' → ')}</span>
+                                                    {v && <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded border text-[10px] font-bold ${VERDICT_TONE[v]}`}>{v === 'growing' ? 'Growing' : v === 'falling' ? 'Falling' : 'Steady'}</span>}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1">Latest capture against the median of the earlier ones. Growing = 25% or more above it.</p>
+                                </>
+                            )}
+                        </div>
+                    )}
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Saved captures</p>
                     {history.length === 0 ? (
                         <p className="text-xs text-slate-400 italic">No saved captures for this asset yet.</p>
@@ -335,7 +401,7 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                             {history.map(h => {
                                 const d = h.features?.diagnosis;
                                 return (
-                                    <div key={h.id} className="flex items-center gap-3 py-2 text-xs">
+                                    <div key={h.id} className={`flex items-center gap-3 py-2 text-xs ${tag && !samePoint(h.tag, tag) ? 'opacity-60' : ''}`}>
                                         <span className={`px-1.5 py-0.5 rounded border text-[10px] font-bold shrink-0 ${TONE_STYLES[d?.severity || 'ok']}`}>
                                             {(d?.severity || 'ok').toUpperCase()}
                                         </span>
