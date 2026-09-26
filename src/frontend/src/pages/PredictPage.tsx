@@ -189,6 +189,26 @@ export const PredictPage: React.FC = () => {
         || permissions?.reliability?.edit === true || permissions?.workOrders?.approve === true;
     const [raiseForAlert, setRaiseForAlert] = useState<PredictionAlert | null>(null);
 
+    // A remaining-life alert on stale (or no) readings: the honest first step
+    // is to measure, not to overhaul. A request to take the asset's condition
+    // readings, listing its measurement points, due within the week and never
+    // after the work's own needed-by date. Not linked to the alert: the alert
+    // closes on the repair's outcome, not on a reading being taken.
+    const [readingRequest, setReadingRequest] = useState<{ alert: PredictionAlert; note: string; dueDate: string } | null>(null);
+    const requestReading = async (alert: PredictionAlert) => {
+        const points = await predictionService.getMeasurementPoints(alert.asset_id);
+        const list = points.length
+            ? `Points to read: ${points.map(p => p.name + (p.unit ? ` (${p.unit})` : '')).join(', ')}.`
+            : 'No measurement points are defined yet — set them up on Condition Data first, then take vibration and bearing temperature at least.';
+        const week = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+        const dueDate = neededBy.date && neededBy.date < week ? neededBy.date : week;
+        setReadingRequest({
+            alert,
+            dueDate,
+            note: `Condition reading requested for alert ${alert.alert_id}: ${alert.title}. ${alert.description} ${list} Bring the readings in on Condition Data; Predict re-scores the asset from them.`,
+        });
+    };
+
     const handleAcknowledgeAlert = async (alert: PredictionAlert) => {
         const r = await predictionService.acknowledgeAlert(alert.alert_id);
         if (r.ok) await refetchPredict(alert.asset_id);
@@ -1086,6 +1106,7 @@ export const PredictPage: React.FC = () => {
                     onAdoptPmInterval={setPmPrefill}
                     healthHistory={freshHealth.points}
                     ignoredHistoryPoints={freshHealth.ignored}
+                    readingAgeDays={newestReading ? (Date.now() - new Date(newestReading).getTime()) / 86_400_000 : null}
                     onAlertRaised={() => refetchPredict(selectedAssetId)}
                 />
             )}
@@ -1101,6 +1122,7 @@ export const PredictPage: React.FC = () => {
                         canCloseAlert={canCloseAlert}
                         onAcknowledgeAlert={handleAcknowledgeAlert}
                         onRaiseWork={setRaiseForAlert}
+                        onRequestReading={requestReading}
                         onCloseAlert={handleCloseAlert}
                     />
                     {/* Measure → Forecast bridge: SMRP + PSC KPIs, measured vs simulated */}
@@ -1173,6 +1195,24 @@ export const PredictPage: React.FC = () => {
                         await refetchPredict(raiseForAlert.asset_id);
                     }}
                     onClose={() => setRaiseForAlert(null)}
+                />
+            )}
+
+            {/* Remaining-life alert → condition-reading request */}
+            {readingRequest && selectedAssetId && (
+                <RaiseWorkModal
+                    asset={{ id: selectedAssetId, tag: selectedAsset?.tag || '', name: selectedAsset?.name || selectedAssetId, criticality: (critLevel as any) } as any}
+                    kind="REQUEST"
+                    actor={profile?.username || profile?.fullName || 'user'}
+                    requesterId={profile?.id}
+                    sourceLabel="Predict · remaining-life alert"
+                    faultTypes={predictFaultTypes}
+                    initialTitle={`Condition reading — ${selectedAsset?.tag || selectedAssetId}`}
+                    dueDate={readingRequest.dueDate}
+                    dueDateNote="Within the week, and before the work itself is needed — the reading decides what the work is."
+                    contextNote={readingRequest.note}
+                    stayOnPage
+                    onClose={() => setReadingRequest(null)}
                 />
             )}
 

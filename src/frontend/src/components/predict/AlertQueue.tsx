@@ -12,7 +12,7 @@
  * its work is done, and the close pop-up sets the two side by side (RepairCheck).
  */
 import React, { useMemo, useState } from 'react';
-import { ShieldCheck, CheckCircle2, Wrench, Flag, Loader2, Eye, ClipboardCheck } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, Wrench, Flag, Loader2, Eye, ClipboardCheck, Activity } from 'lucide-react';
 import type { PredictionAlert, AlertOutcome, AlertStatus } from '../../types/intelligence';
 import { Modal } from '../../eam/components/ui';
 import { RepairCheck } from './RepairCheck';
@@ -43,12 +43,14 @@ interface Props {
     canClose: boolean;
     onAcknowledge: (a: PredictionAlert) => Promise<{ ok: boolean; message?: string }>;
     onRaiseWork: (a: PredictionAlert) => void;
+    /** Remaining-life alerts: ask for a condition reading before committing the work. */
+    onRequestReading?: (a: PredictionAlert) => void;
     onClose: (a: PredictionAlert, outcome: AlertOutcome, notes: string) => Promise<{ ok: boolean; message?: string }>;
     /** Renders the diagnosis / metadata block of one alert (kept where it was). */
     renderDetail: (a: PredictionAlert) => React.ReactNode;
 }
 
-export const AlertQueue: React.FC<Props> = ({ alerts, canClose, onAcknowledge, onRaiseWork, onClose, renderDetail }) => {
+export const AlertQueue: React.FC<Props> = ({ alerts, canClose, onAcknowledge, onRaiseWork, onRequestReading, onClose, renderDetail }) => {
     const [filter, setFilter] = useState<Filter>('open');
     const [busy, setBusy] = useState<string | null>(null);
     const [msg, setMsg] = useState<Record<string, string>>({});
@@ -125,6 +127,12 @@ export const AlertQueue: React.FC<Props> = ({ alerts, canClose, onAcknowledge, o
                                             <button onClick={() => ack(a)} disabled={busy === a.alert_id}
                                                 className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-md bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
                                                 {busy === a.alert_id ? <Loader2 size={11} className="animate-spin" /> : <Eye size={11} />} Acknowledge
+                                            </button>
+                                        )}
+                                        {a.alert_type === 'rul_warning' && onRequestReading && s !== 'in_progress' && (
+                                            <button onClick={() => onRequestReading(a)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-md bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100">
+                                                <Activity size={11} /> Request a reading
                                             </button>
                                         )}
                                         {s !== 'in_progress' && (

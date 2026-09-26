@@ -13,7 +13,7 @@ import { SpectralAnalysisPanel } from './SpectralAnalysisPanel';
 import { MonitoringSetup } from './MonitoringSetup';
 import { useAssetPredictConfig } from './useAssetPredictConfig';
 import { fitHealthTrend, fittedProjection, daysToLimit, MIN_FIT_POINTS, MIN_FIT_SPAN_DAYS, type HistoryPoint } from '../../lib/predict/healthTrend';
-import { HEALTH_FAILURE_THRESHOLD } from '../../config/predict';
+import { HEALTH_FAILURE_THRESHOLD, STALE_DAYS } from '../../config/predict';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -36,6 +36,8 @@ interface DigitalTwinTabProps {
     healthHistory?: HistoryPoint[];
     /** Saved points recorded with no new reading behind them — left out of the fit. */
     ignoredHistoryPoints?: number;
+    /** Days since the newest reading; null when there are none. */
+    readingAgeDays?: number | null;
     /** A saved vibration capture opened an alert — refresh the queue. */
     onAlertRaised?: () => void;
 }
@@ -48,7 +50,7 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval, healthHistory = [], ignoredHistoryPoints = 0, onAlertRaised,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval, healthHistory = [], ignoredHistoryPoints = 0, readingAgeDays = null, onAlertRaised,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
@@ -72,6 +74,26 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
             urgent: d <= 30,
         };
     }, [fit]);
+    // The fitted life model on the same chart: where the failure history says
+    // the asset is heading, whatever the sensors say — or when they say nothing.
+    const { lifeMarker, lifeNote } = useMemo(() => {
+        if (!groundedFit || groundedFit.method !== 'weibull-mrl' || groundedFit.rulDays == null) return { lifeMarker: null, lifeNote: null };
+        const d = groundedFit.rulDays;
+        const b50 = rulEstimate?.confidence_bands?.find(b => b.percentile === 50);
+        const when = new Date(Date.now() + d * 86_400_000).toLocaleDateString([], { day: 'numeric', month: 'short' });
+        const stale = readingAgeDays != null && readingAgeDays > STALE_DAYS;
+        const staleText = readingAgeDays == null
+            ? ' There are no condition readings; the failure history is the only signal.'
+            : stale ? ` The newest reading is ${Math.floor(readingAgeDays)} days old, so the health line above says nothing about today; the failure history is the only current signal.` : '';
+        return {
+            lifeMarker: { daysAhead: d, label: `Life model: ~${when}`, band: b50 ? { from: b50.lower_days, to: b50.upper_days } : null },
+            lifeNote: {
+                urgent: d <= 30,
+                text: `Fitted life model (${groundedFit.fit?.nFailures ?? '—'} recorded failures): expected failure around ${when}` +
+                    `${b50 ? `, half the odds between ${b50.lower_days} and ${b50.upper_days} days out` : ''}${d > 30 ? ' — beyond this chart' : ''}.${staleText}`,
+            },
+        };
+    }, [groundedFit, rulEstimate, readingAgeDays]);
     // The asset's saved monitoring setup — one owner for the pop-up and the capture panel.
     const { config: predictConfig, save: savePredictConfig } = useAssetPredictConfig(selectedAssetId);
     return (
@@ -217,9 +239,12 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                     {crossing && (
                         <p className={`text-xs mt-1 font-medium ${crossing.urgent ? 'text-red-600' : 'text-slate-600'}`}>{crossing.text}</p>
                     )}
+                    {lifeNote && (
+                        <p className={`text-xs mt-1 font-medium ${lifeNote.urgent ? 'text-amber-700' : 'text-slate-600'}`}>{lifeNote.text}</p>
+                    )}
                 </div>
                 <div className="p-5 min-h-[350px]">
-                    <TwinHealthChart twinState={chartState} />
+                    <TwinHealthChart twinState={chartState} lifeMarker={lifeMarker} />
                 </div>
             </div>
 

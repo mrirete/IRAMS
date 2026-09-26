@@ -18,6 +18,7 @@ interface RULReliabilityTabProps {
     canCloseAlert: boolean;
     onAcknowledgeAlert: (a: PredictionAlert) => Promise<{ ok: boolean; message?: string }>;
     onRaiseWork: (a: PredictionAlert) => void;
+    onRequestReading?: (a: PredictionAlert) => void;
     onCloseAlert: (a: PredictionAlert, outcome: AlertOutcome, notes: string) => Promise<{ ok: boolean; message?: string }>;
     rulEstimate: RULEstimate | null;
     /** Saved RUL history (0392), oldest first. */
@@ -30,7 +31,7 @@ interface RULReliabilityTabProps {
 }
 
 export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
-    rulEstimate, rulHistory = [], assetAlerts, groundedFit, feedbackStats, canCloseAlert, onAcknowledgeAlert, onRaiseWork, onCloseAlert,
+    rulEstimate, rulHistory = [], assetAlerts, groundedFit, feedbackStats, canCloseAlert, onAcknowledgeAlert, onRaiseWork, onRequestReading, onCloseAlert,
 }) => {
     const rulMove = seriesSpread(rulHistory);
     const totalFeedback = (feedbackStats?.actionable || 0) + (feedbackStats?.falseAlarm || 0);
@@ -150,6 +151,7 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                             canClose={canCloseAlert}
                             onAcknowledge={onAcknowledgeAlert}
                             onRaiseWork={onRaiseWork}
+                            onRequestReading={onRequestReading}
                             onClose={onCloseAlert}
                             renderDetail={(alert) => (
                                 <>

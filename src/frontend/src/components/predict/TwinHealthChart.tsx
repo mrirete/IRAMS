@@ -7,26 +7,44 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    ReferenceLine
+    ReferenceLine,
+    ReferenceArea
 } from 'recharts';
 import type { TwinState } from '../../types/intelligence';
 import { HEALTH_FAILURE_THRESHOLD } from '../../config/predict';
 
-interface Props {
-    twinState: TwinState | null;
+/**
+ * The fitted life model's expected failure, drawn on the health chart so the
+ * two views of the asset — condition and history — share one picture. Only
+ * within the chart's horizon; the caller states it in words otherwise.
+ */
+export interface LifeMarker {
+    daysAhead: number;
+    label: string;
+    /** 50 % band, days ahead — shaded so the marker reads as a range, not a date. */
+    band?: { from: number; to: number } | null;
 }
 
-export const TwinHealthChart: React.FC<Props> = ({ twinState }) => {
+interface Props {
+    twinState: TwinState | null;
+    lifeMarker?: LifeMarker | null;
+}
+
+export const TwinHealthChart: React.FC<Props> = ({ twinState, lifeMarker }) => {
     if (!twinState) return null;
+    const dateAt = (daysAhead: number) => {
+        const d = new Date();
+        d.setDate(d.getDate() + daysAhead);
+        return d.toISOString().split('T')[0];
+    };
+    const horizon = Math.max(...twinState.health_projection.map(p => p.days_ahead), 0);
+    const marker = lifeMarker && lifeMarker.daysAhead >= 1 && lifeMarker.daysAhead <= horizon ? lifeMarker : null;
+    const clampDay = (d: number) => Math.min(horizon, Math.max(1, Math.round(d)));
 
     // Format data for Recharts
     const data = twinState.health_projection.map(p => {
-        // Create dates from "days ahead"
-        const date = new Date();
-        date.setDate(date.getDate() + p.days_ahead);
-
         return {
-            date: date.toISOString().split('T')[0],
+            date: dateAt(p.days_ahead),
             daysAhead: p.days_ahead,
             health_index: p.health_index,
             range: [p.confidence_lower, p.confidence_upper]
@@ -108,6 +126,15 @@ export const TwinHealthChart: React.FC<Props> = ({ twinState }) => {
 
                     {/* Critical Failure Threshold Line */}
                     <ReferenceLine y={HEALTH_FAILURE_THRESHOLD} stroke="#ef4444" strokeDasharray="3 3" opacity={0.5} label={{ position: 'insideTopLeft', value: `Failure Threshold (${HEALTH_FAILURE_THRESHOLD})`, fill: '#ef4444', fontSize: 10 }} />
+
+                    {/* Fitted life model: expected failure, with its 50 % band */}
+                    {marker?.band && (
+                        <ReferenceArea x1={dateAt(clampDay(marker.band.from))} x2={dateAt(clampDay(marker.band.to))} fill="#f59e0b" fillOpacity={0.08} stroke="none" />
+                    )}
+                    {marker && (
+                        <ReferenceLine x={dateAt(Math.round(marker.daysAhead))} stroke="#d97706" strokeWidth={2} strokeDasharray="4 3"
+                            label={{ position: 'insideTopRight', value: marker.label, fill: '#b45309', fontSize: 10, fontWeight: 600 }} />
+                    )}
 
                     {/* Confidence Area (range) */}
                     <Area
