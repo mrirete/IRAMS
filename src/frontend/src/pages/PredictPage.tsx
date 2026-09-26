@@ -11,6 +11,7 @@ import { buildLineage } from '../components/predict/WhereItSits';
 import { fitHealthTrend, suggestNeededBy, freshHistory, type HistoryPoint } from '../lib/predict/healthTrend';
 import { HEALTH_FAILURE_THRESHOLD, STALE_DAYS } from '../config/predict';
 import { buildVerdict } from '../lib/predict/verdict';
+import { VerdictLine } from '../components/predict/VerdictLine';
 import { rulAlertWindowDays } from '../lib/predict/rulAlert';
 import { isOpenAlert } from '../lib/predict/vibrationCaptures';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
@@ -1045,6 +1046,8 @@ export const PredictPage: React.FC = () => {
             </div>
             )}
             {twinUpdateLine && <div className="@min-[90rem]/page:hidden">{twinUpdateLine}</div>}
+            {/* The verdict on every tab: at the top of the rail when it is open, else inline here. */}
+            {verdict && <div className="@min-[90rem]/page:hidden"><VerdictLine verdict={verdict} onAction={onVerdictAction} /></div>}
 
             {/* ═══ PLAIN DEFAULT — no asset selected: the fleet map IS the chooser, and its
                 search reaches the whole register (unmonitored matches offer set-up). ═══ */}
@@ -1099,8 +1102,6 @@ export const PredictPage: React.FC = () => {
                 <PredictOverviewTab
                     healthHistory={history.health}
                     newestReadingAt={newestReading}
-                    verdict={verdict}
-                    onVerdictAction={onVerdictAction}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
                     onAssetSelect={(id) => { setSelectedAssetId(id); setAssetPickerOpen(false); }}
