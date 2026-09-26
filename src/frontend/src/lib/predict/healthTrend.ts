@@ -27,6 +27,21 @@ export interface HealthFit {
     latestAt: string;
 }
 
+/**
+ * History points that stand on data: every twin update saves a health point
+ * (0392 trigger), including a re-score of readings that have not changed. A
+ * point recorded more than `staleDays` after the newest reading is such a
+ * re-score, and a line fitted through repeats of one measurement would look
+ * confident about nothing.
+ */
+export function freshHistory(points: HistoryPoint[], newestReadingAt: string | null | undefined, staleDays: number): { points: HistoryPoint[]; ignored: number } {
+    const newest = newestReadingAt ? new Date(newestReadingAt).getTime() : NaN;
+    if (!Number.isFinite(newest)) return { points: [], ignored: points.length };
+    const cutoff = newest + staleDays * DAY;
+    const kept = points.filter(p => new Date(p.at).getTime() <= cutoff);
+    return { points: kept, ignored: points.length - kept.length };
+}
+
 export const MIN_FIT_POINTS = 5;
 export const MIN_FIT_SPAN_DAYS = 2;
 const DAY = 86_400_000;

@@ -55,6 +55,8 @@ interface PredictOverviewTabProps {
     lineage?: LineageNode[];
     /** Saved health history (0392), oldest first. */
     healthHistory?: HistoryPoint[];
+    /** When the asset was last measured. Freshness is judged on this, never on the twin's re-score time. */
+    newestReadingAt?: string | null;
 
     /* Sensors */
     twinHealth: TwinState | null;
@@ -221,7 +223,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     selectedAssetId, selectedAssetName, onAssetSelect, fleetData, totalAssetCount,
     systemHealth, isHealthy, rulDays, alertCount,
     rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
-    groundedFit, equipmentClass, rollups = [], lineage = [], healthHistory = [], twinHealth, assetSensorTrends,
+    groundedFit, equipmentClass, rollups = [], lineage = [], healthHistory = [], newestReadingAt, twinHealth, assetSensorTrends,
     onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
@@ -232,11 +234,14 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     const model = healthModelFor(equipmentClass?.cls ?? 'other');
 
     // Freshness gate: values derived from old data must not present as live.
+    // Judged on the newest READING; the twin's updated_at only says when the
+    // same readings were last re-scored (a click, or the automatic update).
+    const freshnessAt = newestReadingAt ?? twinHealth?.updated_at ?? null;
     const dataAgeDays = useMemo(() => {
-        if (!twinHealth?.updated_at) return null;
-        const age = Math.floor((Date.now() - new Date(twinHealth.updated_at).getTime()) / 86400000);
+        if (!freshnessAt) return null;
+        const age = Math.floor((Date.now() - new Date(freshnessAt).getTime()) / 86400000);
         return Number.isFinite(age) ? age : null;
-    }, [twinHealth?.updated_at]);
+    }, [freshnessAt]);
     const isStale = dataAgeDays != null && dataAgeDays > STALE_DAYS;
 
     const operatingState = useMemo(() => {
@@ -373,8 +378,8 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                         <div className="flex items-center gap-3">
                             {/* Freshness is stated once, in the status strip above; here only the
                                 heartbeat, and only while the data is actually fresh. */}
-                            {twinHealth?.updated_at && (() => {
-                                const diffMs = Date.now() - new Date(twinHealth.updated_at).getTime();
+                            {freshnessAt && (() => {
+                                const diffMs = Date.now() - new Date(freshnessAt).getTime();
                                 const diffMin = Math.floor(diffMs / 60000);
                                 const timeAgo = diffMin < 1 ? 'just now' : diffMin < 60 ? `${diffMin}m ago` : diffMin < 1440 ? `${Math.floor(diffMin / 60)}h ago` : `${Math.floor(diffMin / 1440)}d ago`;
                                 return isStale ? null : (

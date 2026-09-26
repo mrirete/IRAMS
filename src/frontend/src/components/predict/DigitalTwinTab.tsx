@@ -34,6 +34,8 @@ interface DigitalTwinTabProps {
     onAdoptPmInterval?: (args: { intervalDays: number; rationale: string }) => void;
     /** Saved health history (0392): with enough points the projection is fitted to it. */
     healthHistory?: HistoryPoint[];
+    /** Saved points recorded with no new reading behind them — left out of the fit. */
+    ignoredHistoryPoints?: number;
     /** A saved vibration capture opened an alert — refresh the queue. */
     onAlertRaised?: () => void;
 }
@@ -46,7 +48,7 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval, healthHistory = [], onAlertRaised,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval, healthHistory = [], ignoredHistoryPoints = 0, onAlertRaised,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
@@ -210,7 +212,7 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                     <p className="text-xs text-slate-400 mt-2 leading-relaxed">
                         {fit
                             ? `Health for the next 30 days, fitted to ${fit.n} saved points over ${fit.spanDays} days (${fit.slopePerDay > 0 ? '+' : ''}${fit.slopePerDay} a day). The band is ±1.96 × their scatter.`
-                            : `Health for the next 30 days at a fixed rate for its band. A direction, not a forecast. It is fitted to saved history once there are ${MIN_FIT_POINTS} points over ${MIN_FIT_SPAN_DAYS} days (${healthHistory.length} so far).`}
+                            : `Health for the next 30 days at a fixed rate for its band. A direction, not a forecast. It is fitted to saved history once there are ${MIN_FIT_POINTS} points over ${MIN_FIT_SPAN_DAYS} days (${healthHistory.length} so far${ignoredHistoryPoints > 0 ? `; ${ignoredHistoryPoints} left out — saved with no new reading behind them` : ''}).`}
                     </p>
                     {crossing && (
                         <p className={`text-xs mt-1 font-medium ${crossing.urgent ? 'text-red-600' : 'text-slate-600'}`}>{crossing.text}</p>

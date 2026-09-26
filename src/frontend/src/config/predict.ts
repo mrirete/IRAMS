@@ -16,3 +16,11 @@ export const STALE_DAYS = 7;
  * same line so the two never disagree on where "failed" is.
  */
 export const HEALTH_FAILURE_THRESHOLD = 30;
+
+/**
+ * Remaining-life alert window, days, by asset criticality: a FITTED life model
+ * whose expected remaining life falls inside the window opens a 'rul_warning'
+ * alert (lib/predict/rulAlert). A critical asset needs more notice to plan a
+ * shutdown and get parts; the fallback covers unset or unknown criticality.
+ */
+export const RUL_ALERT_WINDOW_DAYS: Record<string, number> & { default: number } = { A: 30, B: 21, default: 14 };

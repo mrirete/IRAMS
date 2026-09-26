@@ -8,8 +8,8 @@ import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
 import { FleetHealthMap } from '../components/predict/FleetHealthMap';
 import { buildLineage } from '../components/predict/WhereItSits';
-import { fitHealthTrend, suggestNeededBy, type HistoryPoint } from '../lib/predict/healthTrend';
-import { HEALTH_FAILURE_THRESHOLD } from '../config/predict';
+import { fitHealthTrend, suggestNeededBy, freshHistory, type HistoryPoint } from '../lib/predict/healthTrend';
+import { HEALTH_FAILURE_THRESHOLD, STALE_DAYS } from '../config/predict';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import { ScrollTabStrip } from '../eam/components/ui';
@@ -201,8 +201,9 @@ export const PredictPage: React.FC = () => {
         if (!r.ok) return r;
         await refetchPredict(alert.asset_id);
         setFeedbackStats(await predictionService.getAlertFeedbackStats(alert.asset_id));
-        if (outcome === 'no_fault_found') {
-            // A false alarm feeds the threshold adapter: band proposals wait for review below.
+        // A false alarm on a BAND alert feeds the threshold adapter. A remaining-
+        // life alert has no band to adjust; its false alarm is the life model's.
+        if (outcome === 'no_fault_found' && alert.alert_type !== 'rul_warning') {
             try {
                 const res = await agentService.proposeThresholdAdjustments(alert.asset_id);
                 if (res.agentAction) setAdapterNudge(res.message);
@@ -379,15 +380,28 @@ export const PredictPage: React.FC = () => {
         return () => { alive = false; };
     }, [selectedAssetId, twinHealth?.updated_at]);
 
+    // When the asset was last MEASURED — the freshness the Now tab states.
+    // The twin's updated_at is when it was last re-scored, which a manual
+    // "Update twin" resets without a single new reading behind it.
+    const [newestReading, setNewestReading] = useState<string | null>(null);
+    useEffect(() => {
+        let alive = true;
+        if (!selectedAssetId) { setNewestReading(null); return; }
+        predictionService.newestReadingAt(selectedAssetId).then(t => { if (alive) setNewestReading(t); });
+        return () => { alive = false; };
+    }, [selectedAssetId, twinHealth?.updated_at]);
+    // Only history points that stand on a reading go into the fitted trend.
+    const freshHealth = useMemo(() => freshHistory(history.health, newestReading, STALE_DAYS), [history.health, newestReading]);
+
     // Work raised from an alert gets a needed-by date: the fitted health trend's
     // crossing of the failure limit, else the remaining-life estimate, less the
     // planning lead — with the basis shown next to the field.
     const neededBy = useMemo(() => suggestNeededBy({
-        fit: fitHealthTrend(history.health),
+        fit: fitHealthTrend(freshHealth.points),
         limit: HEALTH_FAILURE_THRESHOLD,
         rulDays: displayRul?.rul_days ?? null,
         rulBasis: groundedActive ? 'fitted to failure history' : displayRul?.distribution_type === 'heuristic' ? 'directional heuristic' : displayRul?.distribution_type ?? null,
-    }), [history.health, displayRul, groundedActive]);
+    }), [freshHealth.points, displayRul, groundedActive]);
 
     const filteredAssets = useMemo(() => {
         const q = assetSearch.toLowerCase();
@@ -1032,6 +1046,7 @@ export const PredictPage: React.FC = () => {
             {selectedAssetId && activeTab === 'overview' && (
                 <PredictOverviewTab
                     healthHistory={history.health}
+                    newestReadingAt={newestReading}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
                     onAssetSelect={(id) => { setSelectedAssetId(id); setAssetPickerOpen(false); }}
@@ -1069,7 +1084,8 @@ export const PredictPage: React.FC = () => {
                     groundedFit={groundedActive ? grounded : null}
                     onScheduleInspection={setInspectPrefill}
                     onAdoptPmInterval={setPmPrefill}
-                    healthHistory={history.health}
+                    healthHistory={freshHealth.points}
+                    ignoredHistoryPoints={freshHealth.ignored}
                     onAlertRaised={() => refetchPredict(selectedAssetId)}
                 />
             )}

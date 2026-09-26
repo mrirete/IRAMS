@@ -28,8 +28,9 @@
 import { supabase } from '../lib/supabase';
 import { buildSensorReading } from '../lib/sensorReading';
 import { HEALTH_FAILURE_THRESHOLD } from '../../config/predict';
-import { failureIntervalsHours, isFailure } from './reliabilityMetrics';
-import { groundedRulFromHistory } from '../../lib/pmRecommendation';
+import type { GroundedRul } from '../../lib/pmRecommendation';
+import { fetchGroundedFit } from '../../lib/predict/groundedFit';
+import { rulAlertDraft } from '../../lib/predict/rulAlert';
 import { conditionalRemainingQuantileHours } from '../utils/weibull';
 import { resolveEquipmentClass } from '../../lib/predict/equipmentClass';
 import { healthModelFor, sensorKind } from '../../lib/predict/healthModels';
@@ -913,21 +914,12 @@ class PredictionService {
         const govTier = healthIndex < 60 ? 2 : healthIndex < 80 ? 3 : 4;
 
         // ── Grounded path: WO failure history → censored Weibull → MRL ──
-        const { data: wos } = await supabase.from('work_orders')
-            .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
-            .eq('asset_id', assetId)
-            .order('created_at');
-        const rows = wos || [];
-        const intervals = failureIntervalsHours(rows);
-        const lastFail = rows.filter(isFailure)
-            .map((w: any) => new Date(w.closed_at || w.created_at).getTime())
-            .sort((a, b) => b - a)[0];
-        const suspensions: number[] = [];
-        if (lastFail) {
-            const h = Math.floor((Date.now() - lastFail) / 3600000);
-            if (h > 0) suspensions.push(h);
-        }
-        const grounded = groundedRulFromHistory(intervals, suspensions);
+        // ONE fit (lib/predict/groundedFit): the same query and predicate the
+        // Forecast tab and the Reliability Advisor use. A local copy of the
+        // query here once selected only type and dates, so the failure
+        // predicate fell back to paperwork dates and gave a different β from
+        // the tab beside it (PMP-411: β 0.26 stored vs 7.46 shown).
+        const grounded = await fetchGroundedFit(assetId);
 
         if (grounded.method === 'weibull-mrl' && grounded.rulDays != null && grounded.beta && grounded.eta) {
             const ageH = grounded.ageDays * 24;
@@ -952,9 +944,10 @@ class PredictionService {
                 computed_at: new Date().toISOString(),
             });
             if (!result) return { success: false, message: 'Failed to persist RUL estimate to database.' };
+            const raised = await this._raiseRulAlert(assetId, grounded, bands[0]);
             return {
                 success: true,
-                message: `RUL Forecast: ${grounded.rulDays.toFixed(0)} days — Weibull MRL (β=${grounded.beta}, η=${grounded.eta}h, R²=${grounded.fit?.r2 ?? '—'}) from ${grounded.fit?.nFailures ?? intervals.length} failures`,
+                message: `RUL Forecast: ${grounded.rulDays.toFixed(0)} days — Weibull MRL (β=${grounded.beta}, η=${grounded.eta}h, R²=${grounded.fit?.r2 ?? '—'}) from ${grounded.fit?.nFailures ?? 0} failures${raised ? ` — ${raised}` : ''}`,
             };
         }
 
@@ -989,8 +982,46 @@ class PredictionService {
         if (!result) return { success: false, message: 'Failed to persist RUL estimate to database.' };
         return {
             success: true,
-            message: `RUL Forecast: ${baseRUL.toFixed(0)} days — directional heuristic (needs ≥2 recorded failures for a fitted Weibull; ${intervals.length} on record)`,
+            message: `RUL Forecast: ${baseRUL.toFixed(0)} days — directional heuristic (needs ≥2 recorded failures for a fitted Weibull)`,
         };
+    }
+
+    /**
+     * A fitted remaining life inside the criticality window opens ONE
+     * 'rul_warning' alert per asset (lib/predict/rulAlert). The queue, the
+     * needed-by date and the outcome loop (0391) then apply to it like any
+     * other alert. Returns a short note for the step message, or null.
+     */
+    private async _raiseRulAlert(assetId: string, grounded: GroundedRul, band50: { lower_days: number; upper_days: number } | undefined): Promise<string | null> {
+        if (grounded.method !== 'weibull-mrl' || grounded.rulDays == null || !grounded.beta || !grounded.eta) return null;
+        const { data: asset } = await supabase.from('assets').select('tag, criticality').eq('id', assetId).maybeSingle();
+        const newest = await this.newestReadingAt(assetId);
+        const draft = rulAlertDraft({
+            assetTag: asset?.tag || assetId,
+            criticality: asset?.criticality ?? null,
+            rulDays: grounded.rulDays,
+            band50: band50 ? { lower: band50.lower_days, upper: band50.upper_days } : null,
+            beta: grounded.beta, etaHours: grounded.eta,
+            nFailures: grounded.fit?.nFailures ?? 0, ageDays: grounded.ageDays,
+            readingAgeDays: newest ? (Date.now() - new Date(newest).getTime()) / 86_400_000 : null,
+        });
+        if (!draft) return null;
+        const open = (await this.getAlerts(assetId)).some(a => a.alert_type === 'rul_warning' && (a.status ? a.status !== 'closed' : !a.acknowledged));
+        if (open) return 'remaining-life alert already open';
+        const created = await this.createAlert({
+            alert_id: `rul-${Date.now()}-${(asset?.tag || assetId).replace(/[^a-zA-Z0-9]/g, '')}`,
+            asset_id: assetId,
+            alert_type: 'rul_warning',
+            severity: draft.severity,
+            title: draft.title,
+            description: draft.description,
+            confidence: Math.min(0.98, Math.max(0.5, grounded.fit?.r2 ?? 0.8)),
+            dqs_impact: 0,
+            governance_tier: draft.severity === 'high' ? 2 : 3,
+            diagnosis: null,
+            failure_mode_code: null,
+        });
+        return created ? `${draft.severity} remaining-life alert raised (inside the ${draft.windowDays}-day window)` : 'remaining-life alert not saved';
     }
 
     // ── Alert Scan ─────────────────────────────────────────
@@ -1340,21 +1371,12 @@ class PredictionService {
         }
 
         // ── B. Fitted Weibull wear-out from WO failure history (R-1) ──
-        const { data: wos } = await supabase.from('work_orders')
-            .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
-            .eq('asset_id', assetId)
-            .order('created_at');
-        const rows = wos || [];
-        const intervals = failureIntervalsHours(rows);
-        const lastFail = rows.filter(isFailure)
-            .map((w: any) => new Date(w.closed_at || w.created_at).getTime())
-            .sort((a, b) => b - a)[0];
-        const suspensions: number[] = [];
-        if (lastFail) {
-            const h = Math.floor((Date.now() - lastFail) / 3600000);
-            if (h > 0) suspensions.push(h);
-        }
-        const grounded = groundedRulFromHistory(intervals, suspensions);
+        // ONE fit (lib/predict/groundedFit): the same query and predicate the
+        // Forecast tab and the Reliability Advisor use. A local copy of the
+        // query here once selected only type and dates, so the failure
+        // predicate fell back to paperwork dates and gave a different β from
+        // the tab beside it (PMP-411: β 0.26 stored vs 7.46 shown).
+        const grounded = await fetchGroundedFit(assetId);
         if (grounded.method === 'weibull-mrl' && grounded.rulDays != null && grounded.beta && grounded.eta) {
             // Life consumed = age / (age + expected residual life).
             const lifeConsumed = grounded.ageDays + grounded.rulDays > 0
@@ -1363,7 +1385,7 @@ class PredictionService {
             models.push({
                 mechanism: classRes.cls === 'rotating' ? 'Wear-out — bearings/seals (fitted)' : 'Wear-out (fitted from failure history)',
                 model_type: `Censored Weibull (β=${grounded.beta}, η=${grounded.eta}h)`,
-                parameters: { beta: grounded.beta, eta_hours: grounded.eta, age_days: grounded.ageDays, n_failures: grounded.fit?.nFailures ?? intervals.length },
+                parameters: { beta: grounded.beta, eta_hours: grounded.eta, age_days: grounded.ageDays, n_failures: grounded.fit?.nFailures ?? 0 },
                 current_damage_pct: r1(lifeConsumed),
                 // Same MRL the RUL tab shows — one number, by construction.
                 projected_failure_date: new Date(Date.now() + grounded.rulDays * 86400000).toISOString(),

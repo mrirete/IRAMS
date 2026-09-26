@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fitHealthTrend, fittedProjection, seriesSpread, daysToLimit, suggestNeededBy, PLANNING_LEAD_DAYS } from './healthTrend';
+import { fitHealthTrend, fittedProjection, seriesSpread, daysToLimit, suggestNeededBy, freshHistory, PLANNING_LEAD_DAYS } from './healthTrend';
 import { qualityFlags } from './dataQuality';
 
 const day = (d: number) => new Date(Date.UTC(2026, 8, 1) + d * 86_400_000).toISOString();
@@ -84,5 +84,17 @@ describe('needed-by date', () => {
     it('never before today; at the limit means now', () => {
         expect(suggestNeededBy({ fit: null, limit: 30, rulDays: 3, now }).date).toBe(day(10).slice(0, 10));
         expect(suggestNeededBy({ fit: { ...fit, latest: 25 }, limit: 30, now }).date).toBe(day(10).slice(0, 10));
+    });
+});
+
+describe('freshHistory', () => {
+    const pts = [0, 1, 2, 20, 40].map(d => ({ at: day(d), value: 90 }));
+    it('keeps points up to the newest reading plus the stale allowance; the rest are re-scores', () => {
+        const r = freshHistory(pts, day(2), 7);
+        expect(r.points.map(p => p.at)).toEqual([day(0), day(1), day(2)]);
+        expect(r.ignored).toBe(2);
+    });
+    it('no readings at all: nothing stands on data', () => {
+        expect(freshHistory(pts, null, 7)).toEqual({ points: [], ignored: 5 });
     });
 });
