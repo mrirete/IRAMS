@@ -10,6 +10,9 @@ import { FleetHealthMap } from '../components/predict/FleetHealthMap';
 import { buildLineage } from '../components/predict/WhereItSits';
 import { fitHealthTrend, suggestNeededBy, freshHistory, type HistoryPoint } from '../lib/predict/healthTrend';
 import { HEALTH_FAILURE_THRESHOLD, STALE_DAYS } from '../config/predict';
+import { buildVerdict } from '../lib/predict/verdict';
+import { rulAlertWindowDays } from '../lib/predict/rulAlert';
+import { isOpenAlert } from '../lib/predict/vibrationCaptures';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import { ScrollTabStrip } from '../eam/components/ui';
@@ -412,6 +415,35 @@ export const PredictPage: React.FC = () => {
     }, [selectedAssetId, twinHealth?.updated_at]);
     // Only history points that stand on a reading go into the fitted trend.
     const freshHealth = useMemo(() => freshHistory(history.health, newestReading, STALE_DAYS), [history.health, newestReading]);
+
+    // The one-line verdict: what we know, what the history says, what to do.
+    // Built from the same numbers the tabs show, so it cannot disagree with them.
+    const readingAgeDays = newestReading ? (Date.now() - new Date(newestReading).getTime()) / 86_400_000 : null;
+    const verdict = useMemo(() => {
+        if (!selectedAssetId) return null;
+        const b50 = displayRul?.confidence_bands?.find(b => b.percentile === 50);
+        return buildVerdict({
+            health: twinHealth ? Number(twinHealth.health_index) : null,
+            readingAgeDays,
+            fitted: groundedActive && grounded?.rulDays != null
+                ? { rulDays: grounded.rulDays, band50: b50 ? { lower: b50.lower_days, upper: b50.upper_days } : null, nFailures: grounded.fit?.nFailures ?? 0 }
+                : null,
+            breaches: conditionAlarms?.breaches?.length ?? 0,
+            openAlerts: assetAlerts.filter(isOpenAlert).length,
+            windowDays: rulAlertWindowDays(selectedAsset?.criticality),
+        });
+    }, [selectedAssetId, twinHealth, readingAgeDays, groundedActive, grounded, displayRul, conditionAlarms, assetAlerts, selectedAsset?.criticality]);
+    const onVerdictAction = () => {
+        if (!verdict) return;
+        if (verdict.action === 'take_reading') {
+            const rul = assetAlerts.find(a => a.alert_type === 'rul_warning' && isOpenAlert(a));
+            if (rul) { requestReading(rul); return; }
+            setReadingRequest({ alert: { alert_id: 'none', title: 'Condition reading', description: '' } as PredictionAlert, dueDate: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10), note: `Condition reading requested: the newest reading is ${readingAgeDays != null ? `${Math.floor(readingAgeDays)} days old` : 'missing'}. Bring the readings in on Condition Data; Predict re-scores the asset from them.` });
+            return;
+        }
+        if (verdict.action === 'plan_work') { setSelectedAssetId(selectedAssetId, 'rul'); return; }
+        if (verdict.action === 'set_up') openSetup(selectedAssetId || undefined);
+    };
 
     // Work raised from an alert gets a needed-by date: the fitted health trend's
     // crossing of the failure limit, else the remaining-life estimate, less the
@@ -1067,6 +1099,8 @@ export const PredictPage: React.FC = () => {
                 <PredictOverviewTab
                     healthHistory={history.health}
                     newestReadingAt={newestReading}
+                    verdict={verdict}
+                    onVerdictAction={onVerdictAction}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
                     onAssetSelect={(id) => { setSelectedAssetId(id); setAssetPickerOpen(false); }}
@@ -1106,7 +1140,7 @@ export const PredictPage: React.FC = () => {
                     onAdoptPmInterval={setPmPrefill}
                     healthHistory={freshHealth.points}
                     ignoredHistoryPoints={freshHealth.ignored}
-                    readingAgeDays={newestReading ? (Date.now() - new Date(newestReading).getTime()) / 86_400_000 : null}
+                    readingAgeDays={readingAgeDays}
                     onAlertRaised={() => refetchPredict(selectedAssetId)}
                 />
             )}
@@ -1274,6 +1308,14 @@ export const PredictPage: React.FC = () => {
                     rollups={rollups}
                     onSelectAsset={(id) => setSelectedAssetId(id, 'overview')}
                     statusSlot={twinUpdateLine}
+                    tab={activeTab}
+                    verdict={verdict}
+                    onVerdictAction={onVerdictAction}
+                    readingAgeDays={readingAgeDays}
+                    healthPoints={freshHealth.points.length}
+                    ignoredHealthPoints={freshHealth.ignored}
+                    neededBy={neededBy}
+                    onOpenTab={(t) => setSelectedAssetId(selectedAssetId, t)}
                 />
             ) : (
                 <PredictSideRail

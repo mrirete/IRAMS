@@ -43,10 +43,13 @@ const namedMatches = (f: CaptureFeatures) => (f.bearingMatches ?? []).filter(m =
 export const alertPointOf = (title: string) => (title.split(': ').pop() || '').trim();
 export const samePoint = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** Points that already have an open alert (0391: open = not closed; before 0391, not acknowledged). */
+/** Open = not closed (0391); before 0391 the legacy acknowledged flag decides. */
+export const isOpenAlert = (a: { status?: string | null; acknowledged?: boolean | null }) => (a.status ? a.status !== 'closed' : !a.acknowledged);
+
+/** Points that already have an open alert. */
 export function openAlertPoints(alerts: { title: string; status?: string | null; acknowledged?: boolean | null }[]): Set<string> {
     return new Set(
-        alerts.filter(a => (a.status ? a.status !== 'closed' : !a.acknowledged))
+        alerts.filter(isOpenAlert)
             .map(a => alertPointOf(a.title).toLowerCase())
             .filter(Boolean),
     );

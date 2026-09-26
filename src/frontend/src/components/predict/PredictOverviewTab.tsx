@@ -9,6 +9,8 @@ import { FleetHealthMap, isAtRisk, HEALTH_BANDS } from './FleetHealthMap';
 import type { FleetAssetHealth, TwinState, SensorTrend } from '../../types/intelligence';
 import type { ConfidenceBand } from '../../eam/services/PredictionService';
 import { STALE_DAYS } from '../../config/predict';
+import { VerdictLine } from './VerdictLine';
+import type { Verdict } from '../../lib/predict/verdict';
 import { conditionalFailureProbability } from '../../eam/utils/weibull';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
@@ -57,6 +59,9 @@ interface PredictOverviewTabProps {
     healthHistory?: HistoryPoint[];
     /** When the asset was last measured. Freshness is judged on this, never on the twin's re-score time. */
     newestReadingAt?: string | null;
+    /** The page's one-line verdict (lib/predict/verdict) and its next step. */
+    verdict?: Verdict | null;
+    onVerdictAction?: () => void;
 
     /* Sensors */
     twinHealth: TwinState | null;
@@ -223,7 +228,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     selectedAssetId, selectedAssetName, onAssetSelect, fleetData, totalAssetCount,
     systemHealth, isHealthy, rulDays, alertCount,
     rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
-    groundedFit, equipmentClass, rollups = [], lineage = [], healthHistory = [], newestReadingAt, twinHealth, assetSensorTrends,
+    groundedFit, equipmentClass, rollups = [], lineage = [], healthHistory = [], newestReadingAt, verdict, onVerdictAction, twinHealth, assetSensorTrends,
     onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
@@ -287,6 +292,9 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
 
     return (
         <div className="space-y-5 animate-in fade-in duration-300">
+
+            {/* The verdict: one sentence from the tabs' own numbers, and the next step. */}
+            {verdict && <VerdictLine verdict={verdict} onAction={onVerdictAction} />}
 
             {/* ═══ SECTION 1: OPERATING STATE + ACTION BAR ═══ */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">

@@ -25,6 +25,12 @@ import { STALE_DAYS } from '../../config/predict';
 import { isAtRisk } from './FleetHealthMap';
 import { WhereItSits, type LineageNode } from './WhereItSits';
 import { drawingHref, newDrawingTitle } from '../../lib/predict/links';
+import { VerdictLine } from './VerdictLine';
+import type { Verdict } from '../../lib/predict/verdict';
+import type { NeededBy } from '../../lib/predict/healthTrend';
+import { MIN_FIT_POINTS } from '../../lib/predict/healthTrend';
+import { useAssetPredictConfig } from './useAssetPredictConfig';
+import { isOpenAlert } from '../../lib/predict/vibrationCaptures';
 
 type Breach = { name: string; unit?: string; value: number; level: 'WARNING' | 'CRITICAL'; detail: string; date?: string };
 
@@ -41,6 +47,17 @@ interface AssetMode {
     onCreateWR: () => void;
     /** The asset's own chain in the register (WhereItSits). */
     lineage: LineageNode[];
+    /** Which tab is open — the rail's middle section follows the question that tab answers. */
+    tab?: 'overview' | 'twin' | 'rul';
+    verdict?: Verdict | null;
+    onVerdictAction?: () => void;
+    readingAgeDays?: number | null;
+    /** Saved health points that stand on a reading, and those left out (Model). */
+    healthPoints?: number;
+    ignoredHealthPoints?: number;
+    /** Suggested needed-by date for work raised from an alert (Forecast). */
+    neededBy?: NeededBy | null;
+    onOpenTab?: (tab: 'overview' | 'twin' | 'rul') => void;
 }
 interface ChooserMode {
     mode: 'chooser';
@@ -109,6 +126,54 @@ const RollupList: React.FC<{ rollups: RollupNode[]; onSelectAsset: (id: string) 
     );
 };
 
+/** Model tab: is the asset set up to be modelled, and how far along is the fitted trend. */
+const ModelSection: React.FC<{ assetId: string; rotating: boolean; fitted: boolean; healthPoints: number; ignored: number; onOpenTab?: (t: 'overview' | 'twin' | 'rul') => void }> = ({ assetId, rotating, fitted, healthPoints, ignored }) => {
+    const { config } = useAssetPredictConfig(assetId);
+    const Item: React.FC<{ ok: boolean; label: string; hint: string }> = ({ ok, label, hint }) => (
+        <li className="flex items-start gap-2 text-[12px] leading-snug">
+            <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${ok ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            <span className="min-w-0"><span className="text-slate-700">{label}</span><span className="block text-[10px] text-slate-400">{hint}</span></span>
+        </li>
+    );
+    const bearings = config?.bearings?.length ?? 0;
+    return (
+        <div className={card}>
+            <p className={heading}><Activity size={11} /> Model readiness</p>
+            <ul className="space-y-1.5">
+                {rotating && <Item ok={!!config?.rated_rpm} label={config?.rated_rpm ? `Speed ${config.rated_rpm} rpm` : 'Speed not set'} hint="Names 1× / 2× lines in a vibration capture." />}
+                {rotating && <Item ok={bearings > 0} label={bearings > 0 ? `${bearings} bearing${bearings > 1 ? 's' : ''} named` : 'No bearings named'} hint="Lets a capture name BPFO / BPFI defect tones." />}
+                <Item ok={healthPoints >= MIN_FIT_POINTS} label={`Health trend: ${healthPoints} of ${MIN_FIT_POINTS} points`} hint={ignored > 0 ? `${ignored} left out — saved with no new reading behind them.` : 'Fitted once there are enough points over 2 days.'} />
+                <Item ok={fitted} label={fitted ? 'Fitted life model' : 'No fitted life model'} hint={fitted ? 'From this asset\'s recorded failures.' : 'Needs 2 recorded failures on closed work orders.'} />
+            </ul>
+            {config === null && <p className="text-[10px] text-slate-400 mt-2">Loading setup…</p>}
+        </div>
+    );
+};
+
+/** Forecast tab: the number, the date the work hangs on, and the open alerts. */
+const ForecastSection: React.FC<{ rulDays: number | null; fitted: boolean; neededBy: NeededBy | null; openAlerts: PredictionAlert[]; onCreateWR: () => void }> = ({ rulDays, fitted, neededBy, openAlerts, onCreateWR }) => (
+    <div className={card}>
+        <p className={heading}><FileWarning size={11} /> What to do</p>
+        <Row k="Remaining life">{rulDays != null ? `${Math.round(rulDays)} d · ${fitted ? 'fitted' : 'directional'}` : '—'}</Row>
+        <Row k="Needed by">{neededBy?.date ? new Date(neededBy.date).toLocaleDateString([], { day: 'numeric', month: 'short' }) : 'no date'}</Row>
+        {neededBy && <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{neededBy.note}</p>}
+        {openAlerts.length > 0 ? (
+            <ul className="space-y-1.5 mt-2">
+                {openAlerts.slice(0, 4).map(a => (
+                    <li key={a.alert_id} className="text-[12px] leading-snug">
+                        <span className={`font-semibold uppercase text-[10px] mr-1 ${sevTone[a.severity] ?? 'text-slate-500'}`}>{a.severity}</span>
+                        <span className="text-slate-700">{a.title}</span>
+                        <span className="block text-[10px] text-slate-400">{a.status === 'in_progress' ? (a.work_done_at ? 'Work done — record the outcome' : 'Work raised') : a.status === 'acknowledged' ? 'Acknowledged — raise work or close' : 'New — acknowledge, raise work, or close'}</span>
+                    </li>
+                ))}
+            </ul>
+        ) : <p className="text-[12px] text-slate-500 mt-2 flex items-center gap-1.5"><CheckCircle size={13} className="text-emerald-500" /> No open alerts.</p>}
+        <button onClick={onCreateWR} className="mt-3 w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100">
+            <Wrench size={12} /> Raise work
+        </button>
+    </div>
+);
+
 export const PredictSideRail: React.FC<Props> = (props) => {
     const { rollups, onSelectAsset, statusSlot } = props;
     const assetId = props.mode === 'asset' ? props.asset.id : '';
@@ -173,15 +238,18 @@ export const PredictSideRail: React.FC<Props> = (props) => {
     }
 
     const { asset, twinHealth, rulDays, fitted, equipmentClass, breaches, alerts, onInvestigate, onCreateWR } = props;
+    const tab = props.tab ?? 'overview';
     const twinAge = age(twinHealth?.updated_at);
     const readAge = age(newest);
     const hi = twinHealth ? Number(twinHealth.health_index) : null;
     const model = equipmentClass ? healthModelFor(equipmentClass.cls) : null;
-    const watchCount = breaches.length + alerts.length;
+    const openAlerts = alerts.filter(isOpenAlert);
+    const watchCount = breaches.length + openAlerts.length;
 
     return (
         <div className="space-y-4">
             {statusSlot}
+            {props.verdict && <VerdictLine verdict={props.verdict} onAction={props.onVerdictAction} compact />}
 
             <div className={card}>
                 <div className="flex items-start justify-between gap-2 mb-2">
@@ -217,7 +285,10 @@ export const PredictSideRail: React.FC<Props> = (props) => {
                 </p>
             </div>
 
-            <div className={card}>
+            {tab === 'twin' && <ModelSection assetId={asset.id} rotating={equipmentClass?.cls !== 'static'} fitted={fitted} healthPoints={props.healthPoints ?? 0} ignored={props.ignoredHealthPoints ?? 0} onOpenTab={props.onOpenTab} />}
+            {tab === 'rul' && <ForecastSection rulDays={rulDays} fitted={fitted} neededBy={props.neededBy ?? null} openAlerts={openAlerts} onCreateWR={onCreateWR} />}
+
+            {tab === 'overview' && <div className={card}>
                 <p className={heading}><Gauge size={11} /> Watch list{watchCount > 0 ? ` · ${watchCount}` : ''}</p>
                 {watchCount === 0 ? (
                     <p className="text-[12px] text-slate-500 flex items-center gap-1.5"><CheckCircle size={13} className="text-emerald-500" /> Nothing breaching a band, no open alerts.</p>
@@ -230,7 +301,7 @@ export const PredictSideRail: React.FC<Props> = (props) => {
                                 <span className="block text-[10px] text-slate-400">{b.detail}</span>
                             </li>
                         ))}
-                        {alerts.slice(0, 5).map((a) => (
+                        {openAlerts.slice(0, 5).map((a) => (
                             <li key={a.alert_id} className="text-[12px] leading-snug">
                                 <span className={`font-semibold uppercase text-[10px] mr-1 ${sevTone[a.severity] ?? 'text-slate-500'}`}>{a.severity}</span>
                                 <span className="text-slate-700">{a.title}</span>
@@ -248,7 +319,7 @@ export const PredictSideRail: React.FC<Props> = (props) => {
                         </button>
                     )}
                 </div>
-            </div>
+            </div>}
 
             {/* The asset's own place in the plant — not the plant-wide weakest list. */}
             <WhereItSits lineage={props.lineage} rollups={rollups} onSelectAsset={onSelectAsset} />
