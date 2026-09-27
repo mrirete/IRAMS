@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Activity, AlertTriangle, TrendingDown, TrendingUp, Minus, Search, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, List, ArrowUpDown, SlidersHorizontal, HeartPulse } from 'lucide-react';
 import type { FleetAssetHealth } from '../../types/intelligence';
 import { DEMO_DATA } from '../../config/demoMode';
+import { groupFleet, groupMatches, matchingParts, type FleetGroup } from '../../lib/predict/fleetGroups';
 
 // ─────────────────────────────────────────────────────────
 //  Mock Fleet Data
@@ -105,6 +106,41 @@ interface Props {
 
 const UNMONITORED_LIMIT = 6;
 
+/**
+ * A machine's monitored parts: one line ("3 parts · weakest K-601-DGS 85"),
+ * expanding to the parts themselves. A click on a part opens that part.
+ */
+const PartsLine: React.FC<{ group: FleetGroup; open: boolean; onToggle: () => void; onSelect: (id: string) => void; selectedAssetId: string }> = ({ group: g, open, onToggle, onSelect, selectedAssetId }) => {
+    if (g.parts.length === 0) return null;
+    const weakest = g.parts[0];
+    return (
+        <div className="mt-1.5" onClick={e => e.stopPropagation()}>
+            <button type="button" onClick={onToggle} aria-expanded={open}
+                className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-800 max-w-full">
+                <ChevronDown size={10} className={`shrink-0 transition-transform ${open ? '' : '-rotate-90'}`} />
+                <span className="truncate">
+                    {g.parts.length} part{g.parts.length !== 1 ? 's' : ''} · weakest <span className={`font-semibold ${getHealthTextColor(weakest.health_index)}`}>{weakest.tag || weakest.asset_name} {weakest.health_index.toFixed(0)}</span>
+                </span>
+            </button>
+            {open && (
+                <ul className="mt-1 space-y-0.5">
+                    {g.parts.map(p => (
+                        <li key={p.asset_id}>
+                            <button type="button" onClick={() => onSelect(p.asset_id)}
+                                className={`w-full flex items-center gap-1.5 px-1.5 py-0.5 rounded text-left text-[10px] hover:bg-white/70 ${p.asset_id === selectedAssetId ? 'bg-white/80 ring-1 ring-accent-cyan' : ''}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${getHealthDot(p.health_index)}`} />
+                                <span className="truncate text-slate-700">{p.asset_name.replace(/^[^—]+—\s*/, '')}</span>
+                                <span className={`ml-auto font-bold tabular-nums ${getHealthTextColor(p.health_index)}`}>{p.health_index.toFixed(0)}</span>
+                                {p.active_alerts > 0 && <AlertTriangle size={9} className="text-red-400 shrink-0" />}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+};
+
 export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect, fleetData, totalAssetCount, embedded, title, autoFocusSearch, unmonitored, onSetupAsset }) => {
     const [search, setSearch] = useState('');
     const searchRef = useRef<HTMLInputElement>(null);
@@ -120,18 +156,25 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
     // Predict (config/demoMode.ts). Production tenants with an empty register
     // get an honest empty state, never eight invented machines.
     const showingSample = !hasRealData && DEMO_DATA;
-    const effectiveData = hasRealData ? (fleetData || []) : (DEMO_DATA ? MOCK_FLEET : []);
+    const effectiveData = useMemo(() => (hasRealData ? (fleetData || []) : (DEMO_DATA ? MOCK_FLEET : [])), [hasRealData, fleetData]);
 
-    // Filter → Sort pipeline
+    // Machines with their monitored parts folded under them (lib/predict/fleetGroups).
+    const groups = useMemo(() => groupFleet(effectiveData), [effectiveData]);
+    const machines = useMemo(() => groups.map(g => g.head), [groups]);
+    const partCount = effectiveData.length - groups.length;
+    const [expanded, setExpanded] = useState<Set<string>>(new Set());
+    const toggleParts = (id: string) => setExpanded(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+    // Filter → Sort pipeline, over groups: a search on a part finds its machine.
     const processed = useMemo(() => {
         const q = search.toLowerCase().trim();
-        const filtered = effectiveData.filter(a => {
-            if (critFilter !== 'all' && a.criticality !== critFilter) return false;
-            if (q && !a.asset_name.toLowerCase().includes(q) && !a.unit.toLowerCase().includes(q) && !(a.tag || '').toLowerCase().includes(q)) return false;
+        const filtered = groups.filter(g => {
+            if (critFilter !== 'all' && g.head.criticality !== critFilter) return false;
+            if (q && !groupMatches(g, q)) return false;
             return true;
         });
 
-        filtered.sort((a, b) => {
+        filtered.sort(({ head: a }, { head: b }) => {
             switch (sort) {
                 case 'health_asc': return a.health_index - b.health_index;
                 case 'health_desc': return b.health_index - a.health_index;
@@ -145,7 +188,8 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
         });
 
         return filtered;
-    }, [effectiveData, search, sort, critFilter]);
+    }, [groups, search, sort, critFilter]);
+    const q = search.toLowerCase().trim();
 
     // Reset page when filters change
     const totalPages = Math.max(1, Math.ceil(processed.length / ITEMS_PER_PAGE));
@@ -160,11 +204,12 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
         return unmonitored.filter(a => a.tag.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || (a.system || '').toLowerCase().includes(q));
     }, [search, unmonitored]);
 
-    const criticalCount = effectiveData.filter(a => isAtRisk(a.health_index)).length;
+    // Counts and the average are over machines; a bearing is not a peer of a pump.
+    const criticalCount = machines.filter(a => isAtRisk(a.health_index)).length;
     // Open alerts across the fleet (active_alerts counts only alerts not yet closed — 0391).
     const openAlerts = effectiveData.reduce((n, a) => n + (a.active_alerts || 0), 0);
-    const avgHealth = effectiveData.length > 0 ? effectiveData.reduce((s, a) => s + a.health_index, 0) / effectiveData.length : 0;
-    const totalCount = totalAssetCount ?? effectiveData.length;
+    const avgHealth = machines.length > 0 ? machines.reduce((s, a) => s + a.health_index, 0) / machines.length : 0;
+    const totalCount = totalAssetCount != null ? groups.length : machines.length;
 
     const critChips: { value: CritFilter; label: string; color: string; activeColor: string }[] = [
         { value: 'all', label: 'All', color: 'text-slate-500 border-slate-200 bg-white hover:bg-slate-50', activeColor: 'text-primary-700 bg-primary-50 border-primary-300' },
@@ -188,8 +233,8 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                 {effectiveData.length === 0
                                     ? 'Search the register by tag, name or system'
                                     : processed.length === totalCount
-                                        ? `${totalCount} assets monitored · click one to study it`
-                                        : `${processed.length} of ${totalCount} assets`
+                                        ? `${totalCount} equipment${partCount > 0 ? ` · ${partCount} monitored part${partCount !== 1 ? 's' : ''}` : ''} · click one to study it`
+                                        : `${processed.length} of ${totalCount} equipment`
                                 }
                             </p>
                         </div>
@@ -337,13 +382,17 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                 /* ── Grid View ── */
                 <div className="px-5 pb-2">
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {paged.map(asset => {
-                            const isSelected = asset.asset_id === selectedAssetId;
+                        {paged.map(g => {
+                            const asset = g.head;
+                            const isSelected = asset.asset_id === selectedAssetId || g.parts.some(p => p.asset_id === selectedAssetId);
+                            const open = expanded.has(asset.asset_id) || matchingParts(g, q).length > 0;
                             return (
-                                <button
+                                <div
                                     key={asset.asset_id}
+                                    role="button" tabIndex={0}
                                     onClick={() => onAssetSelect(asset.asset_id)}
-                                    className={`relative bg-gradient-to-br ${getHealthColor(asset.health_index)} border rounded-lg p-3 text-left transition-all hover:scale-[1.02] hover:shadow-lg group ${isSelected ? 'ring-2 ring-accent-cyan shadow-[0_0_15px_rgba(6,182,212,0.2)]' : ''}`}
+                                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAssetSelect(asset.asset_id); } }}
+                                    className={`relative bg-gradient-to-br ${getHealthColor(g.weakestPart ? g.weakestPart.health_index : asset.health_index)} border rounded-lg p-3 text-left transition-all hover:scale-[1.02] hover:shadow-lg group cursor-pointer ${isSelected ? 'ring-2 ring-accent-cyan shadow-[0_0_15px_rgba(6,182,212,0.2)]' : ''}`}
                                 >
                                     <span className={`absolute top-2 right-2 text-[9px] font-bold px-1 py-0.5 rounded border ${asset.criticality === 'A' ? 'bg-red-500/15 text-red-400 border-red-500/30' : asset.criticality === 'B' ? 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30' : 'bg-slate-100 text-slate-500 border-slate-300'}`}>
                                         {asset.criticality}
@@ -351,7 +400,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                     <p className="text-xs font-semibold text-slate-800 truncate pr-6 group-hover:text-accent-cyan transition-colors">
                                         {asset.asset_name}
                                     </p>
-                                    <p className="text-[10px] text-slate-400 truncate mb-2">{asset.unit}</p>
+                                    <p className="text-[10px] text-slate-400 truncate mb-2">{g.orphanPart ? 'Part · machine not monitored' : asset.unit}</p>
                                     <div className="flex items-baseline gap-1">
                                         <span className={`text-xl font-bold ${getHealthTextColor(asset.health_index)}`}>
                                             {asset.health_index.toFixed(0)}
@@ -359,6 +408,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                         <span className="text-[10px] text-slate-400">/ 100</span>
                                         <TrendIcon trend={asset.trend} />
                                     </div>
+                                    <PartsLine group={g} open={open} onToggle={() => toggleParts(asset.asset_id)} onSelect={onAssetSelect} selectedAssetId={selectedAssetId} />
                                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200">
                                         <span className={`text-[10px] font-medium ${asset.rul_days < 90 ? 'text-red-400' : 'text-slate-500'}`}>
                                             RUL: {asset.rul_days}d
@@ -370,7 +420,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                             </span>
                                         )}
                                     </div>
-                                </button>
+                                </div>
                             );
                         })}
                     </div>
@@ -388,20 +438,25 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                             <div className="col-span-1 text-center">Trend</div>
                             <div className="col-span-1 text-center">Alerts</div>
                         </div>
-                        {paged.map(asset => {
-                            const isSelected = asset.asset_id === selectedAssetId;
+                        {paged.map(g => {
+                            const asset = g.head;
+                            const isSelected = asset.asset_id === selectedAssetId || g.parts.some(p => p.asset_id === selectedAssetId);
+                            const open = expanded.has(asset.asset_id) || matchingParts(g, q).length > 0;
                             return (
-                                <button
+                                <div
                                     key={asset.asset_id}
+                                    role="button" tabIndex={0}
                                     onClick={() => onAssetSelect(asset.asset_id)}
-                                    className={`w-full grid grid-cols-12 gap-2 px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-all hover:bg-slate-50 ${isSelected ? 'bg-primary-50/50 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'}`}
+                                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAssetSelect(asset.asset_id); } }}
+                                    className={`w-full grid grid-cols-12 cursor-pointer gap-2 px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-all hover:bg-slate-50 ${isSelected ? 'bg-primary-50/50 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'}`}
                                 >
                                     {/* Asset Info */}
                                     <div className="col-span-5 flex items-center gap-2.5 min-w-0">
                                         <div className={`w-2 h-2 rounded-full shrink-0 ${getHealthDot(asset.health_index)}`} />
                                         <div className="min-w-0">
                                             <p className={`text-xs font-semibold truncate ${isSelected ? 'text-primary-700' : 'text-slate-800'}`}>{asset.asset_name}</p>
-                                            <p className="text-[10px] text-slate-400 truncate">{asset.unit}</p>
+                                            <p className="text-[10px] text-slate-400 truncate">{g.orphanPart ? 'Part · machine not monitored' : asset.unit}</p>
+                                            <PartsLine group={g} open={open} onToggle={() => toggleParts(asset.asset_id)} onSelect={onAssetSelect} selectedAssetId={selectedAssetId} />
                                         </div>
                                     </div>
                                     {/* Health */}
@@ -438,7 +493,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                             <span className="text-[10px] text-slate-300">—</span>
                                         )}
                                     </div>
-                                </button>
+                                </div>
                             );
                         })}
                     </div>

@@ -268,6 +268,9 @@ export interface FleetAssetHealth {
     /** Only when measured (sample data carries one); absent = no arrow drawn, never a band-derived guess. */
     trend?: 'improving' | 'stable' | 'degrading';
     active_alerts: number;
+    /** From the register's own hierarchy_level: a machine (ISO 14224 L6) or a monitored part of one. Absent = unresolved twin, treated as equipment. */
+    level?: 'equipment' | 'component';
+    parent_id?: string | null;
 }
 
 // ---------------------------------------------------------

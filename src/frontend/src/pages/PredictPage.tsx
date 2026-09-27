@@ -492,8 +492,11 @@ export const PredictPage: React.FC = () => {
                 dbAlerts.filter(a => (a.status ? a.status !== 'closed' : !a.acknowledged))
                     .forEach(a => alertCountMap.set(a.asset_id, (alertCountMap.get(a.asset_id) || 0) + 1));
 
-                // Build FleetAssetHealth array, enriching each with register data
-                // Only include equipment-level assets (exclude SITE/UNIT/SYSTEM hierarchy items)
+                // Build FleetAssetHealth array, enriching each with register data.
+                // The fleet is equipment and its monitored parts (never SITE/UNIT/
+                // SYSTEM). Level comes from the register's own hierarchy_level:
+                // taxonomy_level folds COMPONENT into 'equipment', which once put
+                // K-601's seal and bearings on the map as peers of K-601.
                 // Multi-strategy asset resolution:
                 //   1. Exact ID match
                 //   2. Fuzzy match by partial ID prefix (twin asset_id might be truncated)
@@ -515,10 +518,12 @@ export const PredictPage: React.FC = () => {
                         const level = asset.taxonomy_level;
                         return level !== 'site' && level !== 'unit' && level !== 'system';
                     })
-                    .map(t => {
+                    .map(t => ({ t, registeredAsset: resolveAsset(t.asset_id) }))
+                    .filter(({ registeredAsset }) => !['SITE', 'UNIT', 'SYSTEM'].includes(String(registeredAsset?.register_level ?? '').toUpperCase()))
+                    .map(({ t, registeredAsset }) => {
                         const rul = rulMap.get(t.asset_id);
                         const hi = Number(t.health_index);
-                        const registeredAsset = resolveAsset(t.asset_id);
+                        const registerLevel = String(registeredAsset?.register_level ?? '').toUpperCase();
 
                         // Human-readable fallback: derive name from sensor keys or show truncated ID
                         const fallbackName = (() => {
@@ -549,6 +554,8 @@ export const PredictPage: React.FC = () => {
                             // No trend: a snapshot has one health value, and an
                             // arrow derived from its band would be a guess.
                             active_alerts: alertCountMap.get(t.asset_id) || 0,
+                            level: registerLevel === 'COMPONENT' || registerLevel === 'SUBUNIT' ? 'component' as const : 'equipment' as const,
+                            parent_id: registeredAsset?.parent_id ?? null,
                         };
                     });
 
