@@ -8,6 +8,7 @@
 
 import { supabase } from '../lib/supabase';
 import { mustWrite } from '../lib/supabaseWrite';
+import { monthlyExpense, projectAnnual } from '../../lib/depreciation';
 
 // =====================================================
 // TYPES
@@ -99,11 +100,15 @@ export interface DepreciationBook {
     usageBased: boolean;
     designedHours?: number; // Total estimated usage life
     currentHours?: number;  // Current usage to date
+    /** last posted run (ISO); the projection continues from the month after it */
+    lastDepreciationDate?: string | null;
 }
 
 export interface DepreciationScheduleItem {
     period: number; // Year number (1, 2, 3...)
     fiscalYear: number;
+    /** months depreciated in that fiscal year — 3 for an October start */
+    months?: number;
     openingBookValue: number;
     depreciationExpense: number;
     accumulatedDepreciation: number;
@@ -114,13 +119,24 @@ export interface Warranty {
     id: string;
     assetId: string;
     warrantyNumber?: string;
-    vendorId?: string;
+    /** The OEM standing behind an OEM warranty (0395). */
+    manufacturerId?: string | null;
+    /** The party a claim is filed with (distributor / EPC / service company). Required for EXTENDED and SERVICE_CONTRACT. */
+    vendorId?: string | null;
+    /** Display: vendor name, else manufacturer name (joined on read). */
+    providerName?: string;
+    manufacturerName?: string;
+    vendorName?: string;
     warrantyType: 'OEM' | 'EXTENDED' | 'SERVICE_CONTRACT';
     coverageScope?: string;
+    exclusions?: string | null;
     startDate: string;
-    endDate?: string;
-    maxHours?: number;
+    endDate?: string | null;
+    maxHours?: number | null;
     currentHours: number;
+    deductible?: number;
+    warrantyValue?: number | null;
+    reminderDays?: number;
     status: 'ACTIVE' | 'EXPIRED' | 'CLAIMED' | 'VOIDED';
 }
 
@@ -173,6 +189,8 @@ export interface AssetInsurance {
     premiumAmount: number;
     insuredValue: number;
     deductible: number;
+    /** days before coverage_end the nightly sweep raises INSURANCE_RENEWAL (0395) */
+    renewalReminderDays?: number;
     status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
 }
 
@@ -918,6 +936,8 @@ class FinOpsServiceClass {
                 original_acquisition_cost: acqCost,  // Lock in original on first creation
                 subsequent_capitalizations: 0,
                 acquisition_date: financialData.acquisitionDate || new Date().toISOString().split('T')[0],
+                // Was never written — Overview showed "N/A" for every asset.
+                capitalization_date: financialData.capitalizationDate || financialData.acquisitionDate || new Date().toISOString().split('T')[0],
                 residual_value: financialData.residualValue || 0,
                 useful_life_months: financialData.usefulLifeMonths || 120,
                 downtime_cost_per_hour: financialData.downtimeCostPerHour || 0,
@@ -1093,36 +1113,33 @@ class FinOpsServiceClass {
         if (!book) throw new Error('Depreciation book not found');
 
         const financial = book.asset_financials;
-        let depreciationAmount = 0;
 
-        switch (book.depreciation_method) {
-            case 'STRAIGHT_LINE': {
-                const monthlyDepreciation = (financial.acquisition_cost - financial.residual_value) / financial.useful_life_months;
-                depreciationAmount = monthlyDepreciation;
-                break;
-            }
+        // One engine for posting and projection (lib/depreciation): the month's
+        // expense from the CURRENT carrying value over the REMAINING life. That
+        // is what makes a capital event spread over the life left, and what
+        // makes double-declining reach salvage instead of repeating the same
+        // amount forever (the old code never updated current_value, so it did).
+        const { count } = await supabase
+            .from('depreciation_schedules')
+            .select('id', { count: 'exact', head: true })
+            .eq('book_id', bookId)
+            .eq('posted', true);
+        const postedMonths = count || 0;
+        const lifeMonths = Math.max(1, parseInt(financial.useful_life_months) || 1);
+        const remainingMonths = Math.max(0, lifeMonths - postedMonths);
+        const bookValue = parseFloat(book.current_value) || 0;
+        const salvage = parseFloat(financial.residual_value) || 0;
 
-            case 'DECLINING_BALANCE': {
-                const rate = 2 / financial.useful_life_months; // Double declining
-                depreciationAmount = book.current_value * rate;
-                break;
-            }
+        const amount = monthlyExpense({
+            method: book.depreciation_method,
+            bookValue,
+            salvage,
+            lifeMonths,
+            remainingMonths,
+        });
+        const newValue = Math.round((bookValue - amount) * 100) / 100;
 
-            case 'UNITS_OF_PRODUCTION':
-                if (book.designed_hours && book.current_hours) {
-                    const hourlyRate = (financial.acquisition_cost - financial.residual_value) / book.designed_hours;
-                    // Assume we get hours from IoT - for now use a placeholder
-                    const hoursThisPeriod = 720; // Monthly average
-                    depreciationAmount = hourlyRate * hoursThisPeriod;
-                }
-                break;
-        }
-
-        // Don't depreciate below residual value
-        const newValue = Math.max(book.current_value - depreciationAmount, financial.residual_value);
-        const actualDepreciation = book.current_value - newValue;
-
-        return { amount: actualDepreciation, newValue };
+        return { amount, newValue };
     }
 
     /**
@@ -1439,7 +1456,7 @@ class FinOpsServiceClass {
     async getAllWarranties(): Promise<Warranty[]> {
         const { data, error } = await supabase
             .from('warranties')
-            .select('*, assets(name, tag)') // Join for display info
+            .select('*, assets(name, tag), vendors(name), manufacturers(name)') // Join for display info
             .eq('status', 'ACTIVE')
             .order('end_date', { ascending: true });
 
@@ -1484,12 +1501,12 @@ class FinOpsServiceClass {
     async getWarranties(assetId: string): Promise<Warranty[]> {
         const { data, error } = await supabase
             .from('warranties')
-            .select('*')
+            .select('*, vendors(name), manufacturers(name)')
             .eq('asset_id', assetId)
             .order('end_date', { ascending: false });
 
         if (error) throw error;
-        return (data || []).map(this.mapWarranty);
+        return (data || []).map(r => this.mapWarranty(r));
     }
 
     async addWarranty(warranty: Omit<Warranty, 'id'>): Promise<Warranty> {
@@ -1498,13 +1515,18 @@ class FinOpsServiceClass {
             .insert({
                 asset_id: warranty.assetId,
                 warranty_number: warranty.warrantyNumber?.trim() || null,
+                manufacturer_id: warranty.manufacturerId || null,
                 vendor_id: warranty.vendorId || null, // Convert "" to null
                 warranty_type: warranty.warrantyType,
-                coverage_scope: warranty.coverageScope,
+                coverage_scope: warranty.coverageScope || null,
+                exclusions: warranty.exclusions || null,
                 start_date: warranty.startDate,
-                end_date: warranty.endDate,
-                max_hours: warranty.maxHours,
+                end_date: warranty.endDate || null,
+                max_hours: warranty.maxHours ?? null,
                 current_hours: warranty.currentHours || 0,
+                deductible: warranty.deductible ?? 0,
+                warranty_value: warranty.warrantyValue ?? null,
+                reminder_days: warranty.reminderDays ?? 30,
                 status: warranty.status || 'ACTIVE'
             })
             .select()
@@ -1518,22 +1540,36 @@ class FinOpsServiceClass {
      * Update warranty
      */
     async updateWarranty(id: string, updates: Partial<Warranty>): Promise<Warranty> {
+        // Presence, not truthiness: a field the caller SENDS as empty is being
+        // cleared. The truthy checks here meant a coverage scope, end date or
+        // hour limit could never be removed once set.
+        const has = (k: keyof Warranty) => Object.prototype.hasOwnProperty.call(updates, k);
         const dbUpdates: any = {};
         if (updates.assetId) dbUpdates.asset_id = updates.assetId;
-        if (updates.vendorId !== undefined) dbUpdates.vendor_id = updates.vendorId || null; // Convert "" to null
+        if (has('vendorId')) dbUpdates.vendor_id = updates.vendorId || null;
+        if (has('manufacturerId')) dbUpdates.manufacturer_id = updates.manufacturerId || null;
+        if (has('warrantyNumber')) dbUpdates.warranty_number = updates.warrantyNumber?.trim() || null;
         if (updates.warrantyType) dbUpdates.warranty_type = updates.warrantyType;
-        if (updates.coverageScope) dbUpdates.coverage_scope = updates.coverageScope;
+        if (has('coverageScope')) dbUpdates.coverage_scope = updates.coverageScope || null;
+        if (has('exclusions')) dbUpdates.exclusions = updates.exclusions || null;
         if (updates.startDate) dbUpdates.start_date = updates.startDate;
-        if (updates.endDate) dbUpdates.end_date = updates.endDate;
-        if (updates.maxHours !== undefined) dbUpdates.max_hours = updates.maxHours;
-        if (updates.currentHours !== undefined) dbUpdates.current_hours = updates.currentHours;
+        if (has('endDate')) dbUpdates.end_date = updates.endDate || null;
+        if (has('maxHours')) dbUpdates.max_hours = updates.maxHours ?? null;
+        if (has('currentHours') && updates.currentHours !== undefined) dbUpdates.current_hours = updates.currentHours;
+        if (has('deductible')) dbUpdates.deductible = updates.deductible ?? 0;
+        if (has('warrantyValue')) dbUpdates.warranty_value = updates.warrantyValue ?? null;
+        if (has('reminderDays')) dbUpdates.reminder_days = updates.reminderDays ?? 30;
         if (updates.status) dbUpdates.status = updates.status;
+        if (dbUpdates.start_date && dbUpdates.end_date && dbUpdates.end_date < dbUpdates.start_date) {
+            throw new Error('End date is before the start date.');
+        }
+        dbUpdates.updated_at = new Date().toISOString();
 
         const { data, error } = await supabase
             .from('warranties')
             .update(dbUpdates)
             .eq('id', id)
-            .select()
+            .select('*, vendors(name), manufacturers(name)')
             .single();
 
         if (error) throw error;
@@ -1556,14 +1592,18 @@ class FinOpsServiceClass {
      * Alias: create warranty with split args
      */
     async createWarranty(assetId: string, warrantyData: Partial<Warranty>): Promise<Warranty> {
+        // The date is NOT NULL in the table and the modal now requires it;
+        // defaulting silently to today was how backdated warranties got the
+        // wrong start.
+        if (!warrantyData.startDate) throw new Error('Start date is required.');
+        if (warrantyData.endDate && warrantyData.endDate < warrantyData.startDate) throw new Error('End date is before the start date.');
+        const type = warrantyData.warrantyType || 'OEM';
+        if (type !== 'OEM' && !warrantyData.vendorId) throw new Error(`${type === 'EXTENDED' ? 'An extended warranty' : 'A service contract'} needs the vendor it is with.`);
         return this.addWarranty({
+            ...warrantyData,
             assetId,
-            vendorId: warrantyData.vendorId,
-            warrantyType: warrantyData.warrantyType || 'OEM',
-            coverageScope: warrantyData.coverageScope,
-            startDate: warrantyData.startDate || new Date().toISOString().split('T')[0],
-            endDate: warrantyData.endDate,
-            maxHours: warrantyData.maxHours,
+            warrantyType: type,
+            startDate: warrantyData.startDate,
             currentHours: warrantyData.currentHours || 0,
             status: warrantyData.status || 'ACTIVE'
         } as Omit<Warranty, 'id'>);
@@ -1579,15 +1619,27 @@ class FinOpsServiceClass {
     /**
      * Get light-weight asset list for picker
      */
-    async getAssetsForPicker(): Promise<{ id: string; name: string; tag: string }[]> {
+    async getAssetsForPicker(): Promise<{ id: string; name: string; tag: string; manufacturerId?: string | null; manufacturer?: string | null }[]> {
         const { data, error } = await supabase
             .from('assets')
-            .select('id, name, tag')
+            .select('id, name, tag, manufacturer_id, manufacturer')
             .order('name');
 
         if (error) throw error;
+        return (data || []).map((a: any) => ({ id: a.id, name: a.name, tag: a.tag, manufacturerId: a.manufacturer_id ?? null, manufacturer: a.manufacturer ?? null }));
+    }
+
+    /** Manufacturer master for the warranty picker (name-sorted, active only). */
+    async getManufacturersForPicker(): Promise<{ id: string; name: string }[]> {
+        const { data, error } = await supabase
+            .from('manufacturers')
+            .select('id, name')
+            .eq('active', true)
+            .order('name');
+        if (error) { console.warn('Could not fetch manufacturers:', error.message); return []; }
         return data || [];
     }
+
 
     /**
      * Get vendor list for picker
@@ -1624,92 +1676,33 @@ class FinOpsServiceClass {
      * @returns Array of schedule items (one per year)
      */
     calculateDepreciationSchedule(book: DepreciationBook, financial: AssetFinancial): DepreciationScheduleItem[] {
-        const cost = financial.acquisitionCost;
-        const salvage = financial.residualValue;
-        const usefulLifeYears = financial.usefulLifeMonths / 12;
-        const startYear = new Date(book.startDate).getFullYear();
-
-        const schedule: DepreciationScheduleItem[] = [];
-        let currentBookValue = cost;
-        let accumulatedDepr = 0;
-
-        for (let year = 1; year <= Math.ceil(usefulLifeYears); year++) {
-            let expense = 0;
-
-            switch (book.depreciationMethod) {
-                case 'STRAIGHT_LINE':
-                    // (Cost - Salvage) / Life
-                    expense = (cost - salvage) / usefulLifeYears;
-                    break;
-
-                case 'DECLINING_BALANCE': {
-                    // Book Value * (2 / Life)  <-- Double Declining Balance usually
-                    // Acceleration factor usually 2
-                    const rate = 2 / usefulLifeYears;
-                    expense = currentBookValue * rate;
-                    // Don't depreciate below salvage
-                    if (currentBookValue - expense < salvage) {
-                        expense = currentBookValue - salvage;
-                    }
-                    break;
-                }
-
-                case 'SUM_OF_YEARS_DIGITS': {
-                    // (Cost - Salvage) * (Remaining Life / Sum of Years)
-                    // Sum of years = n(n+1)/2
-                    const sumOfYears = (usefulLifeYears * (usefulLifeYears + 1)) / 2;
-                    const remainingLife = usefulLifeYears - year + 1;
-                    expense = (cost - salvage) * (remainingLife / sumOfYears);
-                    break;
-                }
-
-                case 'UNITS_OF_PRODUCTION':
-                    // (Cost - Salvage) * (Units Produced / Total Estimated Units)
-                    // Note: This requires inputs for actual usage per year. 
-                    // For a forecast schedule, we might assume linear usage or just show "Usage Based" placeholder.
-                    // Here we will assume linear usage for the FORECAST, but in reality this updates dynamically.
-                    if (book.designedHours && book.designedHours > 0) {
-                        const estimatedAnnualUsage = book.designedHours / usefulLifeYears;
-                        expense = (cost - salvage) * (estimatedAnnualUsage / book.designedHours);
-                    } else {
-                        expense = 0; // Cannot forecast without usage estimate
-                    }
-                    break;
-            }
-
-            // Adjustment for final year or if expense exceeds remaining depreciable amount
-            if (accumulatedDepr + expense > (cost - salvage)) {
-                expense = (cost - salvage) - accumulatedDepr;
-            }
-
-            // Allow for partial year in first/last year? 
-            // For MVP simplicity, we assume full year convention or that 'usefulLife' is exact.
-            // In real world, we'd calculate pro-rata for the first year based on month.
-
-            // Ensure we don't go negative or below salvage
-            if (expense < 0) expense = 0;
-
-            accumulatedDepr += expense;
-            currentBookValue -= expense;
-
-            // Rounding to 2 decimals
-            expense = Math.round(expense * 100) / 100;
-            accumulatedDepr = Math.round(accumulatedDepr * 100) / 100;
-            currentBookValue = Math.round(currentBookValue * 100) / 100;
-
-            schedule.push({
-                period: year,
-                fiscalYear: startYear + year - 1,
-                openingBookValue: currentBookValue + expense,
-                depreciationExpense: expense,
-                accumulatedDepreciation: accumulatedDepr,
-                closingBookValue: currentBookValue
-            });
-
-            if (currentBookValue <= salvage) break;
-        }
-
-        return schedule;
+        // Monthly engine aggregated per fiscal year (lib/depreciation): the first
+        // year is pro-rata from the in-service month, a 30-month life is 30
+        // months, double-declining reaches salvage, and once anything has been
+        // posted the projection continues from the carrying value over the
+        // remaining life — after a capital event that is the whole point.
+        const posted = book.accumulatedDepreciation > 0 && book.lastDepreciationDate
+            ? (() => {
+                const d = new Date(book.lastDepreciationDate!);
+                return { bookValue: book.currentValue, accumulated: book.accumulatedDepreciation, lastFiscalYear: d.getFullYear(), lastPeriod: d.getMonth() + 1 };
+            })()
+            : null;
+        return projectAnnual({
+            method: book.depreciationMethod,
+            cost: financial.acquisitionCost,
+            salvage: financial.residualValue,
+            lifeMonths: financial.usefulLifeMonths,
+            startDate: book.startDate,
+            posted,
+        }).map(r => ({
+            period: r.period,
+            fiscalYear: r.fiscalYear,
+            months: r.months,
+            openingBookValue: r.openingBookValue,
+            depreciationExpense: r.depreciationExpense,
+            accumulatedDepreciation: r.accumulatedDepreciation,
+            closingBookValue: r.closingBookValue,
+        }));
     }
 
     /**
@@ -2658,6 +2651,7 @@ class FinOpsServiceClass {
                 insured_value: policy.insuredValue,
                 replacement_value: policy.insuredValue, // Required by DB, default to insured value
                 deductible: policy.deductible,
+                renewal_reminder_days: policy.renewalReminderDays ?? 30,
                 status: policy.status || 'ACTIVE'
             })
             .select()
@@ -2668,19 +2662,30 @@ class FinOpsServiceClass {
     }
 
     /**
-     * Alias: create insurance with split args
+     * Alias: create insurance with split args. Validates what the table
+     * requires (insurer, policy number, dates) — previously '' and today's
+     * date were substituted silently, so a policy could start and end today.
      */
     async createInsurance(assetId: string, insuranceData: Partial<AssetInsurance>): Promise<AssetInsurance> {
+        const provider = insuranceData.provider?.trim();
+        const policyNumber = insuranceData.policyNumber?.trim();
+        if (!provider) throw new Error('Insurer is required.');
+        if (!policyNumber) throw new Error('Policy number is required.');
+        if (!insuranceData.startDate) throw new Error('Coverage start date is required.');
+        if (!insuranceData.endDate) throw new Error('Coverage end date is required.');
+        if (insuranceData.endDate < insuranceData.startDate) throw new Error('Coverage ends before it starts.');
+        const nn = (v: number | undefined) => (Number.isFinite(v as number) && (v as number) >= 0 ? (v as number) : 0);
         return this.createAssetInsurance({
             assetId,
-            policyNumber: insuranceData.policyNumber || '',
-            provider: insuranceData.provider || '',
+            policyNumber,
+            provider,
             coverageType: insuranceData.coverageType || 'ALL_RISK',
-            startDate: insuranceData.startDate || new Date().toISOString().split('T')[0],
-            endDate: insuranceData.endDate || new Date().toISOString().split('T')[0],
-            premiumAmount: insuranceData.premiumAmount || 0,
-            insuredValue: insuranceData.insuredValue || 0,
-            deductible: insuranceData.deductible || 0,
+            startDate: insuranceData.startDate,
+            endDate: insuranceData.endDate,
+            premiumAmount: nn(insuranceData.premiumAmount),
+            insuredValue: nn(insuranceData.insuredValue),
+            deductible: nn(insuranceData.deductible),
+            renewalReminderDays: insuranceData.renewalReminderDays ?? 30,
             status: insuranceData.status || 'ACTIVE'
         } as Omit<AssetInsurance, 'id'>);
     }
@@ -2714,7 +2719,11 @@ class FinOpsServiceClass {
             dbUpdates.replacement_value = updates.insuredValue;
         }
         if (updates.deductible !== undefined) dbUpdates.deductible = updates.deductible;
+        if (updates.renewalReminderDays !== undefined) dbUpdates.renewal_reminder_days = updates.renewalReminderDays;
         if (updates.status !== undefined) dbUpdates.status = updates.status;
+        if (dbUpdates.coverage_start && dbUpdates.coverage_end && dbUpdates.coverage_end < dbUpdates.coverage_start) {
+            throw new Error('Coverage ends before it starts.');
+        }
 
         dbUpdates.updated_at = new Date().toISOString();
 
@@ -2868,9 +2877,11 @@ class FinOpsServiceClass {
             coverageType: row.coverage_type,
             startDate: row.coverage_start, // Mapped
             endDate: row.coverage_end, // Mapped
-            premiumAmount: parseFloat(row.premium_annual), // Mapped
-            insuredValue: parseFloat(row.insured_value),
-            deductible: parseFloat(row.deductible),
+            // parseFloat(null) is NaN and `??` does not catch it — "Premium: $NaN"
+            premiumAmount: Number.isFinite(parseFloat(row.premium_annual)) ? parseFloat(row.premium_annual) : 0,
+            insuredValue: Number.isFinite(parseFloat(row.insured_value)) ? parseFloat(row.insured_value) : 0,
+            deductible: Number.isFinite(parseFloat(row.deductible)) ? parseFloat(row.deductible) : 0,
+            renewalReminderDays: Number.isFinite(parseInt(row.renewal_reminder_days)) ? parseInt(row.renewal_reminder_days) : 30,
             status: row.status
         };
     }
@@ -2895,17 +2906,30 @@ class FinOpsServiceClass {
     }
 
     private mapWarranty(row: any): Warranty {
+        const num = (v: any): number | undefined => (v === null || v === undefined || v === '' ? undefined : (Number.isFinite(parseFloat(v)) ? parseFloat(v) : undefined));
+        const vendorName: string | undefined = row.vendors?.name || undefined;
+        const manufacturerName: string | undefined = row.manufacturers?.name || undefined;
         return {
             id: row.id,
             assetId: row.asset_id,
             warrantyNumber: row.warranty_number || undefined,
-            vendorId: row.vendor_id,
+            manufacturerId: row.manufacturer_id ?? null,
+            vendorId: row.vendor_id ?? null,
+            vendorName,
+            manufacturerName,
+            // What the user reads as "who backs this": the OEM for an OEM warranty,
+            // the vendor otherwise; either falls back to the other.
+            providerName: row.warranty_type === 'OEM' ? (manufacturerName || vendorName) : (vendorName || manufacturerName),
             warrantyType: row.warranty_type,
             coverageScope: row.coverage_scope,
+            exclusions: row.exclusions ?? null,
             startDate: row.start_date,
-            endDate: row.end_date,
-            maxHours: row.max_hours ? parseFloat(row.max_hours) : undefined,
-            currentHours: parseFloat(row.current_hours),
+            endDate: row.end_date ?? null,
+            maxHours: num(row.max_hours) ?? null,
+            currentHours: num(row.current_hours) ?? 0,
+            deductible: num(row.deductible) ?? 0,
+            warrantyValue: num(row.warranty_value) ?? null,
+            reminderDays: num(row.reminder_days) ?? 30,
             status: row.status
         };
     }
@@ -2967,7 +2991,8 @@ class FinOpsServiceClass {
             startDate: row.start_date,
             usageBased: row.usage_based,
             designedHours: row.designed_hours,
-            currentHours: row.current_hours
+            currentHours: row.current_hours,
+            lastDepreciationDate: row.last_depreciation_date ?? null
         };
     }
 

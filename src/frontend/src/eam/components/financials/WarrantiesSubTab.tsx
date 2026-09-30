@@ -3,18 +3,23 @@ import { FileCheck, Plus, Edit3, Trash2, X, Save } from 'lucide-react';
 import { Warranty } from '../../services/FinOpsService';
 import { AddWarrantyModal } from '../modals/AddWarrantyModal';
 import type { FinancialsCan } from '../FinancialsTab';
+import { formatDateOnly } from '../../../lib/dateOnly';
 
 interface WarrantiesProps {
     warranties: Warranty[];
     can?: FinancialsCan;
     saving: boolean;
-    onAddWarranty: (data: Partial<Warranty>) => void;
+    /** the asset's manufacturer — pre-fills an OEM warranty */
+    manufacturerId?: string | null;
+    manufacturerName?: string | null;
+    onAddWarranty: (data: Partial<Warranty>) => Promise<void> | void;
     onDeleteWarranty: (id: string, type: string) => void;
     onUpdateWarranty: (id: string, data: Partial<Warranty>) => void;
 }
 
 export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
     warranties, saving, onAddWarranty, onDeleteWarranty, onUpdateWarranty,
+    manufacturerId, manufacturerName,
     can = { create: false, edit: false, delete: false },
 }) => {
     const [showAddModal, setShowAddModal] = useState(false);
@@ -35,18 +40,20 @@ export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
         setEditStartDate(w.startDate || '');
         setEditEndDate(w.endDate || '');
         setEditStatus(w.status);
-        setEditMaxHours(w.maxHours);
+        setEditMaxHours(w.maxHours ?? undefined);
     };
 
     const handleSave = () => {
         if (!editingId) return;
+        // Every field is sent, so clearing one (blank end date, blank hour
+        // limit) reaches the database as null instead of being skipped.
         onUpdateWarranty(editingId, {
             warrantyType: editType as Warranty['warrantyType'],
             coverageScope: editScope,
             startDate: editStartDate,
-            endDate: editEndDate,
+            endDate: editEndDate || null,
             status: editStatus as Warranty['status'],
-            maxHours: editMaxHours
+            maxHours: editMaxHours ?? null
         });
         setEditingId(null);
     };
@@ -131,7 +138,11 @@ export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
                                     /* Display Mode */
                                     <>
                                         <div className="flex justify-between items-center mb-1">
-                                            <span className="font-medium text-slate-800 text-sm">{w.warrantyType}</span>
+                                            <span className="font-medium text-slate-800 text-sm">
+                                                {w.warrantyType === 'OEM' ? 'OEM' : w.warrantyType === 'EXTENDED' ? 'Extended' : 'Service contract'}
+                                                {w.providerName && <span className="text-slate-500 font-normal"> · {w.providerName}</span>}
+                                                {w.warrantyNumber && <span className="ml-1.5 text-[10px] font-mono text-slate-400">{w.warrantyNumber}</span>}
+                                            </span>
                                             <div className="flex items-center gap-2">
                                                 {can.edit && (
                                                     <button onClick={() => startEdit(w)} className="text-xs text-blue-400 hover:text-blue-600 p-0.5" title="Edit warranty">
@@ -152,9 +163,12 @@ export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
                                         </div>
                                         <div className="text-xs text-slate-500">
                                             {w.coverageScope && <div className="mb-0.5">{w.coverageScope}</div>}
-                                            <div className="flex gap-3">
-                                                <span>Start: {w.startDate ? new Date(w.startDate).toLocaleDateString() : 'N/A'}</span>
-                                                <span>Expires: {w.endDate ? new Date(w.endDate).toLocaleDateString() : 'N/A'}</span>
+                                            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                                <span>Start: {formatDateOnly(w.startDate, 'N/A')}</span>
+                                                <span>Expires: {formatDateOnly(w.endDate, w.maxHours ? 'by hours' : 'open')}</span>
+                                                {w.maxHours ? <span className="tabular-nums">{Math.round(w.currentHours || 0).toLocaleString()} / {w.maxHours.toLocaleString()} h</span> : null}
+                                                {w.deductible ? <span>Deductible ${w.deductible.toLocaleString()}</span> : null}
+                                                {w.vendorName && w.warrantyType === 'OEM' && <span>Claims via {w.vendorName}</span>}
                                             </div>
                                         </div>
                                     </>
@@ -168,7 +182,9 @@ export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
             <AddWarrantyModal
                 isOpen={showAddModal}
                 onClose={() => setShowAddModal(false)}
-                onSave={(data) => { onAddWarranty(data); setShowAddModal(false); }}
+                onSave={onAddWarranty}
+                defaultManufacturerId={manufacturerId}
+                defaultManufacturerName={manufacturerName}
             />
         </div>
     );

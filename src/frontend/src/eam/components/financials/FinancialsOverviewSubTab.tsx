@@ -1,6 +1,7 @@
 import React from 'react';
 import { DollarSign, Shield, Edit3 } from 'lucide-react';
 import { AssetFinancial, DepreciationBook, Warranty } from '../../services/FinOpsService';
+import { formatDateOnly, parseDateOnly, todayDateOnly } from '../../../lib/dateOnly';
 
 interface OverviewProps {
     financialRecord: AssetFinancial | null;
@@ -21,9 +22,12 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
     editedDowntimeCost, isEditingDowntime, saving,
     setEditedDowntimeCost, setIsEditingDowntime, onSaveDowntimeCost
 }) => {
+    const today = todayDateOnly();
     const activeWarranties = warranties.filter(w => {
         if (w.status !== 'ACTIVE') return false;
-        if (w.endDate && new Date(w.endDate) < new Date()) return false;
+        if (w.endDate && w.endDate < today) return false;          // date-only compare, no UTC shift
+        if (w.startDate && w.startDate > today) return false;      // not yet in force
+        if (w.maxHours && (w.currentHours || 0) >= w.maxHours) return false; // exhausted by hours
         return true;
     });
     const hasActiveWarranty = activeWarranties.length > 0;
@@ -54,7 +58,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                         {financialRecord?.acquisitionDate
-                            ? `Acquired ${new Date(financialRecord.acquisitionDate).toLocaleDateString()}`
+                            ? `Acquired ${formatDateOnly(financialRecord.acquisitionDate)}`
                             : 'Not capitalized'}
                     </div>
                 </div>
@@ -79,7 +83,13 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                         {financialRecord
-                            ? `Ends ${new Date(new Date(financialRecord.acquisitionDate).setFullYear(new Date(financialRecord.acquisitionDate).getFullYear() + ((financialRecord.usefulLifeMonths ?? 0) / 12))).getFullYear()}`
+                            ? (() => {
+                                // whole months from the in-service date; setFullYear(+2.5) truncated fractional lives
+                                const d = parseDateOnly(financialRecord.capitalizationDate || financialRecord.acquisitionDate);
+                                if (!d) return 'N/A';
+                                d.setMonth(d.getMonth() + (financialRecord.usefulLifeMonths ?? 0) - 1);
+                                return `Ends ${d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
+                            })()
                             : 'N/A'}
                     </div>
                 </div>
@@ -94,7 +104,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                         </div>
                         <div className="text-xs text-slate-500">
                             {hasActiveWarranty
-                                ? `${earliestStart ? new Date(earliestStart).toLocaleDateString() : 'N/A'} - ${latestEnd ? new Date(latestEnd).toLocaleDateString() : 'N/A'}`
+                                ? `${formatDateOnly(earliestStart, 'N/A')} - ${formatDateOnly(latestEnd, 'open')}`
                                 : warranties.length > 0 ? 'All warranties expired' : 'No warranties added'}
                         </div>
                         {hasActiveWarranty && (

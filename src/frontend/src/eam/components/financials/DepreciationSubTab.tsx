@@ -4,6 +4,7 @@ import { Asset } from '../../types';
 import { FinOpsService, AssetFinancial, DepreciationBook, DepreciationScheduleItem, RecapitalizationResult } from '../../services/FinOpsService';
 import { CapitalEventModal } from '../modals/CapitalEventModal';
 import type { FinancialsCan } from '../FinancialsTab';
+import { todayDateOnly } from '../../../lib/dateOnly';
 
 interface DepreciationProps {
     asset: Asset;
@@ -33,11 +34,18 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
     const [showAddBookModal, setShowAddBookModal] = useState(false);
     const [showCapitalEventModal, setShowCapitalEventModal] = useState(false);
 
-    // Capitalization form
+    // Capitalization form. The in-service date is typed, not assumed: a
+    // backdated asset used to start depreciating "today".
     const [capCost, setCapCost] = useState<number>(asset.purchasePrice || 0);
     const [capSalvage, setCapSalvage] = useState<number>(0);
     const [capLifeYears, setCapLifeYears] = useState<number>(5);
-    const [capDate, setCapDate] = useState(new Date().toISOString().split('T')[0]);
+    const [capDate, setCapDate] = useState(todayDateOnly());
+    const capProblem = !(capCost > 0) ? 'Acquisition cost must be more than zero.'
+        : !(capLifeYears > 0) ? 'Useful life must be more than zero.'
+        : !(capSalvage >= 0) ? 'Salvage cannot be negative.'
+        : capSalvage >= capCost ? 'Salvage must be less than the acquisition cost.'
+        : !capDate ? 'In-service date is required.'
+        : null;
 
     // Add book form
     const [newBookType, setNewBookType] = useState<'CORPORATE' | 'TAX' | 'TECHNICAL' | 'IFRS'>('TAX');
@@ -86,7 +94,8 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                     Depreciation Ledger
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Projected posting schedule for <strong>{selectedBook.bookType}</strong> book using <strong>{selectedBook.depreciationMethod.replace(/_/g, ' ')}</strong>.
+                                    Projected by fiscal year for the <strong>{selectedBook.bookType}</strong> book, <strong>{selectedBook.depreciationMethod.replace(/_/g, ' ').toLowerCase()}</strong>, from the in-service month
+                                    {selectedBook.accumulatedDepreciation > 0 ? ' — continuing from what has been posted' : ''}. Monthly runs post the actual figures.
                                 </p>
                             </div>
                             <button className="text-xs text-blue-600 hover:text-blue-800 font-medium">
@@ -98,8 +107,8 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
                                     <tr>
-                                        <th className="px-6 py-3">Year</th>
-                                        <th className="px-6 py-3">Period</th>
+                                        <th className="px-6 py-3">Fiscal year</th>
+                                        <th className="px-6 py-3">Months</th>
                                         <th className="px-6 py-3 text-right">Opening Value</th>
                                         <th className="px-6 py-3 text-right text-amber-600">Expense</th>
                                         <th className="px-6 py-3 text-right">Accumulated</th>
@@ -109,8 +118,8 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                 <tbody className="divide-y divide-slate-50">
                                     {schedule.map((item) => (
                                         <tr key={item.period} className="hover:bg-slate-50/80 transition group">
-                                            <td className="px-6 py-3 font-mono text-slate-400">{item.period}</td>
                                             <td className="px-6 py-3 font-medium text-slate-700">{item.fiscalYear}</td>
+                                            <td className="px-6 py-3 font-mono text-slate-400">{item.months ?? 12}</td>
                                             <td className="px-6 py-3 text-right font-mono text-slate-600">${(item.openingBookValue ?? 0).toLocaleString()}</td>
                                             <td className="px-6 py-3 text-right font-mono text-amber-600 font-medium">-${(item.depreciationExpense ?? 0).toLocaleString()}</td>
                                             <td className="px-6 py-3 text-right font-mono text-slate-400">${(item.accumulatedDepreciation ?? 0).toLocaleString()}</td>
@@ -213,13 +222,19 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Salvage ($)</label>
-                                            <input type="number" value={capSalvage} onChange={e => setCapSalvage(parseFloat(e.target.value))} className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
+                                            <input type="number" min={0} value={capSalvage} onChange={e => setCapSalvage(parseFloat(e.target.value))} className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
                                         </div>
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Life (Years)</label>
-                                            <input type="number" value={capLifeYears} onChange={e => setCapLifeYears(parseFloat(e.target.value))} className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
+                                            <input type="number" min={0} step="0.5" value={capLifeYears} onChange={e => setCapLifeYears(parseFloat(e.target.value))} className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
                                         </div>
                                     </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">In-service date</label>
+                                        <input type="date" value={capDate} max={todayDateOnly()} onChange={e => setCapDate(e.target.value)} className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
+                                        <p className="text-[10px] text-slate-400 mt-1">Depreciation starts this month; the first year is pro-rata.</p>
+                                    </div>
+                                    {capProblem && <p className="text-[11px] text-amber-700">{capProblem}</p>}
                                 </div>
 
                                 <div className="flex justify-end gap-2">
@@ -228,7 +243,7 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                     </button>
                                     <button
                                         onClick={() => { onCapitalize(capCost, capSalvage, capLifeYears, capDate); setShowCapitalizeForm(false); }}
-                                        disabled={saving || capCost <= 0}
+                                        disabled={saving || !!capProblem}
                                         className="px-3 py-1.5 bg-primary-600 text-white rounded font-medium hover:bg-primary-500 text-xs disabled:opacity-50"
                                     >
                                         {saving ? '...' : 'Confirm'}

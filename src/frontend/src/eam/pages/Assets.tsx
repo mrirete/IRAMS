@@ -1647,11 +1647,17 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         serialNumber: selectedAsset.serialNumber,
                     }}
                     onClose={() => setShowReplaceModal(false)}
-                    onReplaced={({ equipmentNumber, equipmentGeneration, serialNumber }) => {
+                    onReplaced={({ equipmentNumber, equipmentGeneration, serialNumber, oemWarrantiesClosed, insurancePoliciesActive, capitalized }) => {
                         const updated = { ...selectedAsset, equipmentNumber, equipmentGeneration, serialNumber };
                         setAssets(prev => prev.map(a => a.id === updated.id ? updated : a));
                         setSelectedAsset(updated);
-                        showToast(`Replacement recorded — ${updated.tag} is now Gen ${equipmentGeneration} (${equipmentNumber}).`, 'success');
+                        showToast(`Replacement recorded — ${updated.tag} is now Gen ${equipmentGeneration} (${equipmentNumber}).${oemWarrantiesClosed ? ` ${oemWarrantiesClosed} OEM warranty on the old unit closed.` : ''}`, 'success');
+                        // The swap does not decide finance for you; it tells you what to decide.
+                        const followUps: string[] = [];
+                        if (oemWarrantiesClosed || !selectedAsset.parentId) followUps.push('add the new unit\'s OEM warranty');
+                        if (insurancePoliciesActive) followUps.push(`check ${insurancePoliciesActive} insurance polic${insurancePoliciesActive === 1 ? 'y' : 'ies'} (insured value / serial)`);
+                        if (capitalized) followUps.push('record a capital event if the swap changed the cost basis');
+                        if (followUps.length) showToast(`Financials: ${followUps.join('; ')}.`, 'info', 9000);
                     }}
                 />
             )}

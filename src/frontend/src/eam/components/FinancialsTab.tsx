@@ -245,23 +245,13 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
         }
     };
 
+    // The add dialogs await this and show a thrown error inline, so the
+    // failure reaches the user with their input still on screen.
     const handleAddWarranty = async (data: Partial<Warranty>) => {
         setSaving(true);
         try {
-            await FinOpsService.createWarranty(asset.id, {
-                vendorId: data.vendorId,
-                warrantyType: data.warrantyType || 'OEM',
-                coverageScope: data.coverageScope,
-                startDate: data.startDate || new Date().toISOString().split('T')[0],
-                endDate: data.endDate,
-                status: 'ACTIVE',
-                currentHours: 0,
-                maxHours: data.maxHours
-            });
+            await FinOpsService.createWarranty(asset.id, { ...data, status: 'ACTIVE', currentHours: 0 });
             await loadFinancialData();
-        } catch (err) {
-            console.error('Error adding warranty:', err);
-            alert('Failed to add warranty.');
         } finally {
             setSaving(false);
         }
@@ -297,21 +287,8 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
     const handleAddInsurance = async (data: Partial<AssetInsurance>) => {
         setSaving(true);
         try {
-            await FinOpsService.createInsurance(asset.id, {
-                policyNumber: data.policyNumber || '',
-                provider: data.provider || '',
-                coverageType: data.coverageType || 'ALL_RISK',
-                startDate: data.startDate || new Date().toISOString().split('T')[0],
-                endDate: data.endDate || new Date().toISOString().split('T')[0],
-                premiumAmount: data.premiumAmount || 0,
-                insuredValue: data.insuredValue || financialRecord?.replacementValue || 0,
-                deductible: data.deductible || 0,
-                status: 'ACTIVE'
-            });
+            await FinOpsService.createInsurance(asset.id, { ...data, status: 'ACTIVE' });
             await loadFinancialData();
-        } catch (err) {
-            console.error('Error adding insurance:', err);
-            alert('Failed to add insurance policy.');
         } finally {
             setSaving(false);
         }
@@ -424,6 +401,8 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
                 <WarrantiesSubTab
                     warranties={warranties}
                     can={can}
+                    manufacturerId={asset.manufacturerId}
+                    manufacturerName={asset.manufacturer}
                     saving={saving}
                     onAddWarranty={handleAddWarranty}
                     onDeleteWarranty={handleDeleteWarranty}
@@ -437,6 +416,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
                     insurancePolicies={insurancePolicies}
                     incidents={incidents}
                     can={can}
+                    defaultInsuredValue={financialRecord?.replacementValue || financialRecord?.acquisitionCost || undefined}
                     saving={saving}
                     setSaving={setSaving}
                     onAddInsurance={handleAddInsurance}

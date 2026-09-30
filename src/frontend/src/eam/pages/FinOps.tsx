@@ -80,39 +80,66 @@ interface AddWarrantyModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (warranty: any) => Promise<void>;
-    assets: { id: string; name: string; tag: string }[];
+    assets: PickerAsset[];
     vendors: { id: string; name: string }[];
 }
+type PickerAsset = { id: string; name: string; tag: string; manufacturerId?: string | null; manufacturer?: string | null };
 
 const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, onSave, assets, vendors }) => {
     const [loading, setLoading] = useState(false);
-    const { showToast } = useToast();
+    const [error, setError] = useState<string | null>(null);
+    const [manufacturers, setManufacturers] = useState<{ id: string; name: string }[]>([]);
     const [formData, setFormData] = useState({
         assetId: '',
         vendorId: '',
+        manufacturerId: '',
         warrantyType: 'OEM',
+        warrantyNumber: '',
         coverageScope: '',
         startDate: '',
         endDate: '',
         maxHours: '',
         status: 'ACTIVE'
     });
+    useEffect(() => {
+        if (!isOpen) return;
+        setError(null);
+        FinOpsService.getManufacturersForPicker().then(setManufacturers);
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
+    const isOEM = formData.warrantyType === 'OEM';
+    // Picking the asset pre-fills the OEM from its nameplate.
+    const pickAsset = (assetId: string) => {
+        const a = assets.find(x => x.id === assetId);
+        setFormData(f => ({ ...f, assetId, manufacturerId: (f.warrantyType === 'OEM' && a?.manufacturerId) ? a.manufacturerId : f.manufacturerId }));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
+        if (!formData.assetId) { setError('Choose the asset.'); return; }
+        if (isOEM && !formData.manufacturerId) { setError('An OEM warranty needs the manufacturer that backs it.'); return; }
+        if (!isOEM && !formData.vendorId) { setError('An extended warranty or service contract needs the vendor it is with.'); return; }
+        if (formData.endDate && formData.startDate && formData.endDate < formData.startDate) { setError('End date is before the start date.'); return; }
+        setLoading(true); setError(null);
         try {
             await onSave({
-                ...formData,
-                maxHours: formData.maxHours ? parseInt(formData.maxHours) : undefined,
+                assetId: formData.assetId,
+                warrantyType: formData.warrantyType,
+                warrantyNumber: formData.warrantyNumber.trim() || undefined,
+                manufacturerId: formData.manufacturerId || null,
+                vendorId: formData.vendorId || null,
+                coverageScope: formData.coverageScope || undefined,
+                startDate: formData.startDate,
+                endDate: formData.endDate || null,
+                maxHours: formData.maxHours ? parseInt(formData.maxHours) : null,
+                status: 'ACTIVE',
                 currentHours: 0
             });
             onClose();
-        } catch (error) {
-            console.error('Failed to save warranty:', error);
-            showToast('Failed to save warranty', 'error');
+        } catch (err: any) {
+            setError(err?.message || 'The warranty could not be saved.');
         } finally {
             setLoading(false);
         }
@@ -129,6 +156,7 @@ const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, on
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    {error && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-slate-500 uppercase">Asset</label>
@@ -136,7 +164,7 @@ const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, on
                                 className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"
                                 required
                                 value={formData.assetId}
-                                onChange={e => setFormData({ ...formData, assetId: e.target.value })}
+                                onChange={e => pickAsset(e.target.value)}
                             >
                                 <option value="">Select Asset...</option>
                                 {assets.map(a => (
@@ -145,18 +173,56 @@ const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, on
                             </select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase">Vendor</label>
-                            <select
-                                className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"
-                                value={formData.vendorId}
-                                onChange={e => setFormData({ ...formData, vendorId: e.target.value })}
-                            >
-                                <option value="">Select Vendor...</option>
-                                {vendors.map(v => (
-                                    <option key={v.id} value={v.id}>{v.name}</option>
-                                ))}
-                            </select>
+                            <label className="text-xs font-bold text-slate-500 uppercase">Warranty / contract no.</label>
+                            <input
+                                className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                value={formData.warrantyNumber}
+                                onChange={e => setFormData({ ...formData, warrantyNumber: e.target.value })}
+                                placeholder="as on the certificate"
+                            />
                         </div>
+                    </div>
+
+                    {/* Who backs it: the OEM for an OEM warranty (pre-filled from the asset), a vendor otherwise */}
+                    <div className="grid grid-cols-2 gap-4">
+                        {isOEM ? (
+                            <>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Manufacturer (warrantor)</label>
+                                    <select
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"
+                                        value={formData.manufacturerId}
+                                        onChange={e => setFormData({ ...formData, manufacturerId: e.target.value })}
+                                    >
+                                        <option value="">Select manufacturer...</option>
+                                        {manufacturers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Claims through (optional)</label>
+                                    <select
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"
+                                        value={formData.vendorId}
+                                        onChange={e => setFormData({ ...formData, vendorId: e.target.value })}
+                                    >
+                                        <option value="">Direct with the manufacturer</option>
+                                        {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                    </select>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="space-y-1 col-span-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Vendor / provider</label>
+                                <select
+                                    className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"
+                                    value={formData.vendorId}
+                                    onChange={e => setFormData({ ...formData, vendorId: e.target.value })}
+                                >
+                                    <option value="">Select Vendor...</option>
+                                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                </select>
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -187,7 +253,11 @@ const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, on
                             <select
                                 className="w-full p-2 border border-slate-200 rounded-lg text-sm"
                                 value={formData.warrantyType}
-                                onChange={e => setFormData({ ...formData, warrantyType: e.target.value })}
+                                onChange={e => {
+                                    const t = e.target.value;
+                                    const a = assets.find(x => x.id === formData.assetId);
+                                    setFormData({ ...formData, warrantyType: t, manufacturerId: t === 'OEM' ? (formData.manufacturerId || a?.manufacturerId || '') : formData.manufacturerId });
+                                }}
                             >
                                 <option value="OEM">OEM Standard</option>
                                 <option value="EXTENDED">Extended Warranty</option>
@@ -778,7 +848,7 @@ export const FinOps: React.FC = () => {
         }
     }, [searchParams]);
     const [loading, setLoading] = useState(true);
-    const [assets, setAssets] = useState<{ id: string; name: string; tag: string }[]>([]);
+    const [assets, setAssets] = useState<PickerAsset[]>([]);
     const [vendors, setVendors] = useState<{ id: string; name: string }[]>([]);
     const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
     const [depreciationBooks, setDepreciationBooks] = useState<DepreciationBook[]>([]);
@@ -2047,7 +2117,7 @@ const ForecastTab: React.FC = () => {
 
 interface WarrantiesTabProps {
     warranties: Warranty[];
-    assets: { id: string; name: string; tag: string }[];
+    assets: PickerAsset[];
     vendors: { id: string; name: string }[];
     onRefresh: () => void;
     can?: FinOpsCan;
@@ -2068,7 +2138,9 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
     const [filingClaim, setFilingClaim] = useState(false);
 
     const handleAddWarranty = async (warranty: any) => {
-        await FinOpsService.addWarranty(warranty);
+        // Through createWarranty so the same rules apply as on the asset tab
+        // (start date required, vendor required off-OEM, end ≥ start).
+        await FinOpsService.createWarranty(warranty.assetId, warranty);
         onRefresh();
     };
 
@@ -2155,7 +2227,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                             </div>
                                             <div>
                                                 <div className="font-medium text-slate-800">{(warranty as any).assetName || 'Unknown Asset'}</div>
-                                                <div className="text-sm text-slate-500">{(warranty as any).vendorName || 'Unknown Vendor'} • {warranty.warrantyType}</div>
+                                                <div className="text-sm text-slate-500">{warranty.providerName || 'No provider recorded'} • {warranty.warrantyType}{warranty.warrantyNumber ? ` • ${warranty.warrantyNumber}` : ''}</div>
                                             </div>
                                         </div>
 
@@ -2189,7 +2261,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                         <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3 animate-in slide-in-from-top-2 duration-200">
                                             <h4 className="text-sm font-bold text-blue-800 flex items-center gap-2">
                                                 <FileCheck size={14} />
-                                                File Warranty Claim — {(warranty as any).vendorName || 'Vendor'}
+                                                File Warranty Claim — {warranty.vendorName || warranty.providerName || 'provider'}
                                             </h4>
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                                 <div className="md:col-span-2">

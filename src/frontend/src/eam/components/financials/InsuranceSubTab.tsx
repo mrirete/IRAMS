@@ -3,6 +3,7 @@ import { Shield, AlertCircle, Plus, Edit3, Trash2, X, Save } from 'lucide-react'
 import { FinOpsService, AssetInsurance, InsuranceIncident } from '../../services/FinOpsService';
 import { AddInsuranceModal } from '../modals/AddInsuranceModal';
 import type { FinancialsCan } from '../FinancialsTab';
+import { formatDateOnly } from '../../../lib/dateOnly';
 
 interface InsuranceProps {
     assetId: string;
@@ -11,14 +12,16 @@ interface InsuranceProps {
     can?: FinancialsCan;
     saving: boolean;
     setSaving: (v: boolean) => void;
-    onAddInsurance: (data: Partial<AssetInsurance>) => void;
+    /** pre-fill for a new policy's insured value */
+    defaultInsuredValue?: number;
+    onAddInsurance: (data: Partial<AssetInsurance>) => Promise<void> | void;
     onDeleteInsurance: (id: string, provider: string) => void;
     onUpdateInsurance: (id: string, data: Partial<AssetInsurance>) => void;
     onReload: () => void;
 }
 
 export const InsuranceSubTab: React.FC<InsuranceProps> = ({
-    assetId, insurancePolicies, incidents, saving, setSaving,
+    assetId, insurancePolicies, incidents, saving, setSaving, defaultInsuredValue,
     onAddInsurance, onDeleteInsurance, onUpdateInsurance, onReload,
     can = { create: false, edit: false, delete: false },
 }) => {
@@ -178,9 +181,9 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                                 </span>
                                             </div>
                                         </div>
-                                        <div className="flex justify-between items-center mt-2 text-xs">
-                                            <span className="text-slate-500">Premium: ${(p.premiumAmount ?? 0).toLocaleString()}</span>
-                                            <span className="text-slate-500">Exp: {p.endDate ? new Date(p.endDate).toLocaleDateString() : 'N/A'}</span>
+                                        <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 mt-2 text-xs text-slate-500">
+                                            <span>{p.coverageType?.replace('_', ' ') || 'Cover'} · insured ${(p.insuredValue ?? 0).toLocaleString()} · deductible ${(p.deductible ?? 0).toLocaleString()}</span>
+                                            <span>Premium ${(p.premiumAmount ?? 0).toLocaleString()}/yr · {formatDateOnly(p.startDate, '?')} – {formatDateOnly(p.endDate, 'N/A')}</span>
                                         </div>
                                     </>
                                 )}
@@ -274,7 +277,8 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
             <AddInsuranceModal
                 isOpen={showAddModal}
                 onClose={() => setShowAddModal(false)}
-                onSave={(data) => { onAddInsurance(data); setShowAddModal(false); }}
+                onSave={onAddInsurance}
+                defaultInsuredValue={defaultInsuredValue}
             />
         </div>
     );

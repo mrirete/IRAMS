@@ -5,8 +5,18 @@ import { supabase } from '../../lib/supabase';
 interface ReplaceEquipmentModalProps {
     asset: { id: string; tag: string; name?: string; equipmentNumber?: string; equipmentGeneration?: number; serialNumber?: string };
     onClose: () => void;
-    /** Called with the new identity after a successful swap. */
-    onReplaced: (result: { equipmentNumber: string; equipmentGeneration: number; serialNumber?: string }) => void;
+    /** Called with the new identity after a successful swap, plus what the swap did to finance (0395). */
+    onReplaced: (result: {
+        equipmentNumber: string;
+        equipmentGeneration: number;
+        serialNumber?: string;
+        /** OEM warranties on the outgoing unit that the swap closed */
+        oemWarrantiesClosed: number;
+        /** active policies still attached to the position — a finance decision, not made here */
+        insurancePoliciesActive: number;
+        /** whether a cost basis / depreciation books exist on the position */
+        capitalized: boolean;
+    }) => void;
 }
 
 /**
@@ -39,6 +49,9 @@ export const ReplaceEquipmentModal: React.FC<ReplaceEquipmentModalProps> = ({ as
                 equipmentNumber: data?.equipment_number as string,
                 equipmentGeneration: data?.equipment_generation as number,
                 serialNumber: form.serialNumber.trim() || undefined,
+                oemWarrantiesClosed: Number(data?.oem_warranties_closed ?? 0),
+                insurancePoliciesActive: Number(data?.insurance_policies_active ?? 0),
+                capitalized: data?.capitalized === true,
             });
             onClose();
         } catch (err: any) {
