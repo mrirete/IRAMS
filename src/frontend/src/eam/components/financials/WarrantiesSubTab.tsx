@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { FileCheck, Plus, Edit3, Trash2, X, Save } from 'lucide-react';
 import { Warranty } from '../../services/FinOpsService';
 import { AddWarrantyModal } from '../modals/AddWarrantyModal';
+import type { FinancialsCan } from '../FinancialsTab';
 
 interface WarrantiesProps {
     warranties: Warranty[];
+    can?: FinancialsCan;
     saving: boolean;
     onAddWarranty: (data: Partial<Warranty>) => void;
     onDeleteWarranty: (id: string, type: string) => void;
@@ -12,7 +14,8 @@ interface WarrantiesProps {
 }
 
 export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
-    warranties, saving, onAddWarranty, onDeleteWarranty, onUpdateWarranty
+    warranties, saving, onAddWarranty, onDeleteWarranty, onUpdateWarranty,
+    can = { create: false, edit: false, delete: false },
 }) => {
     const [showAddModal, setShowAddModal] = useState(false);
 
@@ -56,12 +59,14 @@ export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
                         <FileCheck size={16} className="text-slate-400" />
                         Warranties
                     </h3>
-                    <button
-                        onClick={() => setShowAddModal(true)}
-                        className="text-xs bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg flex items-center gap-1 font-medium transition"
-                    >
-                        <Plus size={12} /> Add Warranty
-                    </button>
+                    {can.create && (
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="text-xs bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg flex items-center gap-1 font-medium transition"
+                        >
+                            <Plus size={12} /> Add Warranty
+                        </button>
+                    )}
                 </div>
 
                 {warranties.length === 0 ? (
@@ -128,12 +133,16 @@ export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
                                         <div className="flex justify-between items-center mb-1">
                                             <span className="font-medium text-slate-800 text-sm">{w.warrantyType}</span>
                                             <div className="flex items-center gap-2">
-                                                <button onClick={() => startEdit(w)} className="text-xs text-blue-400 hover:text-blue-600 p-0.5" title="Edit warranty">
-                                                    <Edit3 size={13} />
-                                                </button>
-                                                <button onClick={() => onDeleteWarranty(w.id, w.warrantyType)} className="text-xs text-red-400 hover:text-red-600 p-0.5" title={`Delete ${w.warrantyType} warranty`}>
-                                                    <Trash2 size={13} />
-                                                </button>
+                                                {can.edit && (
+                                                    <button onClick={() => startEdit(w)} className="text-xs text-blue-400 hover:text-blue-600 p-0.5" title="Edit warranty">
+                                                        <Edit3 size={13} />
+                                                    </button>
+                                                )}
+                                                {can.delete && (
+                                                    <button onClick={() => onDeleteWarranty(w.id, w.warrantyType)} className="text-xs text-red-400 hover:text-red-600 p-0.5" title={`Delete ${w.warrantyType} warranty`}>
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                )}
                                                 <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${
                                                     w.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' :
                                                     w.status === 'EXPIRED' ? 'bg-red-100 text-red-600' :

@@ -113,6 +113,7 @@ export interface DepreciationScheduleItem {
 export interface Warranty {
     id: string;
     assetId: string;
+    warrantyNumber?: string;
     vendorId?: string;
     warrantyType: 'OEM' | 'EXTENDED' | 'SERVICE_CONTRACT';
     coverageScope?: string;
@@ -152,7 +153,7 @@ export interface WarrantyClaim {
     approvedAmount?: number;
     rejectionReason?: string;
     // Status workflow
-    status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'CREDITED';
+    status: 'DRAFT' | 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'CREDITED';
     submittedBy?: string;
     submittedAt?: string;
     approvedBy?: string;
@@ -655,7 +656,7 @@ class FinOpsServiceClass {
         const { data, error } = await supabase
             .from('cost_allocations')
             .insert({
-                work_order_id: allocation.workOrderId,
+                work_order_id: allocation.workOrderId || null, // ad-hoc posting: '' is not a uuid
                 cost_center_id: allocation.costCenterId,
                 wbs_element_id: allocation.wbsElementId,
                 cost_type: allocation.costType,
@@ -986,56 +987,55 @@ class FinOpsServiceClass {
             .single();
 
         if (error) throw error;
-        const newBook = this.mapDepreciationBook(book);
-
-        // 2. Automatically Generate & Save Schedule
-        try {
-            const financial = await this.getAssetFinancialById(bookData.assetFinancialId!);
-            // We need a getById or re-use getAssetFinancial but that takes assetId. 
-            // We can fetch by ID directly since we have assetFinancialId.
-            // Actually, getAssetFinancial takes assetId, not assetFinancialId. 
-            // Let's just fetch it directly here for safety.
-
-            const { data: finData } = await supabase
-                .from('asset_financials')
-                .select('*')
-                .eq('id', bookData.assetFinancialId)
-                .single();
-
-            if (finData) {
-                const financialRecord = this.mapAssetFinancial(finData);
-                const schedule = this.calculateDepreciationSchedule(newBook, financialRecord);
-                await this.saveDepreciationSchedule(newBook.id, schedule);
-            }
-        } catch (scheduleErr) {
-            console.error("Failed to auto-generate schedule for new book", scheduleErr);
-            // Don't fail the book creation, just log
-        }
-
-        return newBook;
+        // The projected schedule is NOT persisted: depreciation_schedules holds
+        // posted monthly runs (unique per book/year/period since 0394) and the
+        // annual projection is pure — calculateDepreciationSchedule() renders
+        // it from the book on demand. The old insert here named a column the
+        // table never had and failed on every book.
+        return this.mapDepreciationBook(book);
     }
 
     /**
-     * Save depreciation schedule to database
+     * Re-derive a book's accumulated depreciation and carrying value from its
+     * POSTED schedule rows. The ledger is the source of truth; the book is a
+     * cache of it. (The previous "increment" write assigned a query builder to
+     * the column and never moved it — 0394 backfilled every book this way.)
      */
-    async saveDepreciationSchedule(bookId: string, schedule: DepreciationScheduleItem[]): Promise<void> {
-        if (schedule.length === 0) return;
+    async refreshBookFromLedger(bookId: string): Promise<{ accumulated: number; currentValue: number }> {
+        const { data: book, error: bookErr } = await supabase
+            .from('depreciation_books')
+            .select('id, asset_financials(acquisition_cost, residual_value)')
+            .eq('id', bookId)
+            .single();
+        if (bookErr) throw bookErr;
+        const fin: any = book?.asset_financials;
 
-        const rows = schedule.map(item => ({
-            book_id: bookId,
-            fiscal_year: item.fiscalYear,
-            period: item.period,
-            depreciation_amount: item.depreciationExpense,
-            opening_value: item.openingBookValue,
-            closing_value: item.closingBookValue,
-            accumulated_depreciation: item.accumulatedDepreciation
-        }));
-
-        const { error } = await supabase
+        const { data: rows, error: rowsErr } = await supabase
             .from('depreciation_schedules')
-            .insert(rows);
+            .select('depreciation_amount, run_date, created_at')
+            .eq('book_id', bookId)
+            .eq('posted', true);
+        if (rowsErr) throw rowsErr;
 
-        if (error) throw error;
+        const accumulated = (rows || []).reduce((s, r: any) => s + (parseFloat(r.depreciation_amount) || 0), 0);
+        const cost = parseFloat(fin?.acquisition_cost || 0);
+        const residual = parseFloat(fin?.residual_value || 0);
+        const currentValue = Math.max(cost - accumulated, residual);
+        const lastRun = (rows || []).reduce<string | null>((m, r: any) => {
+            const d = r.run_date || r.created_at;
+            return d && (!m || d > m) ? d : m;
+        }, null);
+
+        await mustWrite(
+            supabase.from('depreciation_books').update({
+                accumulated_depreciation: accumulated,
+                current_value: currentValue,
+                last_depreciation_date: lastRun,
+                updated_at: new Date().toISOString(),
+            }).eq('id', bookId),
+            `Depreciation book ${bookId} carrying value`,
+        );
+        return { accumulated, currentValue };
     }
 
     /**
@@ -1134,7 +1134,8 @@ class FinOpsServiceClass {
             .select('id')
             .eq('book_type', bookType);
 
-        // Idempotent per book/period: a second click must not post twice.
+        // Idempotent per book/period: a second click must not post twice. The
+        // unique index (0394) is the real guard; this read keeps the count honest.
         const ids = (books || []).map(b => b.id);
         const { data: done } = ids.length
             ? await supabase.from('depreciation_schedules').select('book_id').in('book_id', ids).eq('fiscal_year', fiscalYear).eq('period', period)
@@ -1158,17 +1159,16 @@ class FinOpsServiceClass {
                     period: period,
                     depreciation_amount: amount,
                     opening_value: newValue + amount,
-                    closing_value: newValue
+                    closing_value: newValue,
+                    posted: true,
+                    run_date: new Date().toISOString(),
                 }),
                 `Depreciation schedule for book ${book.id} (${fiscalYear}/${period})`,
             );
 
-            // Update book
-            await supabase.from('depreciation_books').update({
-                current_value: newValue,
-                accumulated_depreciation: supabase.rpc('increment', { x: amount }),
-                last_depreciation_date: new Date().toISOString()
-            }).eq('id', book.id);
+            // The book follows its ledger: accumulated = Σ posted rows, carrying
+            // value = cost − accumulated (floored at residual). Checked write.
+            await this.refreshBookFromLedger(book.id);
 
             processedCount++;
         }
@@ -1250,9 +1250,10 @@ class FinOpsServiceClass {
                 approvedBy: input.approvedBy
             };
 
-            // Try to insert into capital_events table (gracefully handle if table doesn't exist yet)
-            try {
-                await supabase.from('capital_events').insert({
+            // The capital event IS the audit record of this change: a failed
+            // insert is a failed recapitalisation, not a warning.
+            {
+                const { error: evErr } = await supabase.from('capital_events').insert({
                     asset_financial_id: capitalEvent.assetFinancialId,
                     asset_id: capitalEvent.assetId,
                     event_type: capitalEvent.eventType,
@@ -1269,41 +1270,37 @@ class FinOpsServiceClass {
                     description: capitalEvent.description,
                     approved_by: capitalEvent.approvedBy
                 });
-            } catch (logErr) {
-                console.warn('Capital events table may not exist yet — event logged to console only:', capitalEvent);
+                if (evErr) throw evErr;
             }
 
-            // 5. Regenerate depreciation schedules for ALL books on this asset
+            // 5. Every book's carrying value follows the new gross value minus the
+            // depreciation actually POSTED so far (re-derived from the ledger, not
+            // read off the book). Posted history is never touched: the previous
+            // version deleted every schedule row here, then failed to write the
+            // projection back, and reported success — a capital event wiped the
+            // asset's depreciation history. Projections are not stored at all now.
             const books = await this.getDepreciationBooks(financial.id);
             let booksRecalculated = 0;
+            const failures: string[] = [];
 
             for (const book of books) {
                 try {
-                    // Delete old schedule entries for this book
-                    await supabase
-                        .from('depreciation_schedules')
-                        .delete()
-                        .eq('book_id', book.id);
-
-                    // Update book's current value to reflect new carrying amount minus accumulated
-                    const newBookValue = newGAV - book.accumulatedDepreciation;
-                    await supabase
-                        .from('depreciation_books')
-                        .update({ current_value: Math.max(newBookValue, newSalvage) })
-                        .eq('id', book.id);
-
-                    // Regenerate schedule from the recapitalization effective date
-                    const updatedBook: DepreciationBook = {
-                        ...book,
-                        currentValue: Math.max(newBookValue, newSalvage),
-                        startDate: input.effectiveDate // Restart schedule from event date
-                    };
-                    const schedule = this.calculateDepreciationSchedule(updatedBook, updatedFinancial);
-                    await this.saveDepreciationSchedule(book.id, schedule);
+                    await this.refreshBookFromLedger(book.id);
                     booksRecalculated++;
-                } catch (bookErr) {
-                    console.error(`Failed to recalculate schedule for book ${book.id}:`, bookErr);
+                } catch (bookErr: any) {
+                    console.error(`Failed to re-derive book ${book.id}:`, bookErr);
+                    failures.push(`${book.bookType}: ${bookErr?.message || bookErr}`);
                 }
+            }
+
+            if (failures.length) {
+                return {
+                    success: false,
+                    message: `Capital event recorded, but ${failures.length} depreciation book(s) could not be re-derived — ${failures.join('; ')}`,
+                    booksRecalculated,
+                    updatedFinancial,
+                    event: capitalEvent as AssetCapitalEvent,
+                };
             }
 
             return {
@@ -1500,6 +1497,7 @@ class FinOpsServiceClass {
             .from('warranties')
             .insert({
                 asset_id: warranty.assetId,
+                warranty_number: warranty.warrantyNumber?.trim() || null,
                 vendor_id: warranty.vendorId || null, // Convert "" to null
                 warranty_type: warranty.warrantyType,
                 coverage_scope: warranty.coverageScope,
@@ -1795,11 +1793,12 @@ class FinOpsServiceClass {
      */
     async generateWarrantyClaim(
         warrantyId: string,
-        workOrderId: string,
+        workOrderId: string | null,
         failureDescription: string,
         claimType: 'REPAIR' | 'REPLACEMENT' | 'CREDIT',
         amount: number
     ): Promise<WarrantyClaim> {
+        if (!(amount > 0)) throw new Error('Claim amount must be greater than zero.');
         const claimNumber = `WC-${Date.now().toString(36).toUpperCase()}`;
 
         const { data, error } = await supabase
@@ -1807,7 +1806,7 @@ class FinOpsServiceClass {
             .insert({
                 claim_number: claimNumber,
                 warranty_id: warrantyId,
-                work_order_id: workOrderId,
+                work_order_id: workOrderId || null, // '' is not a uuid — a manual claim has no WO
                 failure_description: failureDescription,
                 claim_type: claimType,
                 total_claim_amount: amount,
@@ -1924,22 +1923,53 @@ class FinOpsServiceClass {
             actorId?: string;
         }
     ): Promise<WarrantyClaim> {
+        // The claim's current state decides what may happen next. Without this
+        // an APPROVED claim could be approved again (and credited again).
+        const { data: current, error: curErr } = await supabase
+            .from('warranty_claims')
+            .select('id, status, total_claim_amount, approved_amount')
+            .eq('id', claimId)
+            .single();
+        if (curErr) throw curErr;
+        const allowed: Record<string, WarrantyClaim['status'][]> = {
+            DRAFT: ['SUBMITTED'],
+            SUBMITTED: ['APPROVED', 'REJECTED'],
+            UNDER_REVIEW: ['APPROVED', 'REJECTED'],
+            APPROVED: ['CREDITED'],
+            REJECTED: ['SUBMITTED'],
+            CREDITED: [],
+        };
+        if (!(allowed[current.status] || []).includes(newStatus)) {
+            throw new Error(`A ${current.status} claim cannot move to ${newStatus}.`);
+        }
+
+        const total = parseFloat(current.total_claim_amount || 0);
         const update: any = { status: newStatus };
 
         if (newStatus === 'SUBMITTED') {
             update.submitted_at = new Date().toISOString();
-            update.submitted_by = details?.actorId;
+            update.submitted_by = details?.actorId || null;
+            update.rejection_reason = null;
         }
-        if (newStatus === 'APPROVED' || newStatus === 'CREDITED') {
+        if (newStatus === 'APPROVED') {
+            const approved = details?.approvedAmount ?? total;
+            if (!(approved > 0)) throw new Error('Approved amount must be greater than zero.');
+            if (approved > total) throw new Error(`Approved amount cannot exceed the claimed $${total.toLocaleString()}.`);
             update.approved_at = new Date().toISOString();
-            update.approved_by = details?.actorId;
-            if (details?.approvedAmount !== undefined) update.approved_amount = details.approvedAmount;
+            update.approved_by = details?.actorId || null;
+            update.approved_amount = approved;
             if (details?.vendorReference) update.vendor_reference = details.vendorReference;
             update.vendor_response_date = new Date().toISOString().split('T')[0];
+
+            // The credit posts FIRST: if it cannot reach the ledger, the claim
+            // stays SUBMITTED and the user sees why, instead of a "Recovered"
+            // figure that never reached a budget.
+            await this.postWarrantyCostCredit(claimId, approved);
         }
         if (newStatus === 'REJECTED') {
+            if (!details?.rejectionReason?.trim()) throw new Error('A rejection needs a reason.');
             update.vendor_response_date = new Date().toISOString().split('T')[0];
-            if (details?.rejectionReason) update.rejection_reason = details.rejectionReason;
+            update.rejection_reason = details.rejectionReason.trim();
             if (details?.vendorReference) update.vendor_reference = details.vendorReference;
         }
 
@@ -1947,19 +1977,11 @@ class FinOpsServiceClass {
             .from('warranty_claims')
             .update(update)
             .eq('id', claimId)
+            .eq('status', current.status) // optimistic: a concurrent change loses
             .select()
             .single();
 
         if (error) throw error;
-
-        // Phase 5 (G4): Auto-post cost credit on APPROVED
-        if (newStatus === 'APPROVED') {
-            const creditAmount = details?.approvedAmount ?? parseFloat(data.total_claim_amount || 0);
-            if (creditAmount > 0) {
-                await this.postWarrantyCostCredit(claimId, creditAmount);
-            }
-        }
-
         return this.mapWarrantyClaim(data);
     }
 
@@ -1991,63 +2013,69 @@ class FinOpsServiceClass {
         claimId: string,
         approvedAmount: number
     ): Promise<void> {
-        // 1. Get the claim to find the linked WO
-        const { data: claim } = await supabase
+        // Idempotent: one credit per claim. document_number carries the claim
+        // number and source marks it, so a retried approval cannot double-credit.
+        const { data: claim, error: claimErr } = await supabase
             .from('warranty_claims')
-            .select('work_order_id, warranty_id, claim_number')
+            .select('work_order_id, warranty_id, claim_number, warranties(asset_id)')
             .eq('id', claimId)
             .single();
+        if (claimErr) throw claimErr;
 
-        if (!claim?.work_order_id) {
-            console.warn('[FinOps] Cannot post cost credit — no linked WO for claim:', claimId);
-            return;
+        const { data: existing } = await supabase
+            .from('cost_allocations')
+            .select('id')
+            .eq('source', 'WARRANTY_CREDIT')
+            .eq('document_number', claim.claim_number)
+            .limit(1);
+        if (existing && existing.length) return;
+
+        // Receiver: the WO's cost centre, else the asset's (a manual claim has no
+        // WO — the warranty's asset is the receiver then).
+        let costCenterId: string | null = null;
+        let assetId: string | null = (claim as any).warranties?.asset_id ?? null;
+        let woNumber: string | null = null;
+        if (claim.work_order_id) {
+            const { data: wo } = await supabase
+                .from('work_orders')
+                .select('cost_center_id, wo_number, asset_id')
+                .eq('id', claim.work_order_id)
+                .maybeSingle();
+            costCenterId = wo?.cost_center_id ?? null;
+            woNumber = wo?.wo_number ?? null;
+            assetId = wo?.asset_id ?? assetId;
         }
-
-        // 2. Get the WO's cost center
-        const { data: wo } = await supabase
-            .from('work_orders')
-            .select('cost_center_id, wo_number, asset_id')
-            .eq('id', claim.work_order_id)
-            .single();
-
-        if (!wo) return;
-
-        // 3. Determine cost center — use WO's, or fallback to asset's
-        let costCenterId = wo.cost_center_id;
-        if (!costCenterId && wo.asset_id) {
+        if (!costCenterId && assetId) {
             const { data: asset } = await supabase
                 .from('assets')
                 .select('cost_center_id')
-                .eq('id', wo.asset_id)
-                .single();
-            costCenterId = asset?.cost_center_id;
+                .eq('id', assetId)
+                .maybeSingle();
+            costCenterId = asset?.cost_center_id ?? null;
         }
-
         if (!costCenterId) {
-            console.warn('[FinOps] Cannot post credit — no cost center found for WO:', wo.wo_number);
-            return;
+            throw new Error(`Claim ${claim.claim_number} has no cost centre to credit — set one on the work order or the asset first.`);
         }
 
-        // 4. Post negative cost allocation (credit)
-        const { error } = await supabase
-            .from('cost_allocations')
-            .insert({
+        // Real columns only (the previous version named six that do not exist
+        // and omitted NOT NULL cost_type, so this insert had never succeeded).
+        await mustWrite(
+            supabase.from('cost_allocations').insert({
+                work_order_id: claim.work_order_id || null,
+                asset_id: assetId,
                 cost_center_id: costCenterId,
-                amount: -approvedAmount, // Negative = credit
-                description: `WARRANTY CREDIT: Claim ${claim.claim_number} approved for WO ${wo.wo_number}`,
-                transaction_type: 'WARRANTY_CREDIT',
-                reference_type: 'WARRANTY_CLAIM',
-                reference_id: claimId,
-                transaction_date: new Date().toISOString().split('T')[0],
-                period: new Date().toISOString().slice(0, 7) // YYYY-MM
-            });
+                cost_type: 'CREDIT',
+                amount: -Math.abs(approvedAmount), // negative = credit
+                posting_date: new Date().toISOString().split('T')[0],
+                document_number: claim.claim_number,
+                source: 'WARRANTY_CREDIT',
+            }),
+            `Warranty credit for claim ${claim.claim_number}${woNumber ? ` (WO ${woNumber})` : ''}`,
+        );
 
-        if (error) {
-            console.error('[FinOps] Cost credit posting failed:', error);
-            // Don't throw — credit failure shouldn't block claim approval
-        } else {
-            console.log(`[FinOps] ✅ Cost credit posted: -$${approvedAmount} to CC ${costCenterId} for claim ${claim.claim_number}`);
-        }
+        // The budget actual is recomputed from the ledger; without this the
+        // credit sits in cost_allocations and the budget never sees it.
+        await this.updateBudgetActuals(costCenterId);
     }
 
     // =====================================================
@@ -2720,16 +2748,21 @@ class FinOpsServiceClass {
      */
     async trackInsuranceIncident(
         assetId: string,
-        workOrderId: string,
+        workOrderId: string | null,
         incidentType: string,
         description: string,
-        estimatedDamage: number
+        estimatedDamage: number,
+        incidentDate?: string
     ): Promise<any> {
         const incidentNumber = `INS-${Date.now().toString(36).toUpperCase()}`;
+        const when = incidentDate || new Date().toISOString().split('T')[0];
 
-        // Find active insurance policy
+        // The policy that actually covered the incident date, not whichever
+        // row happens to sort first.
         const policies = await this.getAssetInsurance(assetId);
-        const policyId = policies.length > 0 ? policies[0].id : null;
+        const covering = policies.find(p => p.status === 'ACTIVE' && p.startDate <= when && (!p.endDate || p.endDate >= when))
+            || policies.find(p => p.status === 'ACTIVE');
+        const policyId = covering ? covering.id : null;
 
         const { data, error } = await supabase
             .from('insurance_incidents')
@@ -2737,8 +2770,8 @@ class FinOpsServiceClass {
                 incident_number: incidentNumber,
                 asset_id: assetId,
                 insurance_policy_id: policyId,
-                work_order_id: workOrderId,
-                incident_date: new Date().toISOString(),
+                work_order_id: workOrderId || null, // '' is not a uuid
+                incident_date: when,
                 incident_type: incidentType,
                 description: description,
                 estimated_damage: estimatedDamage,
@@ -2865,6 +2898,7 @@ class FinOpsServiceClass {
         return {
             id: row.id,
             assetId: row.asset_id,
+            warrantyNumber: row.warranty_number || undefined,
             vendorId: row.vendor_id,
             warrantyType: row.warranty_type,
             coverageScope: row.coverage_scope,

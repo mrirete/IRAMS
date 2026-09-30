@@ -6,6 +6,8 @@ interface OverviewProps {
     financialRecord: AssetFinancial | null;
     primaryBook: DepreciationBook | undefined;
     warranties: Warranty[];
+    /** finops.edit — the downtime rate is the one editable figure here */
+    canEdit?: boolean;
     editedDowntimeCost: number;
     isEditingDowntime: boolean;
     saving: boolean;
@@ -15,7 +17,7 @@ interface OverviewProps {
 }
 
 export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
-    financialRecord, primaryBook, warranties,
+    financialRecord, primaryBook, warranties, canEdit = false,
     editedDowntimeCost, isEditingDowntime, saving,
     setEditedDowntimeCost, setIsEditingDowntime, onSaveDowntimeCost
 }) => {
@@ -107,7 +109,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                 <div className={`p-4 rounded-xl border shadow-sm ${isEditingDowntime ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 flex justify-between items-center">
                         <span>Downtime Cost</span>
-                        {!isEditingDowntime && (
+                        {!isEditingDowntime && canEdit && (
                             <button onClick={() => setIsEditingDowntime(true)} className="text-blue-400 hover:text-blue-600" title="Edit downtime cost">
                                 <Edit3 size={12} />
                             </button>

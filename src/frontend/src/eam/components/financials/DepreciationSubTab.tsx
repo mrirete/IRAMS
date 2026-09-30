@@ -3,11 +3,14 @@ import { DollarSign, BookOpen, Plus, ChevronRight, ChevronLeft, Table, AlertCirc
 import { Asset } from '../../types';
 import { FinOpsService, AssetFinancial, DepreciationBook, DepreciationScheduleItem, RecapitalizationResult } from '../../services/FinOpsService';
 import { CapitalEventModal } from '../modals/CapitalEventModal';
+import type { FinancialsCan } from '../FinancialsTab';
 
 interface DepreciationProps {
     asset: Asset;
     financialRecord: AssetFinancial | null;
     books: DepreciationBook[];
+    /** create = capitalise / add book; edit = capital event; delete = reset / delete book */
+    can?: FinancialsCan;
     saving: boolean;
     setSaving: (v: boolean) => void;
     onCapitalize: (cost: number, salvage: number, lifeYears: number, date: string) => void;
@@ -19,7 +22,8 @@ interface DepreciationProps {
 
 export const DepreciationSubTab: React.FC<DepreciationProps> = ({
     asset, financialRecord, books, saving, setSaving,
-    onCapitalize, onAddBook, onDeleteBook, onReload, onReset
+    onCapitalize, onAddBook, onDeleteBook, onReload, onReset,
+    can = { create: false, edit: false, delete: false },
 }) => {
     // Local view state
     const [viewMode, setViewMode] = useState<'LIST' | 'LEDGER'>('LIST');
@@ -144,27 +148,33 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                         <BookOpen size={16} className="text-slate-400" />
                         Depreciation Books
                     </h3>
-                    {financialRecord && (
+                    {financialRecord && (can.create || can.edit || can.delete) && (
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={onReset}
-                                className="text-xs bg-red-50 border border-red-200 hover:bg-red-100 text-red-600 px-2 py-1 rounded flex items-center gap-1 font-medium"
-                                title="Reset capitalization and remove all depreciation data"
-                            >
-                                <RotateCcw size={12} /> Reset
-                            </button>
-                            <button
-                                onClick={() => setShowCapitalEventModal(true)}
-                                className="text-xs bg-amber-50 border border-amber-300 hover:bg-amber-100 text-amber-700 px-2 py-1 rounded flex items-center gap-1 font-medium"
-                            >
-                                <DollarSign size={12} /> Capital Event
-                            </button>
-                            <button
-                                onClick={() => setShowAddBookModal(true)}
-                                className="text-xs bg-white border border-slate-200 hover:bg-slate-50 px-2 py-1 rounded flex items-center gap-1"
-                            >
-                                <Plus size={12} /> Add Book
-                            </button>
+                            {can.delete && (
+                                <button
+                                    onClick={onReset}
+                                    className="text-xs bg-red-50 border border-red-200 hover:bg-red-100 text-red-600 px-2 py-1 rounded flex items-center gap-1 font-medium"
+                                    title="Reset capitalization and remove all depreciation data (refused once depreciation has been posted)"
+                                >
+                                    <RotateCcw size={12} /> Reset
+                                </button>
+                            )}
+                            {can.edit && (
+                                <button
+                                    onClick={() => setShowCapitalEventModal(true)}
+                                    className="text-xs bg-amber-50 border border-amber-300 hover:bg-amber-100 text-amber-700 px-2 py-1 rounded flex items-center gap-1 font-medium"
+                                >
+                                    <DollarSign size={12} /> Capital Event
+                                </button>
+                            )}
+                            {can.create && (
+                                <button
+                                    onClick={() => setShowAddBookModal(true)}
+                                    className="text-xs bg-white border border-slate-200 hover:bg-slate-50 px-2 py-1 rounded flex items-center gap-1"
+                                >
+                                    <Plus size={12} /> Add Book
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -245,9 +255,11 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                         {book.bookType}
                                     </span>
                                     <div className="flex items-center gap-2">
-                                        <button onClick={() => onDeleteBook(book.id, book.bookType)} className="text-xs text-red-400 hover:text-red-600 transition-opacity p-0.5" title={`Delete ${book.bookType} book`}>
-                                            <Trash2 size={13} />
-                                        </button>
+                                        {can.delete && (
+                                            <button onClick={() => onDeleteBook(book.id, book.bookType)} className="text-xs text-red-400 hover:text-red-600 transition-opacity p-0.5" title={`Delete ${book.bookType} book`}>
+                                                <Trash2 size={13} />
+                                            </button>
+                                        )}
                                         <button onClick={() => handleViewLedger(book.id)} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
                                             Ledger <ChevronRight size={12} />
                                         </button>

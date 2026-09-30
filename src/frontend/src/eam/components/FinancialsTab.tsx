@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, Shield, FileCheck, BookOpen, CreditCard, LayoutDashboard } from 'lucide-react';
 import { Asset } from '../types';
 import { FinOpsService, AssetFinancial, DepreciationBook, Warranty, DepreciationScheduleItem, AssetInsurance, InsuranceIncident, RecapitalizationResult } from '../services/FinOpsService';
+import { useAuth } from '../contexts/AuthContext';
+
+/** What the signed-in role may do on this tab. The tab itself is shown on finops.view. */
+export interface FinancialsCan {
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+}
 
 // Sub-tab components
 import { FinancialsOverviewSubTab } from './financials/FinancialsOverviewSubTab';
@@ -54,6 +62,15 @@ const SUB_TABS: { key: FinancialSubTab; label: string; icon: React.FC<any> }[] =
 ];
 
 const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
+    // Per-action gating. The tab shows on finops.view; MANAGER and EXECUTIVE
+    // hold view only and FINANCE cannot delete, and since 0394 the database
+    // refuses the write — so the buttons follow the matrix instead of failing.
+    const { permissions } = useAuth();
+    const can: FinancialsCan = {
+        create: permissions?.finops?.create === true,
+        edit: permissions?.finops?.edit === true,
+        delete: permissions?.finops?.delete === true,
+    };
     const [activeSubTab, setActiveSubTab] = useState<FinancialSubTab>('overview');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -377,6 +394,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
                     financialRecord={financialRecord}
                     primaryBook={primaryBook}
                     warranties={warranties}
+                    canEdit={can.edit}
                     editedDowntimeCost={editedDowntimeCost}
                     isEditingDowntime={isEditingDowntime}
                     saving={saving}
@@ -391,6 +409,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
                     asset={asset}
                     financialRecord={financialRecord}
                     books={books}
+                    can={can}
                     saving={saving}
                     setSaving={setSaving}
                     onCapitalize={handleCapitalize}
@@ -404,6 +423,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             {activeSubTab === 'warranties' && (
                 <WarrantiesSubTab
                     warranties={warranties}
+                    can={can}
                     saving={saving}
                     onAddWarranty={handleAddWarranty}
                     onDeleteWarranty={handleDeleteWarranty}
@@ -416,6 +436,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
                     assetId={asset.id}
                     insurancePolicies={insurancePolicies}
                     incidents={incidents}
+                    can={can}
                     saving={saving}
                     setSaving={setSaving}
                     onAddInsurance={handleAddInsurance}

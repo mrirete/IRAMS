@@ -27,6 +27,22 @@ import AdvisoryAgentPanel from '../components/ui/AdvisoryAgentPanel';
 import { runWarrantyRecovery } from '../services/agentRunClient';
 import { ReceiptText } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
+
+/**
+ * What the signed-in role may DO here. The route gate only checks
+ * finops.view; MANAGER and EXECUTIVE are view-only and FINANCE cannot delete,
+ * yet every action rendered for all of them (and since 0394 the database
+ * refuses the write, so an ungated button would just fail). Derived once in
+ * the page and handed to each tab.
+ */
+interface FinOpsCan {
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    approve: boolean;
+}
+const NO_CAN: FinOpsCan = { create: false, edit: false, delete: false, approve: false };
 
 type TabId = 'dashboard' | 'cost_centers' | 'budget_control' | 'forecast' | 'depreciation' | 'warranties' | 'claims' | 'vendor_intel' | 'supply_chain' | 'insurance';
 
@@ -782,6 +798,14 @@ export const FinOps: React.FC = () => {
     });
     const [maintenanceForecasts, setMaintenanceForecasts] = useState<MaintenanceForecast[]>([]);
     const [isNewTransactionOpen, setIsNewTransactionOpen] = useState(false);
+    const { permissions, profile } = useAuth();
+    const can = useMemo<FinOpsCan>(() => ({
+        create: permissions?.finops?.create === true,
+        edit: permissions?.finops?.edit === true,
+        delete: permissions?.finops?.delete === true,
+        approve: permissions?.finops?.approve === true,
+    }), [permissions]);
+    const actorId = profile?.id;
 
     useEffect(() => {
         loadData();
@@ -835,7 +859,7 @@ export const FinOps: React.FC = () => {
     const renderTabContent = () => {
         switch (activeTab) {
             case 'dashboard': return <DashboardTab metrics={dashboardMetrics} transactions={[]} />; // TODO: Fetch transactions
-            case 'cost_centers': return <CostCentersTab costCenters={costCenters} onRefresh={loadData} initialSelectedId={searchParams.get('id')} />;
+            case 'cost_centers': return <CostCentersTab costCenters={costCenters} onRefresh={loadData} initialSelectedId={searchParams.get('id')} can={can} />;
             case 'forecast':
                 // RF-01: the repair-vs-replace screen leads the forecast view —
                 // capital conversations start from evidence, not spreadsheets.
@@ -846,9 +870,9 @@ export const FinOps: React.FC = () => {
                     </div>
                 );
             case 'depreciation':
-                return <DepreciationTab books={depreciationBooks} fleetDepreciation={fleetDepreciation} costCenters={costCenters} />;
-            case 'warranties': return <WarrantiesTab warranties={warranties} assets={assets} vendors={vendors} onRefresh={loadData} />;
-            case 'claims': return <ClaimsTab claims={claims} onRefresh={loadData} />;
+                return <DepreciationTab books={depreciationBooks} fleetDepreciation={fleetDepreciation} costCenters={costCenters} can={can} />;
+            case 'warranties': return <WarrantiesTab warranties={warranties} assets={assets} vendors={vendors} onRefresh={loadData} can={can} />;
+            case 'claims': return <ClaimsTab claims={claims} onRefresh={loadData} can={can} actorId={actorId} />;
             case 'vendor_intel': return <VendorIntelTab vendorKPIs={vendorKPIs} onRefresh={loadData} />;
             case 'supply_chain': return <SupplyChainTab data={supplyChainData} />;
             case 'insurance': return <InsuranceTab policies={insurancePolicies} claims={claims} totalAssetCount={assets.length} />;
@@ -892,14 +916,16 @@ export const FinOps: React.FC = () => {
                                 <Download size={16} />
                                 <span className="hidden md:inline">Export</span>
                             </button>
-                            <button
-                                onClick={() => setIsNewTransactionOpen(true)}
-                                className="flex items-center justify-center gap-2 min-h-[40px] px-2.5 md:px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/20"
-                                aria-label="New Transaction"
-                            >
-                                <Plus size={16} />
-                                <span className="hidden md:inline">New Transaction</span>
-                            </button>
+                            {can.create && (
+                                <button
+                                    onClick={() => setIsNewTransactionOpen(true)}
+                                    className="flex items-center justify-center gap-2 min-h-[40px] px-2.5 md:px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/20"
+                                    aria-label="New Transaction"
+                                >
+                                    <Plus size={16} />
+                                    <span className="hidden md:inline">New Transaction</span>
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -1157,9 +1183,10 @@ interface CostCentersTabProps {
     costCenters: CostCenter[];
     onRefresh: () => void;
     initialSelectedId?: string | null;
+    can?: FinOpsCan;
 }
 
-const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh, initialSelectedId }) => {
+const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh, initialSelectedId, can = NO_CAN }) => {
     const { showToast } = useToast();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [selectedCenter, setSelectedCenter] = useState<CostCenter | null>(null);
@@ -1231,14 +1258,18 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
         }
     };
 
-    const handleOpenBudget = () => {
-        if (selectedCenter) loadBudget(selectedCenter, true);
+    // Takes the centre as an argument: the card click used to call
+    // setSelectedCenter(center) and then read selectedCenter from the closure,
+    // so the first click opened nothing and the second opened the PREVIOUS
+    // centre's budget under the new centre's title — and Save wrote it there.
+    const handleOpenBudget = (center: CostCenter | null = selectedCenter) => {
+        if (center) loadBudget(center, true);
     };
 
     // Reload when year changes inside modal
     useEffect(() => {
         if (showBudgetModal && selectedCenter) {
-            handleOpenBudget();
+            handleOpenBudget(selectedCenter);
         }
     }, [budgetYear]); // Triggers reload on year change
 
@@ -1308,20 +1339,22 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                     <Building2 size={18} className="text-emerald-600" />
                     Cost Centers & Budgets
                 </h3>
-                <button
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:border-emerald-500 hover:text-emerald-700 font-medium transition-all shadow-sm"
-                >
-                    <Plus size={16} />
-                    New Cost Center
-                </button>
+                {can.create && (
+                    <button
+                        onClick={() => setShowAddModal(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:border-emerald-500 hover:text-emerald-700 font-medium transition-all shadow-sm"
+                    >
+                        <Plus size={16} />
+                        New Cost Center
+                    </button>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {costCenters.map(center => (
                     <div
                         key={center.id}
-                        onClick={() => { setSelectedCenter(center); handleOpenBudget(); }}
+                        onClick={() => { setSelectedCenter(center); handleOpenBudget(center); }}
                         className="bg-white p-4 rounded-xl border border-slate-200 hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group"
                     >
                         <div className="flex justify-between items-start mb-3">
@@ -1330,7 +1363,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                 <div className="text-xs text-slate-500 font-mono mt-1">{center.code}</div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button
+                                {can.delete && <button
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         if (confirm(`Delete cost center ${center.code}?`)) {
@@ -1340,7 +1373,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                                 >
                                     <Trash2 size={14} />
-                                </button>
+                                </button>}
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${center.active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
                                     <Banknote size={16} />
                                 </div>
@@ -1538,7 +1571,11 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                     </div>
 
                                     <div className="flex gap-3 pt-4 border-t border-slate-100">
-                                        {(!currentBudget?.status || currentBudget.status === 'DRAFT' || currentBudget.status === 'REJECTED') && (
+                                        {/* Edit drafts and submits; approve decides. A view-only role sees the figures and no buttons. */}
+                                        {!can.edit && !can.approve && (
+                                            <div className="flex-1 text-center text-xs text-slate-400 py-2">Read-only — your role can view this budget but not change it.</div>
+                                        )}
+                                        {can.edit && (!currentBudget?.status || currentBudget.status === 'DRAFT' || currentBudget.status === 'REJECTED') && (
                                             <>
                                                 <button
                                                     onClick={() => handleSaveBudget('DRAFT')}
@@ -1555,7 +1592,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                             </>
                                         )}
 
-                                        {currentBudget?.status === 'SUBMITTED' && (
+                                        {can.approve && currentBudget?.status === 'SUBMITTED' && (
                                             <>
                                                 <button
                                                     onClick={() => handleSaveBudget('REJECTED')}
@@ -1577,12 +1614,15 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                                 <div className="flex-1 flex items-center justify-center gap-2 text-emerald-600 font-bold bg-emerald-50 rounded-lg border border-emerald-100">
                                                     <CheckCircle size={18} /> Approved
                                                 </div>
-                                                <button
-                                                    onClick={() => handleSaveBudget('DRAFT')}
-                                                    className="px-4 py-2 text-sm text-slate-400 hover:text-slate-600 underline"
-                                                >
-                                                    Revise
-                                                </button>
+                                                {can.approve && (
+                                                    <button
+                                                        onClick={() => handleSaveBudget('DRAFT')}
+                                                        className="px-4 py-2 text-sm text-slate-400 hover:text-slate-600 underline"
+                                                        title="Reopen this approved budget as a draft (audited)"
+                                                    >
+                                                        Revise
+                                                    </button>
+                                                )}
                                             </>
                                         )}
                                     </div>
@@ -1676,9 +1716,10 @@ interface DepreciationTabProps {
     books: DepreciationBook[];
     fleetDepreciation: any[];
     costCenters: CostCenter[];
+    can?: FinOpsCan;
 }
 
-const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciation, costCenters }) => {
+const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciation, costCenters, can = NO_CAN }) => {
     const { showToast } = useToast();
     const [schedule, setSchedule] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1796,14 +1837,16 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                         <Calendar size={18} className="text-blue-600" />
                         Depreciation Schedule - {new Date().getFullYear()}
                     </h3>
-                    <button
-                        onClick={handleRunDepreciation}
-                        disabled={running}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-500 transition-colors disabled:opacity-50"
-                    >
-                        <Zap size={14} className={running ? 'animate-pulse' : ''} />
-                        {running ? 'Posting…' : 'Run Depreciation'}
-                    </button>
+                    {can.edit && (
+                        <button
+                            onClick={handleRunDepreciation}
+                            disabled={running}
+                            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-500 transition-colors disabled:opacity-50"
+                        >
+                            <Zap size={14} className={running ? 'animate-pulse' : ''} />
+                            {running ? 'Posting…' : 'Run Depreciation'}
+                        </button>
+                    )}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -2007,9 +2050,10 @@ interface WarrantiesTabProps {
     assets: { id: string; name: string; tag: string }[];
     vendors: { id: string; name: string }[];
     onRefresh: () => void;
+    can?: FinOpsCan;
 }
 
-const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendors, onRefresh }) => {
+const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendors, onRefresh, can = NO_CAN }) => {
     const { showToast } = useToast();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [, setSearchParams] = useSearchParams();
@@ -2035,7 +2079,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
         try {
             await FinOpsService.generateWarrantyClaim(
                 claimWarrantyId,
-                '', // No WO linked yet — manual claim
+                null, // manual claim — no work order ('' was sent before and is not a uuid)
                 claimForm.failureDescription,
                 claimForm.claimType,
                 parseFloat(claimForm.amount) || 0
@@ -2079,13 +2123,15 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                 className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                             />
                         </div>
-                        <button
-                            onClick={() => setIsAddModalOpen(true)}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-primary-500 transition-colors"
-                        >
-                            <Plus size={14} />
-                            Add Warranty
-                        </button>
+                        {can.create && (
+                            <button
+                                onClick={() => setIsAddModalOpen(true)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-primary-500 transition-colors"
+                            >
+                                <Plus size={14} />
+                                Add Warranty
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -2123,16 +2169,18 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                             </div>
 
                                             {/* G5: Wired File Claim button */}
-                                            <button
-                                                onClick={() => setClaimWarrantyId(isClaimOpen ? null : warranty.id)}
-                                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                                                    isClaimOpen
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'text-blue-600 hover:bg-blue-50'
-                                                }`}
-                                            >
-                                                {isClaimOpen ? 'Cancel' : 'File Claim →'}
-                                            </button>
+                                            {can.create && (
+                                                <button
+                                                    onClick={() => setClaimWarrantyId(isClaimOpen ? null : warranty.id)}
+                                                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                                                        isClaimOpen
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'text-blue-600 hover:bg-blue-50'
+                                                    }`}
+                                                >
+                                                    {isClaimOpen ? 'Cancel' : 'File Claim →'}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
@@ -2231,9 +2279,11 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
 interface ClaimsTabProps {
     claims: WarrantyClaim[];
     onRefresh: () => void;
+    can?: FinOpsCan;
+    actorId?: string;
 }
 
-const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
+const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh, can = NO_CAN, actorId }) => {
     const { showToast } = useToast();
     const [actionClaimId, setActionClaimId] = useState<string | null>(null);
     const [actionType, setActionType] = useState<'SUBMIT' | 'APPROVE' | 'REJECT' | null>(null);
@@ -2264,16 +2314,18 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
         try {
             const finOps = FinOpsService;
             if (actionType === 'SUBMIT') {
-                await finOps.updateClaimStatus(actionClaimId, 'SUBMITTED', { vendorReference: vendorRef });
+                await finOps.updateClaimStatus(actionClaimId, 'SUBMITTED', { vendorReference: vendorRef, actorId });
             } else if (actionType === 'APPROVE') {
                 await finOps.updateClaimStatus(actionClaimId, 'APPROVED', {
                     vendorReference: vendorRef,
-                    approvedAmount: approvedAmount ? parseFloat(approvedAmount) : undefined
+                    approvedAmount: approvedAmount ? parseFloat(approvedAmount) : undefined,
+                    actorId,
                 });
             } else if (actionType === 'REJECT') {
                 await finOps.updateClaimStatus(actionClaimId, 'REJECTED', {
                     vendorReference: vendorRef,
-                    rejectionReason
+                    rejectionReason,
+                    actorId,
                 });
             }
             setActionClaimId(null);
@@ -2389,15 +2441,15 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
 
                                         {/* Action Buttons — based on current status */}
                                         <div className="flex gap-1">
-                                            {claim.status === 'DRAFT' && (
+                                            {can.edit && (claim.status === 'DRAFT' || claim.status === 'REJECTED') && (
                                                 <button
                                                     onClick={() => openAction(claim.id, 'SUBMIT')}
                                                     className="px-2.5 py-1 text-[10px] font-bold bg-blue-600 text-white rounded-lg hover:bg-primary-500 transition"
                                                 >
-                                                    Submit →
+                                                    {claim.status === 'REJECTED' ? 'Resubmit →' : 'Submit →'}
                                                 </button>
                                             )}
-                                            {(claim.status === 'SUBMITTED' || (claim as any).status === 'UNDER_REVIEW') && (
+                                            {can.approve && (claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW') && (
                                                 <>
                                                     <button
                                                         onClick={() => openAction(claim.id, 'APPROVE')}
@@ -2881,8 +2933,10 @@ interface InsuranceTabProps {
 }
 
 const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAssetCount }) => {
-    // Compute real stats from policies + claims
-    const totalCoverage = policies.reduce((sum, p) => sum + (p.coverage_amount || 0), 0);
+    // Compute real stats from policies + claims. Column names are the table's
+    // (insured_value / insurer_name / premium_annual / coverage_end) — the
+    // previous names did not exist, so coverage read $0 and provider blank.
+    const totalCoverage = policies.reduce((sum, p) => sum + (parseFloat(p.insured_value) || 0), 0);
     const uniqueAssetsInsured = new Set(policies.map(p => p.asset_id).filter(Boolean)).size;
     const coverageRate = totalAssetCount > 0 ? Math.round((uniqueAssetsInsured / totalAssetCount) * 100) : 0;
 
@@ -2965,21 +3019,21 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
                                     </div>
                                     <div>
                                         <div className="font-medium text-slate-800">{(policy as any).assetName || 'Unknown Asset'}</div>
-                                        <div className="text-sm text-slate-500">{policy.provider_name} • {policy.coverage_type}</div>
+                                        <div className="text-sm text-slate-500">{policy.insurer_name || '—'} • {policy.coverage_type}</div>
                                     </div>
                                 </div>
 
                                 <div className="flex items-center gap-8">
                                     <div className="text-right">
-                                        <div className="font-semibold text-slate-800">${(policy.coverage_amount || 0).toLocaleString()}</div>
-                                        <div className="text-xs text-slate-400">Coverage</div>
+                                        <div className="font-semibold text-slate-800">${(parseFloat(policy.insured_value) || 0).toLocaleString()}</div>
+                                        <div className="text-xs text-slate-400">Insured value</div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="font-semibold text-slate-800">${(policy.premium_amount || 0).toLocaleString()}/yr</div>
+                                        <div className="font-semibold text-slate-800">${(parseFloat(policy.premium_annual) || 0).toLocaleString()}/yr</div>
                                         <div className="text-xs text-slate-400">Premium</div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-sm text-slate-700">{policy.end_date}</div>
+                                        <div className="text-sm text-slate-700">{policy.coverage_end || policy.end_date || '—'}</div>
                                         <div className="text-xs text-slate-400">Expires</div>
                                     </div>
                                 </div>
