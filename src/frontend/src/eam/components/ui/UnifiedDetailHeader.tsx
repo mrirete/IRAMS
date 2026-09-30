@@ -72,24 +72,45 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
     const primaryActions = visibleActions.filter(a => a.isPrimary || a.variant === 'primary');
     const overflowActions = visibleActions.filter(a => !a.isPrimary && a.variant !== 'primary');
 
-    // Overflow menu state
+    // Overflow menu state — the mobile row and the desktop row each render their own
+    // trigger (one is display:none), so outside-click checks both refs.
     const [showOverflow, setShowOverflow] = useState(false);
     const overflowRef = useRef<HTMLDivElement>(null);
+    const desktopOverflowRef = useRef<HTMLDivElement>(null);
 
     // Close overflow on outside click
     useEffect(() => {
         if (!showOverflow) return;
         const handler = (e: MouseEvent) => {
-            if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
-                setShowOverflow(false);
-            }
+            const t = e.target as Node;
+            const inside = overflowRef.current?.contains(t) || desktopOverflowRef.current?.contains(t);
+            if (!inside) setShowOverflow(false);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [showOverflow]);
 
+    const overflowMenu = (
+        <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-1 animate-in fade-in zoom-in-95 duration-150">
+            {overflowActions.map((action, i) => (
+                <button
+                    key={i}
+                    onClick={() => { action.onClick(); setShowOverflow(false); }}
+                    disabled={action.disabled}
+                    title={action.tooltip}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 ${
+                        action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                    } ${overflowVariantStyles[action.variant || 'secondary']}`}
+                >
+                    {action.icon}
+                    {action.label}
+                </button>
+            ))}
+        </div>
+    );
+
     return (
-        <div className="border-b border-slate-200 bg-white flex-shrink-0 unified-header-enter">
+        <div className="border-b border-slate-200 bg-white flex-shrink-0 unified-header-enter @container">
             {/* ═══ MOBILE: Compact single-row header (<640px) ═══ */}
             <div className="sm:hidden px-3 py-2 flex items-center gap-2 min-h-[48px]">
                 {/* Icon */}
@@ -131,23 +152,7 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                                     >
                                         <MoreVertical size={18} />
                                     </button>
-                                    {showOverflow && (
-                                        <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-1 animate-in fade-in zoom-in-95 duration-150">
-                                            {overflowActions.map((action, i) => (
-                                                <button
-                                                    key={i}
-                                                    onClick={() => { action.onClick(); setShowOverflow(false); }}
-                                                    disabled={action.disabled}
-                                                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 ${
-                                                        action.disabled ? 'opacity-50 cursor-not-allowed' : ''
-                                                    } ${overflowVariantStyles[action.variant || 'secondary']}`}
-                                                >
-                                                    {action.icon}
-                                                    {action.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
+                                    {showOverflow && overflowMenu}
                                 </div>
                             )}
                         </>
@@ -202,13 +207,17 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                         )}
                     </div>
 
-                    {/* Actions */}
+                    {/* Actions. The pane is often ~740px wide with the sidebar open, and six
+                        labelled buttons (~700px) starved the title block to nothing: title gone,
+                        badges stacked in a column. Sized by the CONTAINER, not the viewport:
+                        secondaries sit inline only when the header is ≥64rem wide; otherwise
+                        primaries stay and the rest fold into a ⋯ menu. */}
                     <div className="flex items-center gap-2 flex-shrink-0">
                         {isActionArray ? (
                             <>
-                                {visibleActions.map((action, i) => (
+                                {primaryActions.map((action, i) => (
                                     <button
-                                        key={`d-${i}`}
+                                        key={`dp-${i}`}
                                         onClick={action.onClick}
                                         disabled={action.disabled}
                                         className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
@@ -217,9 +226,36 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                                         title={action.tooltip || action.label}
                                     >
                                         {action.icon}
-                                        <span className="hidden sm:inline">{action.label}</span>
+                                        {action.label}
                                     </button>
                                 ))}
+                                {overflowActions.map((action, i) => (
+                                    <button
+                                        key={`ds-${i}`}
+                                        onClick={action.onClick}
+                                        disabled={action.disabled}
+                                        className={`hidden @[64rem]:flex px-3 py-1.5 rounded-lg text-sm font-medium items-center gap-2 transition-colors ${
+                                            action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                                        } ${variantStyles[action.variant || 'secondary']}`}
+                                        title={action.tooltip || action.label}
+                                    >
+                                        {action.icon}
+                                        {action.label}
+                                    </button>
+                                ))}
+                                {overflowActions.length > 0 && (
+                                    <div className="relative @[64rem]:hidden" ref={desktopOverflowRef}>
+                                        <button
+                                            onClick={() => setShowOverflow(!showOverflow)}
+                                            className="px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-50 shadow-sm transition-colors flex items-center"
+                                            aria-label="More actions"
+                                            title="More actions"
+                                        >
+                                            <MoreVertical size={16} />
+                                        </button>
+                                        {showOverflow && overflowMenu}
+                                    </div>
+                                )}
                             </>
                         ) : actions}
                         <button

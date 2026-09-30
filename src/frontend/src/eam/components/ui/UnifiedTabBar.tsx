@@ -52,17 +52,28 @@ export const UnifiedTabBar: React.FC<UnifiedTabBarProps> = ({
 
     // Centre the active tab by scrolling ONLY this strip. scrollIntoView() would
     // scroll every scrollable ancestor and drag the whole page sideways on mobile.
+    const centreActive = useCallback((behavior: ScrollBehavior) => {
+        const el = scrollRef.current;
+        if (!el || el.clientWidth < 1) return; // not laid out yet — nothing to centre in
+        const activeBtn = el.querySelector('.unified-tab-active') as HTMLElement | null;
+        if (!activeBtn || el.scrollWidth <= el.clientWidth + 1) return;
+        const target = activeBtn.offsetLeft - (el.clientWidth - activeBtn.offsetWidth) / 2;
+        const left = Math.max(0, Math.min(target, el.scrollWidth - el.clientWidth));
+        el.scrollTo({ left, behavior });
+    }, []);
+
+    useEffect(() => { centreActive('smooth'); }, [activeTab, centreActive]);
+
+    // The strip mounts while the detail pane is still animating open, so its width
+    // at mount is ~0 and any centring maths lands the first tab off-screen ("etails").
+    // Re-centre whenever the strip's own size settles — also covers sidebar toggles.
     useEffect(() => {
         const el = scrollRef.current;
-        if (!el) return;
-        const activeBtn = el.querySelector('.unified-tab-active') as HTMLElement | null;
-        if (activeBtn && el.scrollWidth > el.clientWidth + 1) {
-            const cRect = el.getBoundingClientRect();
-            const aRect = activeBtn.getBoundingClientRect();
-            const delta = (aRect.left - cRect.left) - (el.clientWidth - aRect.width) / 2;
-            el.scrollBy({ left: delta, behavior: 'smooth' });
-        }
-    }, [activeTab]);
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => { centreActive('auto'); checkOverflow(); });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [centreActive, checkOverflow]);
 
     return (
         <div className={`px-2 md:px-5 border-b border-slate-200 flex-shrink-0 ${bgClassName} tab-scroll-container ${hasOverflow ? 'has-overflow' : ''}`}>
