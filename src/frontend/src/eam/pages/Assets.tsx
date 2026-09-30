@@ -8,7 +8,7 @@ import {
     TrendingUp, TrendingDown, Clock, Link, CheckCircle, BarChart2,
     MapPin, Building, Factory, Save, Trash2, Copy, FolderPlus, Network,
     LineChart as LineChartIcon, CornerDownRight, ArrowUpRight, Upload, ChevronDown, Repeat,
-    Download, FileSpreadsheet, QrCode, Lock, Shapes, XCircle, Hash, Layers, Cpu, FolderInput, Unlink, AlertTriangle, Edit2
+    Download, FileSpreadsheet, QrCode, Lock, Shapes, XCircle, Hash, Layers, Cpu, FolderInput, Unlink, AlertTriangle, Edit2, Info
 } from 'lucide-react';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
@@ -16,7 +16,7 @@ import { ImageCapture } from '../components/ui/ImageCapture';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts';
-import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor, CustomField } from '../types';
+import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
 import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, registerRootLevel, isValidChild, showsEquipmentFields, isoLevelName } from '../services/hierarchyModel';
@@ -1974,8 +1974,10 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
             />
 
             {/* FAB for mobile — one-hand creation menu (visible < 768px only).
-                Hidden while the add form is open so it can't sit over the Create button. */}
-            {canCreate && !isAddModalOpen && (
+                Hidden while the add form is open so it can't sit over the Create button, and
+                while a record is open: the full-screen detail pane has its own Save footer and
+                Add Asset action, and at z-999 the FAB would float over every pop-up. */}
+            {canCreate && !isAddModalOpen && !selectedAsset && (
                 <div className="sm:hidden fixed bottom-20 right-5 z-[999] flex flex-col items-end gap-3">
                     {showFabMenu && (
                         <>
@@ -2131,6 +2133,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
     // Modal States
     const [isAddMfrOpen, setIsAddMfrOpen] = useState(false);
     const [isAddModelOpen, setIsAddModelOpen] = useState(false);
+    const [isQROpen, setIsQROpen] = useState(false);
 
     // Change Tag Modal State
     const [isChangeTagOpen, setIsChangeTagOpen] = useState(false);
@@ -2172,13 +2175,12 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
         onUpdate({ ...asset, [field]: value });
     };
 
-    // ── Custom fields (G7) ──
-    // Persisted in assets.properties.customFields; the page's Save writes them.
-    const customFields = asset.customFields || [];
-    const setCustomFields = (next: CustomField[]) => onUpdate({ ...asset, customFields: next });
-    const addCustomField = () => setCustomFields([...customFields, { id: `cf-${Date.now()}`, key: '', value: '', type: 'TEXT' }]);
-    const updateCustomField = (id: string, patch: Partial<CustomField>) => setCustomFields(customFields.map(f => (f.id === id ? { ...f, ...patch } : f)));
-    const removeCustomField = (id: string) => setCustomFields(customFields.filter(f => f.id !== id));
+    // ── Legacy custom fields ── read-only leftovers in assets.properties.customFields.
+    // No new ones are created: warranty/insurance belong in Financials, technical
+    // attributes in Operating Context. Removing one is the only edit left.
+    // A row with neither name nor value is a stray "Add field" click, not data — never shown.
+    const customFields = (asset.customFields || []).filter(f => (f.key || '').trim() || (f.value || '').trim());
+    const removeCustomField = (id: string) => onUpdate({ ...asset, customFields: customFields.filter(f => f.id !== id) });
 
     // F-008/F-002: object class drives terminology (FLOC ID vs Asset Tag) and field visibility.
     const isFloc = isFunctionalLocation({ hierarchyLevel: (asset as any).hierarchyLevel, assetType: asset.assetType, category: asset.category });
@@ -2204,7 +2206,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
 
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+        <div className="ers-page-form space-y-4 animate-in fade-in duration-300">
             {/* Modals */}
             {isAddMfrOpen && (
                 <AddManufacturerModal
@@ -2223,92 +2225,118 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                 />
             )}
 
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
-
-                {/* Asset Tag + Status */}
-                <div className="mb-4">
-                    <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
-                            {idLabel}
-                            {!tagEditable && (
-                                <span title={`${idLabel} is locked after creation`}><Lock size={11} className="text-slate-400" /></span>
-                            )}
-                            {!tagEditable && onChangeTag && (
-                                <button
-                                    type="button"
-                                    onClick={() => { setNewTag(asset.tag); setChangeReason(''); setIsChangeTagOpen(true); }}
-                                    className="px-2 py-0.5 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 transition inline-flex items-center gap-1 whitespace-nowrap normal-case"
-                                    title="Administrative tag change with audit trail"
-                                >
-                                    <Wrench size={9} /> Change
-                                </button>
-                            )}
-                        </label>
-                        <div className="flex items-center gap-1.5">
-                            <div className="relative">
-                                <select
-                                    value={asset.status || 'ACTIVE'}
-                                    onChange={(e) => handleChange('status', e.target.value as AssetStatus)}
-                                    className={`appearance-none pl-5 pr-6 py-1 rounded-full text-[11px] font-bold border transition-all duration-300 whitespace-nowrap cursor-pointer outline-none ${
-                                        asset.status === AssetStatus.ACTIVE ? 'bg-green-50 border-green-300 text-green-700' :
-                                        asset.status === AssetStatus.MAINTENANCE ? 'bg-amber-50 border-amber-300 text-amber-700' :
-                                        asset.status === AssetStatus.STANDBY ? 'bg-blue-50 border-blue-300 text-blue-700' :
-                                        asset.status === AssetStatus.DOWN ? 'bg-red-50 border-red-300 text-red-700' :
-                                        asset.status === AssetStatus.DECOMMISSIONED ? 'bg-slate-50 border-slate-300 text-slate-500' :
-                                        'bg-green-50 border-green-300 text-green-700'
-                                    }`}
-                                >
-                                    <option value={AssetStatus.ACTIVE}>Active</option>
-                                    <option value={AssetStatus.MAINTENANCE}>Maint.</option>
-                                    <option value={AssetStatus.STANDBY}>Standby</option>
-                                    <option value={AssetStatus.DOWN}>Down</option>
-                                    <option value={AssetStatus.DECOMMISSIONED}>Decom.</option>
-                                </select>
-                                <span className={`absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full pointer-events-none ${
-                                    asset.status === AssetStatus.ACTIVE ? 'bg-green-500' :
-                                    asset.status === AssetStatus.MAINTENANCE ? 'bg-amber-500' :
-                                    asset.status === AssetStatus.STANDBY ? 'bg-blue-500' :
-                                    asset.status === AssetStatus.DOWN ? 'bg-red-500' :
-                                    asset.status === AssetStatus.DECOMMISSIONED ? 'bg-slate-400' :
-                                    'bg-green-500'
-                                }`} />
-                                <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-40" />
-                            </div>
+            {/* ── QR label pop-up (G5) — a label is printed once; it does not live on the page ── */}
+            {isQROpen && createPortal(
+                <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onClick={() => setIsQROpen(false)}>
+                    <div
+                        className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pb-5"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                                <QrCode size={16} className="text-primary-600" /> QR label
+                            </h3>
+                            <button type="button" onClick={() => setIsQROpen(false)} className="p-2 -mr-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Close">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="px-5 pt-5 flex flex-col items-center">
+                            <AssetQRCode asset={asset} size={180} showActions={true} />
+                            <p className="text-xs text-slate-400 mt-4">Scan to open this asset on a phone</p>
+                            <p className="text-[10px] text-slate-300 mt-0.5 font-mono">ers://asset/{asset.tag}</p>
                         </div>
                     </div>
-                    <div className="relative">
-                        <input
-                            type="text"
-                            value={asset.tag}
-                            onChange={(e) => tagEditable ? handleChange('tag', e.target.value) : null}
-                            readOnly={!tagEditable}
-                            className={`w-full text-sm border shadow-sm rounded-md p-2 outline-none transition-colors ${
-                                tagEditable
-                                    ? 'border-blue-400 bg-blue-50/30 focus:border-blue-500 focus:ring-1 focus:ring-primary-500'
-                                    : 'border-slate-200 bg-slate-50 text-slate-700 cursor-not-allowed'
-                            }`}
-                            title={!tagEditable ? 'Asset tag is locked after creation. Use "Change" for audited changes.' : 'Set the asset tag (one-time — locks on save)'}
-                        />
-                        {tagEditable && (
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded uppercase">
-                                Editable — locks on save
-                            </span>
+                </div>,
+                document.body,
+            )}
+
+            {/* ── Identity ── tag, status, number, photo, description */}
+            <section className={sectionCls}>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                        {idLabel}
+                        {!tagEditable && (
+                            <span title={`${idLabel} is locked after creation`}><Lock size={11} className="text-slate-400" /></span>
                         )}
+                        {!tagEditable && onChangeTag && (
+                            <button
+                                type="button"
+                                onClick={() => { setNewTag(asset.tag); setChangeReason(''); setIsChangeTagOpen(true); }}
+                                className="px-2 py-0.5 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 transition inline-flex items-center gap-1 whitespace-nowrap normal-case"
+                                title="Administrative tag change with audit trail"
+                            >
+                                <Wrench size={9} /> Change
+                            </button>
+                        )}
+                    </label>
+                    <div className="flex items-center gap-2">
+                        <div className="relative">
+                            <select
+                                value={asset.status || 'ACTIVE'}
+                                onChange={(e) => handleChange('status', e.target.value as AssetStatus)}
+                                className={`appearance-none pl-5 pr-6 py-1 rounded-full text-[11px] font-bold border transition-all duration-300 whitespace-nowrap cursor-pointer outline-none ${
+                                    asset.status === AssetStatus.ACTIVE ? 'bg-green-50 border-green-300 text-green-700' :
+                                    asset.status === AssetStatus.MAINTENANCE ? 'bg-amber-50 border-amber-300 text-amber-700' :
+                                    asset.status === AssetStatus.STANDBY ? 'bg-blue-50 border-blue-300 text-blue-700' :
+                                    asset.status === AssetStatus.DOWN ? 'bg-red-50 border-red-300 text-red-700' :
+                                    asset.status === AssetStatus.DECOMMISSIONED ? 'bg-slate-50 border-slate-300 text-slate-500' :
+                                    'bg-green-50 border-green-300 text-green-700'
+                                }`}
+                            >
+                                <option value={AssetStatus.ACTIVE}>Active</option>
+                                <option value={AssetStatus.MAINTENANCE}>Maint.</option>
+                                <option value={AssetStatus.STANDBY}>Standby</option>
+                                <option value={AssetStatus.DOWN}>Down</option>
+                                <option value={AssetStatus.DECOMMISSIONED}>Decom.</option>
+                            </select>
+                            <span className={`absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full pointer-events-none ${
+                                asset.status === AssetStatus.ACTIVE ? 'bg-green-500' :
+                                asset.status === AssetStatus.MAINTENANCE ? 'bg-amber-500' :
+                                asset.status === AssetStatus.STANDBY ? 'bg-blue-500' :
+                                asset.status === AssetStatus.DOWN ? 'bg-red-500' :
+                                asset.status === AssetStatus.DECOMMISSIONED ? 'bg-slate-400' :
+                                'bg-green-500'
+                            }`} />
+                            <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-40" />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIsQROpen(true)}
+                            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition"
+                            title="Show the QR label for this asset"
+                        >
+                            <QrCode size={13} /> <span className="hidden xs:inline">QR label</span>
+                        </button>
                     </div>
                 </div>
-
-                {/* ── Internal Equipment Number (SAP PM parity) — equipment only, never FLOCs ── */}
+                <div className="relative">
+                    <input
+                        type="text"
+                        value={asset.tag}
+                        onChange={(e) => tagEditable ? handleChange('tag', e.target.value) : null}
+                        readOnly={!tagEditable}
+                        className={`w-full text-sm font-medium border shadow-sm rounded-md p-2 outline-none transition-colors ${
+                            tagEditable
+                                ? 'border-blue-400 bg-blue-50/30 focus:border-blue-500 focus:ring-1 focus:ring-primary-500'
+                                : 'border-slate-200 bg-slate-50 text-slate-700 cursor-not-allowed'
+                        }`}
+                        title={!tagEditable ? 'Asset tag is locked after creation. Use "Change" for audited changes.' : 'Set the asset tag (one-time — locks on save)'}
+                    />
+                    {tagEditable && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded uppercase">
+                            Editable — locks on save
+                        </span>
+                    )}
+                </div>
+                {/* Internal Equipment Number (SAP PM parity) — equipment only, never FLOCs. One quiet line: the header badge already shows it. */}
                 {showEquipFields && asset.equipmentNumber && (
-                    <div className="flex items-center gap-3 px-3 py-2 bg-blue-50/60 border border-blue-100 rounded-lg">
-                        <div className="flex items-center gap-1.5">
-                            <Hash size={13} className="text-blue-500" />
-                            <span className="text-[10px] font-bold text-blue-400 uppercase">Equipment No.</span>
-                        </div>
-                        <span className="text-sm font-mono font-bold text-blue-700 tracking-wide">{asset.equipmentNumber}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 font-semibold">Gen {asset.equipmentGeneration || 1}</span>
-                        <Lock size={10} className="text-blue-300 ml-auto" />
-                        <span className="text-[9px] text-blue-400">Auto-generated · Immutable</span>
-                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-400 flex items-center gap-1.5" title="Auto-generated internal equipment number — immutable">
+                        <Hash size={11} className="text-slate-300" />
+                        <span className="font-mono font-semibold text-slate-500">{asset.equipmentNumber}</span>
+                        <span>· Gen {asset.equipmentGeneration || 1}</span>
+                        <span>· auto-generated</span>
+                        <Lock size={10} className="text-slate-300" />
+                    </p>
                 )}
 
                 {/* ── Change Tag Modal (SAP Change Document) ── */}
@@ -2386,8 +2414,8 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     </div>
                 )}
 
-                <div className="flex flex-col md:flex-row gap-6 mb-4">
-                    <div className="flex-shrink-0 flex justify-center md:block">
+                <div className="flex flex-col sm:flex-row gap-4 mt-4">
+                    <div className="flex-shrink-0 flex justify-center sm:block">
                         <ImageCapture
                             bucket="assets"
                             prefix="asset_"
@@ -2398,23 +2426,25 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             size="lg"
                         />
                     </div>
-
-                    <div className="flex-grow flex flex-col">
+                    <div className="flex-grow flex flex-col min-w-0">
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
                         <textarea
                             value={asset.name}
                             onChange={(e) => handleChange('name', e.target.value)}
-                            className="w-full flex-1 text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 min-h-[5rem] resize-y focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
-                            placeholder="Brief description (replaces Asset Name)..."
+                            className={`${fieldCls} flex-1 min-h-[5rem] resize-y`}
+                            placeholder="What this asset is and what it does — reliability studies read this as the duty narrative."
                         />
                     </div>
                 </div>
+            </section>
 
-                <div className="grid grid-cols-2 gap-4">
-
+            {/* ── Classification ── taxonomy, level, criticality, ownership */}
+            <section className={sectionCls}>
+                <SectionTitle>Classification</SectionTitle>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {showEquipFields && (<>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Asset Category</label>
+                        <label className={labelCls}>Asset Category</label>
                         <SearchableDropdown
                             options={dictionaries.filter(d => d.type === 'ASSET_CATEGORY' && d.active).map(d => ({
                                 code: d.code,
@@ -2430,7 +2460,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Asset Class</label>
+                        <label className={labelCls}>Asset Class</label>
                         <SearchableDropdown
                             options={dictionaries
                                 .filter(d => d.type === 'ASSET_CLASS' && d.active)
@@ -2447,7 +2477,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Asset Type</label>
+                        <label className={labelCls}>Asset Type</label>
                         <SearchableDropdown
                             options={dictionaries
                                 .filter(d => d.type === 'ASSET_TYPE' && d.active)
@@ -2468,25 +2498,27 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
 
                     {/* Level — re-classify this record (UAT F-010). Drives numbering, fields & criticality. */}
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Level</label>
+                        <label className={labelCls}>
+                            Level
+                            <Hint text="ISO 14224 Table 3 level. Re-classifying updates numbering, fields & criticality on save." />
+                        </label>
                         <select
                             value={resolveLevelCode(asset) || ''}
                             onChange={(e) => onUpdate({ ...asset, hierarchyLevel: e.target.value })}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                            className={fieldCls}
                         >
                             {getLevels().map(l => (
                                 <option key={l.code} value={l.code}>L{l.isoLevel} · {l.label} ({l.objectClass === 'FLOC' ? 'Location' : 'Equipment'}{isoLevelName(l.isoLevel) ? ` · ISO ${isoLevelName(l.isoLevel)}` : ''})</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-1">ISO 14224 Table 3 level. Re-classifying updates numbering, fields & criticality on save.</p>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Criticality</label>
+                        <label className={labelCls}>Criticality</label>
                         <select
                             value={asset.criticality}
                             onChange={(e) => handleChange('criticality', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                            className={fieldCls}
                         >
                             <option value="">Select Criticality</option>
                             {dictionaries.filter(d => d.type === 'CRITICALITY' && d.active).map(c => (
@@ -2496,34 +2528,31 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Responsible Work Group</label>
+                        <label className={labelCls}>
+                            Responsible Work Group
+                            <Hint text="Defaults onto requests, work orders & PMs raised on this asset." />
+                        </label>
                         <select
                             value={asset.responsibleWorkCenterId || ''}
                             onChange={(e) => handleChange('responsibleWorkCenterId', e.target.value || undefined)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                            className={fieldCls}
                         >
                             <option value="">Unassigned</option>
                             {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-1">Defaults onto requests, work orders & PMs raised on this asset.</p>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            {/* ISO 14224 operating context — equipment levels only (0317) */}
-            {showEquipFields && <OperatingContextCard asset={asset} onUpdate={onUpdate} />}
-
-            {/* Which drawings show this asset (0364) — renders nothing when none do */}
-            <DrawingsCard assetId={asset.id} assetTag={asset.tag} />
-
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Specification & Location</h3>
-                <div className="grid grid-cols-2 gap-4">
+            {/* ── Specification & Location ── nameplate, where it sits, and how it is run */}
+            <section className={sectionCls}>
+                <SectionTitle>Specification & Location</SectionTitle>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {showEquipFields && (<>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Manufacturer</label>
+                        <label className={labelCls}>Manufacturer</label>
                         <div className="flex items-stretch">
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                                 <SearchableDropdown
                                     options={manufacturers}
                                     value={asset.manufacturerId || ''}
@@ -2541,7 +2570,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             </div>
                             <button
                                 onClick={() => setIsAddMfrOpen(true)}
-                                className="ml-2 px-3 border border-slate-300 rounded-md hover:bg-slate-50 text-blue-600 bg-white shadow-sm transition-colors flex items-center justify-center"
+                                className="ml-2 px-3 border border-slate-300 rounded-md hover:bg-slate-50 text-primary-600 bg-white shadow-sm transition-colors flex items-center justify-center"
                                 title="Add New Manufacturer"
                             >
                                 <Plus size={16} />
@@ -2549,9 +2578,9 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                         </div>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Model</label>
+                        <label className={labelCls}>Model</label>
                         <div className={`flex items-stretch ${!asset.manufacturerId ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                                 <SearchableDropdown
                                     options={models}
                                     value={asset.model}
@@ -2563,38 +2592,47 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             <button
                                 onClick={() => setIsAddModelOpen(true)}
                                 disabled={!asset.manufacturerId}
-                                className="ml-2 px-3 border border-slate-300 rounded-md hover:bg-slate-50 text-blue-600 bg-white shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                                className="ml-2 px-3 border border-slate-300 rounded-md hover:bg-slate-50 text-primary-600 bg-white shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                                 title="Add New Model"
                             >
                                 <Plus size={16} />
                             </button>
                         </div>
                     </div>
-                    <div className="col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Serial Number</label>
+                    <div>
+                        <label className={labelCls}>Serial Number</label>
                         <input
                             type="text"
                             value={asset.serialNumber || ''}
                             onChange={(e) => handleChange('serialNumber', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                            className={fieldCls}
                         />
                     </div>
                     </>)}
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Department</label>
+                        <label className={labelCls}>Location / Area</label>
+                        <input
+                            type="text"
+                            value={asset.location || ''}
+                            onChange={(e) => handleChange('location', e.target.value)}
+                            className={fieldCls}
+                        />
+                    </div>
+                    <div>
+                        <label className={labelCls}>Department</label>
                         <input
                             type="text"
                             value={asset.department || ''}
                             onChange={(e) => handleChange('department', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                            className={fieldCls}
                         />
                     </div>
-                    <div className="col-span-1">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Center</label>
+                    <div>
+                        <label className={labelCls}>Cost Center</label>
                         <select
                             value={asset.costCenter || ''}
                             onChange={(e) => handleChange('costCenter', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                            className={fieldCls}
                         >
                             <option value="">(None)</option>
                             {costCenters.map(cc => (
@@ -2602,114 +2640,75 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             ))}
                         </select>
                     </div>
-                    <div className="col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Location / Area</label>
-                        <input
-                            type="text"
-                            value={asset.location || ''}
-                            onChange={(e) => handleChange('location', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
-                        />
+                </div>
+
+                {/* ISO 14224 operating context — equipment levels only (0317). Summary here; the editor is a pop-up. */}
+                {showEquipFields && (
+                    <div className="mt-5 pt-4 border-t border-slate-100">
+                        <OperatingContextCard asset={asset} onUpdate={onUpdate} variant="embedded" />
                     </div>
-                </div>
-            </div>
+                )}
 
-            {/* ── QR Code (G5) ── */}
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
-                    <QrCode size={16} className="text-slate-400" /> Asset QR Code
-                </h3>
-                <div className="flex flex-col items-center">
-                    <AssetQRCode asset={asset} size={140} showActions={true} />
-                    <p className="text-xs text-slate-400 mt-3">Scan to access asset details from mobile</p>
-                    <p className="text-[10px] text-slate-300 mt-0.5 font-mono">ers://asset/{asset.tag}</p>
-                </div>
-            </div>
+                {/* Legacy custom fields — the card that wrote these is gone (warranty/insurance live in
+                    Financials, technical attributes in Operating Context). Existing values stay
+                    visible until cleared so nothing silently disappears. */}
+                {customFields.length > 0 && (
+                    <div className="mt-5 pt-4 border-t border-slate-100">
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold text-slate-500 uppercase">Legacy fields</span>
+                            <Hint text="Free-form fields from an earlier version. Move technical values into Operating Context (Add other parameter) and warranty or insurance into Financials, then remove them here." />
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {customFields.map(cf => (
+                                <span key={cf.id} className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600">
+                                    <span className="font-semibold text-slate-700">{cf.key || 'Field'}</span>
+                                    <span>{cf.type === 'BOOLEAN' ? (cf.value === 'true' ? 'Yes' : 'No') : (cf.value || '—')}{cf.unit ? ` ${cf.unit}` : ''}</span>
+                                    <button type="button" onClick={() => removeCustomField(cf.id)} className="p-1 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50" title="Remove this field">
+                                        <X size={11} />
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </section>
 
-            {/* ── Custom Fields (G7) ── editable; saved into assets.properties.customFields */}
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2"><FileText size={16} className="text-slate-400" /> Custom Fields</span>
-                    <button
-                        type="button"
-                        onClick={addCustomField}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-primary-600 border border-dashed border-primary-300 hover:bg-primary-50 transition-colors"
-                    >
-                        <Plus size={13} /> Add field
-                    </button>
-                </h3>
-                <div className="space-y-2">
-                    {customFields.map(cf => (
-                        <div key={cf.id} className="flex items-center gap-2">
-                            <input
-                                value={cf.key}
-                                onChange={e => updateCustomField(cf.id, { key: e.target.value })}
-                                placeholder="Field name"
-                                className="flex-1 min-w-0 text-sm border border-slate-300 rounded-md p-1.5 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none"
-                            />
-                            <select
-                                value={cf.type}
-                                onChange={e => updateCustomField(cf.id, { type: e.target.value as CustomField['type'], value: '' })}
-                                className="w-24 shrink-0 text-xs border border-slate-300 rounded-md p-1.5 bg-white"
-                            >
-                                <option value="TEXT">Text</option>
-                                <option value="NUMBER">Number</option>
-                                <option value="DATE">Date</option>
-                                <option value="BOOLEAN">Yes/No</option>
-                                {cf.type === 'DROPDOWN' && <option value="DROPDOWN">Dropdown</option>}
-                            </select>
-                            {cf.type === 'BOOLEAN' ? (
-                                <label className="w-32 shrink-0 flex items-center gap-1.5 text-sm text-slate-600 px-1.5">
-                                    <input
-                                        type="checkbox"
-                                        checked={cf.value === 'true'}
-                                        onChange={e => updateCustomField(cf.id, { value: e.target.checked ? 'true' : 'false' })}
-                                        className="rounded text-primary-600"
-                                    />
-                                    {cf.value === 'true' ? 'Yes' : 'No'}
-                                </label>
-                            ) : cf.type === 'DROPDOWN' ? (
-                                <select
-                                    value={cf.value}
-                                    onChange={e => updateCustomField(cf.id, { value: e.target.value })}
-                                    className="w-32 shrink-0 text-sm border border-slate-300 rounded-md p-1.5 bg-white"
-                                >
-                                    <option value="">—</option>
-                                    {(cf.dropdownOptions || []).map(o => <option key={o} value={o}>{o}</option>)}
-                                </select>
-                            ) : (
-                                <input
-                                    type={cf.type === 'DATE' ? 'date' : cf.type === 'NUMBER' ? 'number' : 'text'}
-                                    value={cf.value}
-                                    onChange={e => updateCustomField(cf.id, { value: e.target.value })}
-                                    placeholder="Value"
-                                    className="w-32 shrink-0 text-sm border border-slate-300 rounded-md p-1.5 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none"
-                                />
-                            )}
-                            <input
-                                value={cf.unit || ''}
-                                onChange={e => updateCustomField(cf.id, { unit: e.target.value })}
-                                placeholder="unit"
-                                className="w-16 shrink-0 text-xs border border-slate-300 rounded-md p-1.5 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => removeCustomField(cf.id)}
-                                className="shrink-0 text-slate-300 hover:text-red-500 transition-colors p-1"
-                                title="Remove field"
-                            >
-                                <Trash2 size={14} />
-                            </button>
-                        </div>
-                    ))}
-                    {!customFields.length && (
-                        <div className="py-4 text-center text-sm text-slate-400 italic">
-                            No custom fields yet. Track asset-specific attributes the standard fields do not cover — a warranty reference, a coating spec, an area classification.
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div >
+            {/* Which drawings show this asset (0364) — renders nothing when none do */}
+            <DrawingsCard assetId={asset.id} assetTag={asset.tag} />
+        </div>
+    );
+};
+
+// ── Details-tab chrome ──────────────────────────────────────────────────────
+const sectionCls = 'bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-6';
+const labelCls = 'block text-xs font-bold text-slate-500 uppercase mb-1';
+const fieldCls = 'w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors';
+
+const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <h3 className="text-sm font-semibold text-slate-800 pb-3 mb-4 border-b border-slate-100">{children}</h3>
+);
+
+/** A small ⓘ that shows its note on tap or hover — help text that is not always on. */
+const Hint: React.FC<{ text: string }> = ({ text }) => {
+    const [open, setOpen] = useState(false);
+    return (
+        <span className="relative inline-flex ml-1 align-middle normal-case font-normal">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                onBlur={() => setOpen(false)}
+                className="p-0.5 rounded-full text-slate-300 hover:text-slate-500 focus:text-slate-500 outline-none"
+                title={text}
+                aria-label="More about this field"
+            >
+                <Info size={12} />
+            </button>
+            {open && (
+                <span className="absolute left-0 top-full mt-1 z-20 w-64 max-w-[80vw] rounded-lg border border-slate-200 bg-white p-2 text-[11px] leading-snug text-slate-600 shadow-lg">
+                    {text}
+                </span>
+            )}
+        </span>
     );
 };
 

@@ -57,8 +57,8 @@ export const DrawingsCard: React.FC<Props> = ({ assetId, assetTag, variant = 'ca
     if (variant === 'inline') return chips;
 
     return (
-        <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-3">
-            <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2">Drawings</h3>
+        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+            <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-100 pb-3">Drawings</h3>
             {chips}
             <p className="text-[10px] text-slate-400">P&IDs from Analyze and sheets read by the Migration Center. Drawings can be out of date — the equipment is the authority.</p>
         </div>

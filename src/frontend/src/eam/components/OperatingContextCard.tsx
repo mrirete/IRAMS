@@ -32,6 +32,8 @@ import { getClass } from '../../lib/iso14224Taxonomy';
 interface Props {
   asset: Asset;
   onUpdate: (a: Asset) => void;
+  /** 'card' = its own panel; 'embedded' = a section inside another card (no chrome of its own). */
+  variant?: 'card' | 'embedded';
 }
 
 const inputCls = 'w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors';
@@ -46,8 +48,9 @@ const Chip: React.FC<{ tone?: 'muted' | 'warn' | 'danger'; children: React.React
   </span>
 );
 
-export const OperatingContextCard: React.FC<Props> = ({ asset, onUpdate }) => {
+export const OperatingContextCard: React.FC<Props> = ({ asset, onUpdate, variant = 'card' }) => {
   const [open, setOpen] = useState(false);
+  const embedded = variant === 'embedded';
 
   // The stored shape, merged with the template for the CURRENT class so the
   // table always shows the rows this class needs (values are never lost).
@@ -67,10 +70,10 @@ export const OperatingContextCard: React.FC<Props> = ({ asset, onUpdate }) => {
 
   return (
     <>
-      <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 mb-3">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-            <Gauge size={16} className="text-slate-400" /> Operating Context
+      <div className={embedded ? '' : 'bg-white p-6 rounded-lg border border-slate-200 shadow-sm'}>
+        <div className={`flex flex-wrap items-center justify-between gap-2 ${embedded ? 'mb-2' : 'border-b border-slate-100 pb-2 mb-3'}`}>
+          <h3 className={embedded ? 'text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5' : 'font-bold text-slate-800 flex items-center gap-2'}>
+            <Gauge size={embedded ? 13 : 16} className="text-slate-400" /> Operating Context
           </h3>
           <div className="flex items-center gap-2">
             <span
@@ -83,7 +86,9 @@ export const OperatingContextCard: React.FC<Props> = ({ asset, onUpdate }) => {
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-500 shadow-sm"
+              className={embedded
+                ? 'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-primary-700 bg-primary-50 border border-primary-100 hover:bg-primary-100 transition'
+                : 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-500 shadow-sm'}
             >
               {isEmpty ? <><Plus size={13} /> Add</> : <><Pencil size={12} /> Edit</>}
             </button>
@@ -91,7 +96,13 @@ export const OperatingContextCard: React.FC<Props> = ({ asset, onUpdate }) => {
         </div>
 
         {isEmpty ? (
-          <button type="button" onClick={() => setOpen(true)} className="w-full text-left text-sm text-slate-400 italic hover:text-slate-600 transition-colors">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className={embedded
+              ? 'w-full text-left text-xs text-slate-400 hover:text-slate-600 transition-colors rounded-lg border border-dashed border-slate-200 hover:border-slate-300 px-3 py-2.5'
+              : 'w-full text-left text-sm text-slate-400 italic hover:text-slate-600 transition-colors'}
+          >
             How this equipment is run — duty, environment, and its design vs operating values. Reliability studies read it from here.
           </button>
         ) : (
@@ -167,9 +178,10 @@ const OperatingContextModal: React.FC<{
   const flagged = params.filter(p => deviationFlag(p) === 'above_design');
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      {/* Bottom sheet on a phone, centred dialog from sm up */}
       <div
-        className="bg-white w-full max-w-3xl max-h-[88vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        className="bg-white w-full sm:max-w-3xl max-h-[92vh] sm:max-h-[88vh] rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 pb-[env(safe-area-inset-bottom)]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -320,9 +332,12 @@ const OperatingContextModal: React.FC<{
                 <button type="button" onClick={() => setNewRow(null)} className="text-[11px] text-slate-500 px-2 py-1">Cancel</button>
               </div>
             ) : (
-              <button type="button" onClick={() => setNewRow({ label: '', unit: '' })} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700">
-                <Plus size={12} /> Add other parameter
-              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button type="button" onClick={() => setNewRow({ label: '', unit: '' })} className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700">
+                  <Plus size={12} /> Add other parameter
+                </button>
+                <span className="text-[10px] text-slate-400">Any attribute fits — a coating spec, seal plan or area class goes in the Design column as text.</span>
+              </div>
             )}
           </div>
         </div>
