@@ -48,36 +48,69 @@ interface FinOpsCan {
 }
 const NO_CAN: FinOpsCan = { create: false, edit: false, delete: false, approve: false };
 
-type TabId = 'dashboard' | 'cost_centers' | 'budget_control' | 'forecast' | 'depreciation' | 'warranties' | 'claims' | 'vendor_intel' | 'supply_chain' | 'insurance';
+// Six tabs (P3b — was nine). Related screens are views inside one tab:
+//   Budgets    = cost centres | forecast
+//   Warranties = warranties | claims | vendors
+type TabId = 'dashboard' | 'budgets' | 'depreciation' | 'warranties' | 'insurance' | 'supply_chain';
+type BudgetsView = 'centres' | 'forecast';
+type WarrantiesView = 'list' | 'claims' | 'vendors';
 
 interface TabConfig {
     id: TabId;
     label: string;
     icon: React.ReactNode;
-    description: string;
 }
 
 const TABS: TabConfig[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <PieChart size={16} />, description: 'Financial KPIs & Overview' },
-    { id: 'cost_centers', label: 'Cost Centers', icon: <Building2 size={16} />, description: 'Budget Control & Allocation' },
-    {
-        id: 'forecast',
-        label: 'Forecasting',
-        icon: <TrendingUp size={18} />,
-        description: 'Maintenance spend projections'
-    },
-    {
-        id: 'depreciation',
-        label: 'Asset Accounting',
-        icon: <Calculator size={18} />,
-        description: 'Depreciation & valuation'
-    },
-    { id: 'warranties', label: 'Warranties', icon: <Shield size={16} />, description: 'Coverage Tracking' },
-    { id: 'claims', label: 'Claims', icon: <FileCheck size={16} />, description: 'Warranty & Insurance Claims' },
-    { id: 'vendor_intel', label: 'Vendor Intel', icon: <Target size={16} />, description: 'Warranty Vendor Performance' },
-    { id: 'supply_chain', label: 'Supply Chain', icon: <Package size={16} />, description: 'PO/GRN/Invoice Matching' },
-    { id: 'insurance', label: 'Insurance', icon: <ShieldCheck size={16} />, description: 'Coverage & Incidents' },
+    { id: 'dashboard', label: 'Overview', icon: <PieChart size={16} /> },
+    { id: 'budgets', label: 'Budgets', icon: <Building2 size={16} /> },
+    { id: 'depreciation', label: 'Depreciation', icon: <Calculator size={16} /> },
+    { id: 'warranties', label: 'Warranties', icon: <Shield size={16} /> },
+    { id: 'insurance', label: 'Insurance', icon: <ShieldCheck size={16} /> },
+    { id: 'supply_chain', label: 'Supply chain', icon: <Package size={16} /> },
 ];
+
+/**
+ * Every ?tab= value that has ever been linked — notifications (0395 writes
+ * ?tab=warranties / insurance), Admin's "Manage budget" (?tab=cost-centers,
+ * hyphenated, which never matched and always landed on the dashboard), the
+ * notification resolver (?tab=dashboard) and the old nine tab ids — resolves
+ * to a tab and, where it had become one, a view inside it.
+ */
+function resolveTab(raw: string | null): { tab: TabId; budgets?: BudgetsView; warranties?: WarrantiesView } | null {
+    switch ((raw || '').toLowerCase().replace(/-/g, '_')) {
+        case 'dashboard': case 'overview': return { tab: 'dashboard' };
+        case 'budgets': case 'cost_centers': case 'budget_control': return { tab: 'budgets', budgets: 'centres' };
+        case 'forecast': case 'forecasting': return { tab: 'budgets', budgets: 'forecast' };
+        case 'depreciation': case 'asset_accounting': return { tab: 'depreciation' };
+        case 'warranties': return { tab: 'warranties', warranties: 'list' };
+        case 'claims': return { tab: 'warranties', warranties: 'claims' };
+        case 'vendor_intel': case 'vendors': return { tab: 'warranties', warranties: 'vendors' };
+        case 'insurance': return { tab: 'insurance' };
+        case 'supply_chain': return { tab: 'supply_chain' };
+        default: return null;
+    }
+}
+
+/** A small segmented control for the views inside a tab. */
+function ViewSwitch<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; count?: number }[] }) {
+    return (
+        <div className="inline-flex p-1 mb-4 rounded-lg bg-slate-100 border border-slate-200 max-w-full overflow-x-auto" role="tablist">
+            {options.map(o => (
+                <button
+                    key={o.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={value === o.id}
+                    onClick={() => onChange(o.id)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${value === o.id ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    {o.label}{o.count ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">{o.count}</span> : null}
+                </button>
+            ))}
+        </div>
+    );
+}
 
 
 interface AddWarrantyModalProps {
@@ -830,16 +863,32 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
 };
 
 export const FinOps: React.FC = () => {
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+    const [budgetsView, setBudgetsView] = useState<BudgetsView>('centres');
+    const [warrantiesView, setWarrantiesView] = useState<WarrantiesView>('list');
 
-    // Sync Tab with URL
+    // The URL is the source of truth for where you are, so a link (a
+    // notification, Admin's "Manage budget", a pasted address) lands on the
+    // right tab and view — including every id the nine-tab page used.
     useEffect(() => {
-        const tab = searchParams.get('tab');
-        if (tab && TABS.some(t => t.id === tab)) {
-            setActiveTab(tab as TabId);
-        }
+        const r = resolveTab(searchParams.get('view') ? `${searchParams.get('view')}` : searchParams.get('tab'))
+            ?? resolveTab(searchParams.get('tab'));
+        const t = resolveTab(searchParams.get('tab'));
+        if (t) setActiveTab(t.tab);
+        if (r?.budgets) setBudgetsView(r.budgets); else if (t?.budgets) setBudgetsView(t.budgets);
+        if (r?.warranties) setWarrantiesView(r.warranties); else if (t?.warranties) setWarrantiesView(t.warranties);
     }, [searchParams]);
+
+    /** Go to a tab (or an old tab id) and record it in the URL; keeps ?id= for budgets. */
+    const openTab = (raw: string) => {
+        const r = resolveTab(raw);
+        if (!r) return;
+        const next: Record<string, string> = { tab: r.tab };
+        if (r.budgets && r.budgets !== 'centres') next.view = r.budgets;
+        if (r.warranties && r.warranties !== 'list') next.view = r.warranties;
+        setSearchParams(next, { replace: true });
+    };
     const [loading, setLoading] = useState(true);
     const [assets, setAssets] = useState<PickerAsset[]>([]);
     const [vendors, setVendors] = useState<{ id: string; name: string }[]>([]);
@@ -933,26 +982,51 @@ export const FinOps: React.FC = () => {
     const blockedInvoices = supplyChainData.filter(s => s.status === 'BLOCKED' || s.status === 'VARIANCE').length;
 
     const renderTabContent = () => {
+        const pendingClaims = claims.filter(c => c.status === 'SUBMITTED' || c.status === 'UNDER_REVIEW').length;
         switch (activeTab) {
-            case 'dashboard': return <DashboardTab metrics={dashboardMetrics} transactions={[]} blockedInvoices={blockedInvoices} onOpenTab={(t) => setActiveTab(t as TabId)} />;
-            case 'cost_centers': return <CostCentersTab costCenters={costCenters} onRefresh={loadData} initialSelectedId={searchParams.get('id')} can={can} />;
-            case 'forecast':
-                // RF-01: the repair-vs-replace screen leads the forecast view —
-                // capital conversations start from evidence, not spreadsheets.
+            case 'budgets':
                 return (
-                    <div className="space-y-5">
-                        <RenewalQueue />
-                        <ForecastTab />
-                    </div>
+                    <>
+                        <ViewSwitch<BudgetsView>
+                            value={budgetsView}
+                            onChange={v => openTab(v === 'forecast' ? 'forecast' : 'budgets')}
+                            options={[{ id: 'centres', label: 'Cost centres' }, { id: 'forecast', label: 'Forecast & renewal' }]}
+                        />
+                        {budgetsView === 'centres'
+                            ? <CostCentersTab costCenters={costCenters} onRefresh={loadData} initialSelectedId={searchParams.get('id')} can={can} />
+                            : (
+                                // RF-01: the repair-vs-replace screen leads the forecast view —
+                                // capital conversations start from evidence, not spreadsheets.
+                                <div className="space-y-5">
+                                    <RenewalQueue />
+                                    <ForecastTab />
+                                </div>
+                            )}
+                    </>
                 );
             case 'depreciation':
                 return <DepreciationTab books={depreciationBooks} fleetDepreciation={fleetDepreciation} costCenters={costCenters} can={can} />;
-            case 'warranties': return <WarrantiesTab warranties={warranties} assets={assets} vendors={vendors} onRefresh={loadData} can={can} />;
-            case 'claims': return <ClaimsTab claims={claims} onRefresh={loadData} can={can} actorId={actorId} />;
-            case 'vendor_intel': return <VendorIntelTab vendorKPIs={vendorKPIs} onRefresh={loadData} />;
+            case 'warranties':
+                return (
+                    <>
+                        <ViewSwitch<WarrantiesView>
+                            value={warrantiesView}
+                            onChange={v => openTab(v === 'list' ? 'warranties' : v === 'claims' ? 'claims' : 'vendor_intel')}
+                            options={[
+                                { id: 'list', label: 'Warranties', count: warranties.length },
+                                { id: 'claims', label: 'Claims', count: pendingClaims },
+                                { id: 'vendors', label: 'Vendor performance' },
+                            ]}
+                        />
+                        {warrantiesView === 'list' && <WarrantiesTab warranties={warranties} assets={assets} vendors={vendors} onRefresh={loadData} can={can} />}
+                        {warrantiesView === 'claims' && <ClaimsTab claims={claims} onRefresh={loadData} can={can} actorId={actorId} />}
+                        {warrantiesView === 'vendors' && <VendorIntelTab vendorKPIs={vendorKPIs} onRefresh={loadData} />}
+                    </>
+                );
             case 'supply_chain': return <SupplyChainTab data={supplyChainData} />;
             case 'insurance': return <InsuranceTab policies={insurancePolicies} claims={claims} insuranceIncidents={insuranceIncidents} totalAssetCount={assets.length} />;
-            default: return <DashboardTab metrics={dashboardMetrics} transactions={[]} blockedInvoices={blockedInvoices} onOpenTab={(t) => setActiveTab(t as TabId)} />;
+            case 'dashboard':
+            default: return <DashboardTab metrics={dashboardMetrics} blockedInvoices={blockedInvoices} onOpenTab={openTab} />;
         }
     };
 
@@ -982,7 +1056,7 @@ export const FinOps: React.FC = () => {
                         <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
                             <AskRelanternButton
                                 contextType="finops"
-                                contextSummary={`FinOps Overview: Active Tab: ${activeTab}. Financial Operations & Asset Lifecycle Cost analysis. Modules: Cost Centers, Budget Control, Forecasting, Depreciation, Warranties, Claims, Supply Chain, Insurance. Ask about cost optimization, ROI analysis, depreciation strategies, warranty coverage gaps, budget compliance, or financial KPIs.`}
+                                contextSummary={`FinOps Overview: Active Tab: ${activeTab}. Financial Operations & Asset Lifecycle Cost analysis. Tabs: Overview, Budgets (cost centres, forecast & renewal), Depreciation, Warranties (warranties, claims, vendor performance), Insurance, Supply chain. Ask about cost optimization, ROI analysis, depreciation strategies, warranty coverage gaps, budget compliance, or financial KPIs.`}
                                 compact
                             />
                             {can.create && (
@@ -1003,7 +1077,7 @@ export const FinOps: React.FC = () => {
                         {TABS.map(tab => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => openTab(tab.id)}
                                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium rounded-t-lg transition-all whitespace-nowrap ${activeTab === tab.id
                                     ? 'bg-white text-emerald-600 border-t-2 border-emerald-500 shadow-sm'
                                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
@@ -1054,16 +1128,13 @@ export const FinOps: React.FC = () => {
 
 interface DashboardTabProps {
     metrics: any;
-    transactions: any[];
     /** POs whose invoice is blocked or carries a variance (from the supply-chain overview) */
     blockedInvoices?: number;
     onOpenTab?: (tab: string) => void;
 }
 
-const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions, blockedInvoices = 0, onOpenTab = () => {} }) => {
-    // We ignore the passed transactions prop for now as we want to fetch fresh ones, 
-    // or we could use it if parent passed it. Let's fetch self-contained for now or better, 
-    // update parent to fetch. But to keep it localized:
+const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, blockedInvoices = 0, onOpenTab = () => {} }) => {
+    // Recent postings and this year's budgets are fetched here, not passed in.
     const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
     const [budgets, setBudgets] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -2236,13 +2307,13 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
 
             {/* Warranty List */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-100">
-                <div className="flex items-center justify-between p-4 border-b border-slate-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
                     <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                         <Shield size={18} className="text-blue-600" />
                         Active Warranties
                     </h3>
                     <div className="flex gap-2">
-                        <div className="relative">
+                        <div className="relative flex-1 sm:flex-none">
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
                                 type="text"
@@ -2277,7 +2348,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
 
                             return (
                                 <div key={warranty.id} className="p-4 hover:bg-slate-50 transition-colors">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                         <div className="flex items-center gap-4">
                                             <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
                                                 <Shield size={20} className="text-blue-600" />
@@ -2288,7 +2359,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-6">
+                                        <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                                             {/* Time remaining */}
                                             <div className="text-right">
                                                 <div className={`text-sm font-medium ${daysLeft !== null && daysLeft < 30 ? 'text-amber-600' : 'text-slate-700'}`}>
@@ -2533,7 +2604,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh, can = NO_CAN, 
                     <div className="divide-y divide-slate-100">
                         {claims.map(claim => (
                             <div key={claim.id} className="p-4 hover:bg-slate-50/50 transition-colors">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                     <div className="flex items-center gap-4">
                                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                                             claim.claimType === 'REPLACEMENT' ? 'bg-blue-100' :
@@ -2940,11 +3011,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
 
     return (
         <div className="space-y-6">
+            {/* What the figures cover. The overview reads the 500 most recent POs
+                (FinOpsService.getSupplyChainOverview); say so when that cap is hit,
+                rather than present a window as the whole book. */}
+            <p className="text-xs text-slate-500">
+                {totalPOs >= 500
+                    ? <>Based on the <strong>500 most recent</strong> purchase orders — older orders are not in these figures.</>
+                    : <>Based on all <strong>{totalPOs}</strong> purchase order{totalPOs === 1 ? '' : 's'}.</>}
+            </p>
             {/* Tier-1 ERP outbound. It lives here because this tab already holds
                 the PO/GRN/invoice documents the export carries. The queue first:
                 fixing what is owed matters more than downloading what is not. */}
             <ErpReconciliationPanel />
-            <ErpExportPanel />
 
             {/* Stats — computed from real PO data */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -3047,6 +3125,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
                     </table>
                 </div>
             </div>
+            {/* ERP export — a tool you open, not a panel always on screen */}
+            <details className="group bg-white rounded-xl border border-slate-100 shadow-sm">
+                <summary className="cursor-pointer select-none px-5 py-3 text-sm font-medium text-slate-700 flex items-center gap-2 list-none">
+                    <Download size={16} className="text-emerald-600" /> Export to ERP — preview and download the posting file
+                    <ChevronDown size={14} className="ml-auto text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="px-5 pb-5"><ErpExportPanel /></div>
+            </details>
         </div>
     );
 };
@@ -3134,7 +3220,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
                         </div>
                     ) : (
                         policies.map(policy => (
-                            <div key={policy.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                            <div key={policy.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
                                 <div className="flex items-center gap-4">
                                     <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
                                         <ShieldCheck size={20} className="text-blue-600" />
@@ -3145,7 +3231,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-8">
+                                <div className="flex flex-wrap items-center gap-4 sm:gap-8">
                                     <div className="text-right">
                                         <div className="font-semibold text-slate-800">{currencySym()}{(parseFloat(policy.insured_value) || 0).toLocaleString()}</div>
                                         <div className="text-xs text-slate-400">Insured value</div>
@@ -3182,7 +3268,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
                         </div>
                     ) : (
                         incidents.map(incident => (
-                            <div key={incident.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                            <div key={incident.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
                                 <div className="flex items-center gap-4">
                                     <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
                                         <AlertTriangle size={18} className="text-red-600" />
@@ -3193,7 +3279,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-6">
+                                <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                                     <div className="text-right">
                                         <div className="font-semibold text-slate-800">{currencySym()}{incident.amount.toLocaleString()}</div>
                                         <div className="text-xs text-slate-400">{incident.date}</div>

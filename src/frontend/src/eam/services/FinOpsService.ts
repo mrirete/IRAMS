@@ -2497,13 +2497,27 @@ class FinOpsServiceClass {
 
     /** Every insurance incident in the tenant, newest first, with its asset. */
     async getAllInsuranceIncidents(): Promise<(InsuranceIncident & { assetName?: string; assetTag?: string })[]> {
+        // Two queries, not an embed: insurance_incidents.asset_id has no foreign
+        // key (0034 created the table before 0044's FK-bearing version, which
+        // became a no-op), so PostgREST cannot resolve `assets(…)` and the whole
+        // read failed — the Insurance tab showed no incidents in production.
         const { data, error } = await supabase
             .from('insurance_incidents')
-            .select('*, assets(name, tag)')
+            .select('*')
             .order('incident_date', { ascending: false })
             .range(0, 499);
         if (error) throw error;
-        return (data || []).map((row: any) => ({ ...this.mapInsuranceIncident(row), assetName: row.assets?.name, assetTag: row.assets?.tag }));
+        const ids = Array.from(new Set((data || []).map((r: any) => r.asset_id).filter(Boolean)));
+        const assetById = new Map<string, { name?: string; tag?: string }>();
+        if (ids.length) {
+            const { data: assets } = await supabase.from('assets').select('id, name, tag').in('id', ids);
+            (assets || []).forEach((a: any) => assetById.set(a.id, { name: a.name, tag: a.tag }));
+        }
+        return (data || []).map((row: any) => ({
+            ...this.mapInsuranceIncident(row),
+            assetName: assetById.get(row.asset_id)?.name,
+            assetTag: assetById.get(row.asset_id)?.tag,
+        }));
     }
 
     /**
