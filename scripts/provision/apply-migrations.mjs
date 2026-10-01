@@ -111,11 +111,23 @@ const isTransient = (status, body) =>
 async function runSql(projectRef, token, query, { retries = 3 } = {}) {
     let lastErr;
     for (let attempt = 0; attempt <= retries; attempt++) {
-        const res = await fetch(`${API}/projects/${projectRef}/database/query`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query }),
-        });
+        let res;
+        try {
+            res = await fetch(`${API}/projects/${projectRef}/database/query`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query }),
+            });
+        } catch (e) {
+            // "TypeError: fetch failed" — the socket dropped before any HTTP
+            // status (reset, DNS, TLS). It is as transient as a 502 and must be
+            // retried the same way; a migration file wrapped in BEGIN/COMMIT
+            // applied nothing if the drop was mid-statement. Surfaced as
+            // "fetch failed" with no further detail on 2026-10-01 (0395).
+            lastErr = new Error(`network: ${e?.cause?.code || e?.message || e}`);
+            if (attempt < retries) { await sleep(1500 * (attempt + 1)); continue; }
+            break;
+        }
         const text = await res.text();
         if (res.ok) {
             try { return JSON.parse(text); } catch { return []; }
