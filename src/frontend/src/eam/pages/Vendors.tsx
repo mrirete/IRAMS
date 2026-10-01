@@ -14,6 +14,7 @@ import { Vendor, DictionaryEntry } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { Button, Badge, Modal, Tabs, cn } from '../components/ui';
 import type { Tone } from '../components/ui';
@@ -106,6 +107,13 @@ type DetailTab = 'details' | 'models' | 'rates' | 'history';
 export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const { showToast } = useToast();
+    // The page never consulted permissions, so every role saw Add / Delete /
+    // Save. The database decides since 0399 (caller_can('vendors', ...));
+    // these keep the page from offering what it will refuse.
+    const { permissions } = useAuth();
+    const canCreate = permissions?.vendors?.create === true;
+    const canEdit = permissions?.vendors?.edit === true;
+    const canDelete = permissions?.vendors?.delete === true;
     const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
     // What the open vendor looked like when opened / last saved: unsaved edits
     // were dropped without a word when another vendor or Back was clicked.
@@ -293,6 +301,25 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         }
     };
 
+    // A supplier with purchase orders cannot be deleted (0399) — retiring it is
+    // the everyday action: it drops out of the PO supplier picker, history stays.
+    const handleSetActive = async (active: boolean) => {
+        if (!selectedVendor || saving) return;
+        setSaving(true);
+        try {
+            const updated = { ...selectedVendor, active };
+            await DatabaseService.getInstance().updateVendor(updated);
+            setSelectedVendor(updated);
+            setSavedSnapshot(JSON.stringify(updated));
+            showToast(active ? 'Vendor reactivated.' : 'Vendor deactivated — it is no longer offered on new purchase orders.', 'success');
+            loadData();
+        } catch (e: any) {
+            showToast((active ? 'Not reactivated: ' : 'Not deactivated: ') + e.message, 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!selectedVendor || saving) return;
         setSaving(true);
@@ -400,7 +427,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             <Truck className="text-blue-600 flex-shrink-0" size={selectedVendor ? 20 : 24} />
                             <h2 className={cn('font-bold text-slate-900 truncate', selectedVendor ? 'text-base' : 'text-xl')}>Vendor Directory</h2>
                         </div>
-                        {!selectedVendor && (
+                        {!selectedVendor && canCreate && (
                             <div className="flex items-center gap-2">
                                 <Button
                                     onClick={() => setIsBulkImportOpen(true)}
@@ -639,13 +666,20 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                 contextType="vendor"
                                 contextSummary={`═══ VENDOR CONTEXT ═══\nVendor: ${selectedVendor.code} — ${selectedVendor.name}\nType: ${typeLabel(selectedVendor.type)} | Active: ${selectedVendor.active ? 'Yes' : 'No'}\nPayment Terms: ${selectedVendor.paymentTerms || 'N/A'} | Currency: ${ccy}\nHourly Rate: ${ccy} ${selectedVendor.hourlyRate || 0}/hr\nContact: ${selectedVendor.primaryContactName || 'N/A'} | Email: ${selectedVendor.email || 'N/A'}\nTotal Vendors in Directory: ${vendors.length}`}
                             />
-                            <OverflowMenu
-                                label="More vendor actions"
-                                items={[{
-                                    label: 'Delete vendor', icon: <Trash2 size={16} />, danger: true,
-                                    onClick: () => handleDeleteClick(selectedVendor.id, selectedVendor.name),
-                                }]}
-                            />
+                            {(canEdit || canDelete) && (
+                                <OverflowMenu
+                                    label="More vendor actions"
+                                    items={[
+                                        ...(canEdit ? [selectedVendor.active === false
+                                            ? { label: 'Reactivate vendor', icon: <Plus size={16} />, onClick: () => void handleSetActive(true) }
+                                            : { label: 'Deactivate vendor', icon: <X size={16} />, onClick: () => void handleSetActive(false) }] : []),
+                                        ...(canDelete ? [{
+                                            label: 'Delete vendor', icon: <Trash2 size={16} />, danger: true,
+                                            onClick: () => handleDeleteClick(selectedVendor.id, selectedVendor.name),
+                                        }] : []),
+                                    ]}
+                                />
+                            )}
                             <button onClick={() => selectVendor(null)} aria-label="Close" className="hidden lg:inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
                                 <X size={18} />
                             </button>
@@ -1121,9 +1155,11 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             className="flex items-center gap-2 px-4 py-2.5 border-t border-slate-200 bg-white flex-shrink-0 shadow-[0_-2px_8px_rgba(15,23,42,0.06)]"
                             style={{ paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom, 0px))' }}
                         >
-                            <span className="flex-1 min-w-0 text-sm font-medium text-amber-700 truncate">Unsaved changes</span>
+                            <span className="flex-1 min-w-0 text-sm font-medium text-amber-700 truncate">
+                                {canEdit ? 'Unsaved changes' : 'Your role can view vendors but not change them'}
+                            </span>
                             <Button variant="ghost" size="md" onClick={discardChanges} disabled={saving}>Discard</Button>
-                            <Button size="md" onClick={handleSave} loading={saving}>Save</Button>
+                            {canEdit && <Button size="md" onClick={handleSave} loading={saving}>Save</Button>}
                         </div>
                     )}
                 </div>
@@ -1272,7 +1308,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
             />
 
             {/* ═══ Mobile FAB — Add Vendor (≤640px only) ═══ */}
-            {!selectedVendor && (
+            {!selectedVendor && canCreate && (
                 <button
                     className="fab"
                     onClick={() => setIsAddModalOpen(true)}
