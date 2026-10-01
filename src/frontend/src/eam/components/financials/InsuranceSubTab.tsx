@@ -5,6 +5,7 @@ import { FinOpsService, AssetInsurance, InsuranceIncident } from '../../services
 import { AddInsuranceModal } from '../modals/AddInsuranceModal';
 import type { FinancialsCan } from '../FinancialsTab';
 import { formatDateOnly } from '../../../lib/dateOnly';
+import { IncidentClaimActions, incidentClaimSummary } from './IncidentClaimActions';
 
 interface InsuranceProps {
     assetId: string;
@@ -200,14 +201,14 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                 <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h3 className="font-bold text-slate-700 flex items-center gap-2">
                         <AlertCircle size={16} className="text-slate-400" />
-                        Insurance Claims
+                        Incidents & claims
                     </h3>
                     {can.create && insurancePolicies.length > 0 && (
                         <button
                             onClick={() => { setClaimError(null); setShowClaimForm(!showClaimForm); }}
                             className="text-xs bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg flex items-center gap-1 font-medium transition"
                         >
-                            <Plus size={12} /> File Claim
+                            <Plus size={12} /> Report incident
                         </button>
                     )}
                 </div>
@@ -244,7 +245,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                 <X size={12} /> Cancel
                             </button>
                             <button onClick={handleFileClaim} disabled={saving || !claimDescription} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-primary-500 flex items-center gap-1 disabled:opacity-50">
-                                <Save size={12} /> {saving ? '...' : 'File Claim'}
+                                <Save size={12} /> {saving ? '...' : 'Report incident'}
                             </button>
                         </div>
                     </div>
@@ -253,7 +254,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                 {incidents.length === 0 && !showClaimForm ? (
                     <div className="p-10 text-center">
                         <AlertCircle size={28} className="mx-auto mb-2 text-slate-300" />
-                        <div className="text-sm text-slate-400 italic">No claims filed.</div>
+                        <div className="text-sm text-slate-400 italic">No incidents reported.</div>
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-50">
@@ -262,15 +263,17 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                 <div className="flex justify-between text-xs mb-1">
                                     <span className="font-mono text-blue-600 font-medium">{inc.incidentNumber}</span>
                                     <span className={`px-1.5 py-0.5 rounded-full font-bold uppercase text-[10px]
-                                        ${inc.claimStatus === 'OPEN' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                                        ${inc.claimStatus === 'OPEN' ? 'bg-blue-100 text-blue-700' : inc.claimStatus === 'SUBMITTED' ? 'bg-amber-100 text-amber-700' : inc.claimStatus === 'SETTLED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                                         {inc.claimStatus}
                                     </span>
                                 </div>
                                 <div className="text-xs text-slate-600 mb-1">{inc.incidentType}</div>
                                 <div className="flex justify-between text-xs text-slate-400">
                                     <span>{new Date(inc.incidentDate).toLocaleDateString()}</span>
-                                    <span className="font-mono text-slate-600">{currencySym()}{(inc.totalCost ?? 0).toLocaleString()}</span>
+                                    <span className="font-mono text-slate-600">{currencySym()}{(inc.totalCost || inc.estimatedDamage || 0).toLocaleString()}</span>
                                 </div>
+                                {incidentClaimSummary(inc) && <div className="text-[11px] text-slate-500 mt-1">{incidentClaimSummary(inc)}</div>}
+                                <div className="mt-2"><IncidentClaimActions incident={inc} canEdit={can.edit} onChanged={onReload} /></div>
                             </div>
                         ))}
                     </div>

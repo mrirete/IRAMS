@@ -18,6 +18,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { monthlyExpense } from '../../lib/depreciation';
 import { currentFiscalYear, currentFiscalPeriod, fiscalYearLabel, fiscalYearOf, fiscalYearStart, fiscalPeriodMonthName, money, moneyCompact, currencySym } from '../../lib/fiscal';
 import { useSettings } from '../../contexts/SettingsContext';
+import { IncidentClaimActions, incidentClaimSummary } from '../components/financials/IncidentClaimActions';
 import {
     FinOpsService, CostCenter, Budget, Warranty, WarrantyCheckResult, InsuranceIncident,
     WarrantyClaim, DepreciationBook, MaintenanceForecast, SupplyChainMatch
@@ -1024,7 +1025,7 @@ export const FinOps: React.FC = () => {
                     </>
                 );
             case 'supply_chain': return <SupplyChainTab data={supplyChainData} />;
-            case 'insurance': return <InsuranceTab policies={insurancePolicies} claims={claims} insuranceIncidents={insuranceIncidents} totalAssetCount={assets.length} />;
+            case 'insurance': return <InsuranceTab policies={insurancePolicies} claims={claims} insuranceIncidents={insuranceIncidents} totalAssetCount={assets.length} can={can} onRefresh={loadData} />;
             case 'dashboard':
             default: return <DashboardTab metrics={dashboardMetrics} blockedInvoices={blockedInvoices} onOpenTab={openTab} />;
         }
@@ -3146,9 +3147,11 @@ interface InsuranceTabProps {
     claims: WarrantyClaim[];
     insuranceIncidents: (InsuranceIncident & { assetName?: string; assetTag?: string })[];
     totalAssetCount: number;
+    can?: FinOpsCan;
+    onRefresh?: () => void;
 }
 
-const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insuranceIncidents, totalAssetCount }) => {
+const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insuranceIncidents, totalAssetCount, can = NO_CAN, onRefresh = () => {} }) => {
     // Compute real stats from policies + claims. Column names are the table's
     // (insured_value / insurer_name / premium_annual / coverage_end) — the
     // previous names did not exist, so coverage read $0 and provider blank.
@@ -3162,6 +3165,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
     const settledYTD = insuranceIncidents.filter(i => i.settlementAmount != null && i.settlementDate && fiscalYearOf(i.settlementDate) === currentFiscalYear());
     const claimsRecoveredYTD = settledYTD.reduce((sum, i) => sum + (i.settlementAmount || 0), 0);
     const incidents = insuranceIncidents.map(i => ({
+        raw: i,
         id: i.id,
         number: i.incidentNumber,
         asset: i.assetTag ? `${i.assetTag} · ${i.assetName || ''}` : (i.assetName || 'Unknown asset'),
@@ -3256,7 +3260,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
                 <div className="p-4 border-b border-slate-100">
                     <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                         <AlertCircle size={18} className="text-red-600" />
-                        Insurance Incidents
+                        Incidents & claims
                     </h3>
                 </div>
 
@@ -3276,6 +3280,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
                                     <div>
                                         <div className="font-medium text-slate-800">{incident.number}</div>
                                         <div className="text-sm text-slate-500">{incident.asset} • {incident.type}</div>
+                                        {incidentClaimSummary(incident.raw) && <div className="text-xs text-slate-500 mt-0.5">{incidentClaimSummary(incident.raw)}</div>}
                                     </div>
                                 </div>
 
@@ -3290,6 +3295,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
                                         }`}>
                                         {incident.status.replace('_', ' ')}
                                     </span>
+                                    <IncidentClaimActions incident={incident.raw} canEdit={can.edit} onChanged={onRefresh} />
                                 </div>
                             </div>
                         ))

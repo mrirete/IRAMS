@@ -2495,6 +2495,52 @@ class FinOpsServiceClass {
         }));
     }
 
+    /**
+     * Move an insurance incident's claim one step (0397):
+     *   OPEN → SUBMITTED (claim amount, reference, date) → SETTLED (amount paid,
+     *   date) → CLOSED; OPEN or SUBMITTED may also CLOSE (no claim / declined).
+     * The database trigger is the rule; this sends the step and surfaces its
+     * message. A settlement is RECORDED only — not posted to the cost ledger
+     * (an insurance payout is income, not a maintenance-cost reduction).
+     */
+    async advanceIncidentClaim(
+        incidentId: string,
+        to: 'SUBMITTED' | 'SETTLED' | 'CLOSED',
+        details: { claimAmount?: number; claimReference?: string; submittedDate?: string; settlementAmount?: number; settlementDate?: string } = {},
+    ): Promise<InsuranceIncident> {
+        const { data: current, error: curErr } = await supabase
+            .from('insurance_incidents')
+            .select('id, claim_status')
+            .eq('id', incidentId)
+            .single();
+        if (curErr) throw curErr;
+
+        const update: Record<string, any> = { claim_status: to };
+        if (to === 'SUBMITTED') {
+            if (!(details.claimAmount && details.claimAmount > 0)) throw new Error('Enter the amount being claimed.');
+            update.claim_amount = details.claimAmount;
+            update.claim_reference = details.claimReference?.trim() || null;
+            update.claim_submitted_date = details.submittedDate || null; // trigger defaults to today
+        }
+        if (to === 'SETTLED') {
+            if (details.settlementAmount === undefined || !Number.isFinite(details.settlementAmount) || details.settlementAmount < 0) {
+                throw new Error('Enter what the insurer paid (0 if nothing).');
+            }
+            update.settlement_amount = details.settlementAmount;
+            update.settlement_date = details.settlementDate || null;
+        }
+
+        const { data, error } = await supabase
+            .from('insurance_incidents')
+            .update(update)
+            .eq('id', incidentId)
+            .eq('claim_status', current.claim_status) // a concurrent change loses
+            .select()
+            .single();
+        if (error) throw new Error(error.message);
+        return this.mapInsuranceIncident(data);
+    }
+
     /** Every insurance incident in the tenant, newest first, with its asset. */
     async getAllInsuranceIncidents(): Promise<(InsuranceIncident & { assetName?: string; assetTag?: string })[]> {
         // Two queries, not an embed: insurance_incidents.asset_id has no foreign
