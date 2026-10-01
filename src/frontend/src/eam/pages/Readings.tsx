@@ -326,12 +326,14 @@ export const Readings: React.FC = () => {
     // 3.2 Reading Entry (Batch or Single) — all the capture rules live in the
     // shared readingEntry engine, so the asset drawer's Readings tab behaves
     // identically. This function is now just RBAC + presentation.
-    const handleSaveReadings = async (newReadings: Partial<ReadingLogEntry>[]) => {
+    // Resolves with the definition ids that were NOT saved, so the entry sheet
+    // keeps exactly those values (it used to clear everything before the save).
+    const handleSaveReadings = async (newReadings: Partial<ReadingLogEntry>[]): Promise<string[]> => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: readings.saveReadings attempt by unauthorized user', profile?.username);
             showToast('Access Denied: You do not have permission to enter readings.', 'error');
-            return;
+            return newReadings.map(r => r.definitionId).filter(Boolean) as string[];
         }
 
         const result = await saveReadings(
@@ -391,6 +393,7 @@ export const Readings: React.FC = () => {
         }
 
         if (result.pmDue.length > 0) setPmDue(result.pmDue);
+        return result.failedIds;
     };
 
 
@@ -484,7 +487,7 @@ export const Readings: React.FC = () => {
     };
 
     // Toggle Active Logic
-    const handleToggleActive = (logId: string, currentStatus: boolean) => {
+    const handleToggleActive = async (logId: string, currentStatus: boolean) => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: readings.toggleActive attempt by unauthorized user', profile?.username);
@@ -518,7 +521,19 @@ export const Readings: React.FC = () => {
             }
         }
 
+        // Saved first, then shown — it only changed the screen, so a deactivated
+        // bad reading came back on refresh and kept skewing the averages.
+        const changed = updatedLogs.filter(l => (logs.find(o => o.id === l.id)?.isActive !== false) !== (l.isActive !== false));
+        if (changed.length === 0) return;
+        const prev = logs;
         setLogs(updatedLogs);
+        try {
+            await DatabaseService.getInstance().setReadingLogsActive(changed.map(l => l.id), !currentStatus);
+            showToast(`${changed.length} reading${changed.length > 1 ? 's' : ''} ${currentStatus ? 'excluded from' : 'restored to'} averages.`, 'success');
+        } catch (e: any) {
+            setLogs(prev);
+            showToast('Not saved: ' + (e?.message || e), 'error');
+        }
     };
 
     // Learned-baseline limits (1.5.2): propose μ+2σ / μ+3σ from this point's own
@@ -792,6 +807,7 @@ export const Readings: React.FC = () => {
                                     definitions={definitions.filter(d => d.assetId === selectedAsset.id)}
                                     logs={logs}
                                     onToggleActive={handleToggleActive}
+                                    onMeterChange={handleMeterChange}
                                     initialDefId={deepLinkDefId}
                                 />
                             )}
@@ -846,12 +862,19 @@ export const Readings: React.FC = () => {
             <ConfirmationModal
                 isOpen={!!meterChangeDefId}
                 onClose={() => setMeterChangeDefId(null)}
-                onConfirm={() => {
-                    if (meterChangeDefId) {
-                        setLogs(prev => prev.map(l => l.definitionId === meterChangeDefId ? { ...l, isActive: false } : l));
-                        setDefinitions(prev => prev.map(d => d.id === meterChangeDefId ? { ...d, lastReadingValue: 0 } : d));
+                onConfirm={async () => {
+                    if (!meterChangeDefId) return;
+                    const defId = meterChangeDefId;
+                    setMeterChangeDefId(null);
+                    const ids = logs.filter(l => l.definitionId === defId && l.isActive !== false).map(l => l.id);
+                    try {
+                        // Persisted: the reset used to live only in this tab and undo itself on refresh.
+                        await DatabaseService.getInstance().setReadingLogsActive(ids, false);
+                        setLogs(prev => prev.map(l => l.definitionId === defId ? { ...l, isActive: false } : l));
+                        setDefinitions(prev => prev.map(d => d.id === defId ? { ...d, lastReadingValue: 0 } : d));
                         showToast('Meter reset. Previous readings archived.', 'success');
-                        setMeterChangeDefId(null);
+                    } catch (e: any) {
+                        showToast('Meter not reset: ' + (e?.message || e), 'error');
                     }
                 }}
                 title="Replace/Reset Meter?"
@@ -869,17 +892,17 @@ export const Readings: React.FC = () => {
                         try {
                             await DatabaseService.getInstance().deleteReadingDefinition(deleteDefId);
                             setDefinitions(prev => prev.filter(d => d.id !== deleteDefId));
-                            showToast('Reading point removed. History preserved.', 'success');
+                            showToast('Reading point retired. Its history is kept.', 'success');
                         } catch (e: any) {
                             showToast('Failed to delete definition: ' + e.message, 'error');
                         }
                         setDeleteDefId(null);
                     }
                 }}
-                title="Delete Reading Point?"
+                title="Retire Reading Point?"
                 message="History will be kept but this reading point will be removed from future entry sheets."
                 type="danger"
-                confirmText="Delete Point"
+                confirmText="Retire Point"
             />
 
             {/* Raise ▾ — Request / Work Order / PM from the focused asset */}
@@ -984,9 +1007,10 @@ const TrendAnalysis: React.FC<{
     definitions: ReadingDefinition[];
     logs: ReadingLogEntry[];
     onToggleActive: (id: string, currentStatus: boolean) => void;
+    onMeterChange?: (defId: string) => void;
     /** Point to open first (deep link); ignored when it is not one of this asset's points. */
     initialDefId?: string | null;
-}> = ({ definitions, logs, onToggleActive, initialDefId }) => {
+}> = ({ definitions, logs, onToggleActive, onMeterChange, initialDefId }) => {
     const [selectedDefId, setSelectedDefId] = useState<string>(
         (initialDefId && definitions.some(d => d.id === initialDefId)) ? initialDefId : (definitions[0]?.id || ''),
     );
@@ -1203,9 +1227,14 @@ const TrendAnalysis: React.FC<{
             <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
                 <div className="p-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 text-sm flex justify-between items-center">
                     <span>Reading History</span>
-                    <button className="text-xs bg-white border border-slate-300 px-3 py-1 rounded hover:bg-slate-100 flex items-center gap-1">
-                        <RefreshCcw size={12} /> Meter Replaced?
-                    </button>
+                    {onMeterChange && selectedDef?.category === 'METER' && (
+                        <button
+                            onClick={() => onMeterChange(selectedDef.id)}
+                            className="text-xs bg-white border border-slate-300 px-3 py-1 rounded hover:bg-slate-100 flex items-center gap-1"
+                        >
+                            <RefreshCcw size={12} /> Meter Replaced?
+                        </button>
+                    )}
                 </div>
                 <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-white">
@@ -1264,7 +1293,7 @@ const SingleAssetEntry: React.FC<{
     asset: Asset;
     definitions: ReadingDefinition[];
     readingTypes: DictionaryRecord[];
-    onSave: (data: Partial<ReadingLogEntry>[]) => void;
+    onSave: (data: Partial<ReadingLogEntry>[]) => Promise<string[] | void> | void;
     onAddDefinition: (assetId: string, typeCode: string) => void;
     onDeleteDefinition: (id: string) => void;
     onOpenAddPoint: (assetId: string) => void;
@@ -1286,7 +1315,7 @@ const SingleAssetEntry: React.FC<{
 const BatchEntryView: React.FC<{
     allAssets: Asset[];
     allDefinitions: ReadingDefinition[];
-    onSave: (data: Partial<ReadingLogEntry>[]) => void;
+    onSave: (data: Partial<ReadingLogEntry>[]) => Promise<string[] | void> | void;
     onAddDefinition?: (assetId: string, typeCode: string) => void;
     onDeleteDefinition?: (id: string) => void;
     onOpenAddPoint?: (assetId: string) => void;
@@ -1380,7 +1409,7 @@ const BatchEntryView: React.FC<{
         }));
     };
 
-    const handleSaveBatch = () => {
+    const handleSaveBatch = async () => {
         const payload: Partial<ReadingLogEntry>[] = [];
         Object.keys(inputValues).forEach(defId => {
             const entry = inputValues[defId];
@@ -1396,8 +1425,9 @@ const BatchEntryView: React.FC<{
             }
         });
         if (payload.length === 0) return;
-        onSave(payload);
-        setInputValues({});
+        const failed = new Set((await onSave(payload)) || []);
+        // Clear what saved; keep what didn't so nobody retypes a round.
+        setInputValues(prev => Object.fromEntries(Object.entries(prev).filter(([defId]) => failed.has(defId))));
     };
 
     const handleAdd = () => {
@@ -1749,7 +1779,6 @@ const DefinitionsManager: React.FC<{
                                 <RefreshCcw size={12} /> Meter Change
                             </button>
                         )}
-                        <button className="text-slate-400 hover:text-blue-600"><Save size={16} /></button>
                         <button onClick={() => onDelete(def.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={16} /></button>
                     </div>
                 </div>

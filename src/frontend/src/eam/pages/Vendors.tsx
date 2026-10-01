@@ -13,6 +13,7 @@ import { Vendor, DictionaryEntry } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { Button, Badge } from '../components/ui';
 
 interface VendorsProps {
@@ -23,7 +24,13 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const { showToast } = useToast();
     const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
+    // What the open vendor looked like when opened / last saved: unsaved edits
+    // were dropped without a word when another vendor or Back was clicked.
+    const [savedSnapshot, setSavedSnapshot] = useState('');
+    const confirm = useConfirm();
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [creating, setCreating] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     // Deep-linked from Admin › Migration Center (/vendors?action=import).
@@ -85,16 +92,50 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
 
     const loadData = async () => {
         setLoading(true);
+        setLoadError(null);
         try {
             const db = DatabaseService.getInstance();
-            const data = await db.getVendors();
+            const data = await db.getVendors({ throwOnError: true });
             setVendors(data);
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to load vendors", e);
+            setLoadError(e?.message || 'The vendor list could not be loaded.');
         } finally {
             setLoading(false);
         }
     };
+
+    const dirty = !!selectedVendor && JSON.stringify(selectedVendor) !== savedSnapshot;
+    const selectVendor = async (v: Vendor | null) => {
+        if (v?.id === selectedVendor?.id) return;
+        if (dirty && !(await confirm(`Discard your unsaved changes to ${selectedVendor?.name || 'this vendor'}?`))) return;
+        setSelectedVendor(v);
+        setSavedSnapshot(v ? JSON.stringify(v) : '');
+    };
+
+    // Name-only directory rows (callers without vendors.view) have no code;
+    // `v.code.toLowerCase()` threw on the first keystroke.
+    const q = searchTerm.trim().toLowerCase();
+    const shownVendors = vendors.filter(v => !q || [v.name, v.code, v.email, v.primaryContactName, v.type]
+        .some(f => (f || '').toLowerCase().includes(q)));
+
+    // Next free V-#### code (random V-0..999 collided).
+    const nextVendorCode = () => {
+        const max = vendors.reduce((m, v) => {
+            const n = /^V-(\d+)$/i.exec(v.code || '');
+            return n ? Math.max(m, parseInt(n[1], 10)) : m;
+        }, 0);
+        return `V-${String(max + 1).padStart(4, '0')}`;
+    };
+
+    type RateLine = { craft: string; regRate?: number; otRate?: number };
+    const rateCard: RateLine[] = selectedVendor?.properties?.rateCard || [];
+    const setRateCard = (next: RateLine[]) => selectedVendor && setSelectedVendor({
+        ...selectedVendor, properties: { ...(selectedVendor.properties || {}), rateCard: next },
+    });
+    // Copy-on-write: the old handlers mutated the shared row, so the list's copy changed too.
+    const updateRate = (idx: number, patch: Partial<RateLine>) => setRateCard(rateCard.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+    const ccy = selectedVendor?.currency || 'USD';
 
     const handleDeleteClick = (id: string, name: string) => {
         setDeleteModal({ isOpen: true, vendorId: id, vendorName: name });
@@ -105,7 +146,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         try {
             await DatabaseService.getInstance().deleteVendor(deleteModal.vendorId);
             setVendors(prev => prev.filter(v => v.id !== deleteModal.vendorId));
-            if (selectedVendor?.id === deleteModal.vendorId) setSelectedVendor(null);
+            if (selectedVendor?.id === deleteModal.vendorId) { setSelectedVendor(null); setSavedSnapshot(''); }
         } catch (e: any) {
             showToast('Delete failed: ' + e.message, 'error');
         } finally {
@@ -117,6 +158,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         if (!selectedVendor) return;
         try {
             await DatabaseService.getInstance().updateVendor(selectedVendor);
+            setSavedSnapshot(JSON.stringify(selectedVendor));
             showToast('Vendor saved successfully.', 'success');
             loadData();
         } catch (e: any) {
@@ -144,6 +186,8 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     };
 
     const handleDeleteModel = async (modelId: string) => {
+        const model = vendorModels.find(m => m.id === modelId);
+        if (!(await confirm(`Delete model ${model?.model_code || model?.code || ''}?`.replace(' ?', '?')))) return;
         try {
             await DatabaseService.getInstance().deleteVendorModel(modelId);
             setVendorModels(prev => prev.filter(m => m.id !== modelId));
@@ -237,19 +281,27 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                     </div>
                 </div>
 
+                {loadError && (
+                    <div className="m-4 p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800 flex items-center justify-between gap-3">
+                        <span>Vendors could not be loaded: {loadError}</span>
+                        <button onClick={loadData} className="px-3 py-1 rounded-md bg-white border border-red-300 text-red-700 text-xs font-semibold hover:bg-red-100">Retry</button>
+                    </div>
+                )}
+                {loading && !vendors.length && <div className="p-6 text-sm text-slate-400">Loading vendors...</div>}
+                {!loading && !loadError && shownVendors.length === 0 && (
+                    <div className="p-8 text-center text-sm text-slate-500">
+                        {vendors.length === 0 ? 'No vendors yet. Add one or import your supplier list.' : `No vendors match "${searchTerm}".`}
+                    </div>
+                )}
                 <div className="flex-1 overflow-auto table-responsive">
                     {/* ═══ Mobile Card View (≤640px) ═══ */}
                     <div className="mobile-cards">
-                        {vendors
-                            .filter(v =>
-                                v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                v.code.toLowerCase().includes(searchTerm.toLowerCase())
-                            )
+                        {shownVendors
                             .map(vendor => (
                                 <div
                                     key={vendor.id}
                                     className={`mobile-card-contact ${selectedVendor?.id === vendor.id ? 'bg-blue-50' : ''}`}
-                                    onClick={() => setSelectedVendor(vendor)}
+                                    onClick={() => selectVendor(vendor)}
                                 >
                                     <div className={`mobile-card-contact-avatar ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
                                         {vendor.name.charAt(0)}
@@ -280,15 +332,11 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-200">
-                            {vendors
-                                .filter(v =>
-                                    v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                    v.code.toLowerCase().includes(searchTerm.toLowerCase())
-                                )
+                            {shownVendors
                                 .map(vendor => (
                                     <tr
                                         key={vendor.id}
-                                        onClick={() => setSelectedVendor(vendor)}
+                                        onClick={() => selectVendor(vendor)}
                                         className={`cursor-pointer hover:bg-slate-50 ${selectedVendor?.id === vendor.id ? 'bg-blue-50' : ''}`}
                                     >
                                         <td className="px-6 py-4">
@@ -326,7 +374,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                 contextType="vendor"
                                 contextSummary={`═══ VENDOR CONTEXT ═══\nVendor: ${selectedVendor.code} — ${selectedVendor.name}\nType: ${selectedVendor.type || 'N/A'} | Active: ${selectedVendor.active ? 'Yes' : 'No'}\nPayment Terms: ${selectedVendor.paymentTerms || 'N/A'} | Currency: ${selectedVendor.currency || 'USD'}\nHourly Rate: $${selectedVendor.hourlyRate || 0}/hr\nContact: ${selectedVendor.primaryContactName || 'N/A'} | Email: ${selectedVendor.email || 'N/A'}\nTotal Vendors in Directory: ${vendors.length}`}
                             />
-                            <button onClick={() => setSelectedVendor(null)} className="lg:hidden text-slate-400 hover:text-slate-600 p-1 flex items-center gap-1 text-sm">
+                            <button onClick={() => selectVendor(null)} className="lg:hidden text-slate-400 hover:text-slate-600 p-1 flex items-center gap-1 text-sm">
                                 <X size={18} /> Back
                             </button>
                             <Button onClick={handleSave} size="sm" leftIcon={<Save size={16} />}>
@@ -335,7 +383,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             <button onClick={() => handleDeleteClick(selectedVendor.id, selectedVendor.name)} className="px-3 py-1.5 text-red-600 border border-red-200 rounded hover:bg-red-50 flex items-center gap-2 text-sm">
                                 <Trash2 size={16} /> Delete
                             </button>
-                            <button onClick={() => setSelectedVendor(null)} className="hidden lg:block text-slate-400 hover:text-slate-600 ml-2">
+                            <button onClick={() => selectVendor(null)} className="hidden lg:block text-slate-400 hover:text-slate-600 ml-2">
                                 <X size={20} />
                             </button>
                         </div>
@@ -760,132 +808,79 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             </div>
                         </div>
 
-                        {/* Contractor Rate Card Section */}
+                        {/* Contractor rates: saved with the vendor (contact_details.rateCard) */}
+                        {selectedVendor.type !== 'MANUFACTURER' && (
                         <div className="border-t border-slate-100 pt-6 mt-6">
-                            <h4 className="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-2">
                                 <Users size={16} className="text-blue-600" />
-                                Contractor Rate Cards (JSONB Governed)
+                                Contractor rates
                             </h4>
                             <p className="text-xs text-slate-500 mb-4">
-                                Define standardized hourly rate cards for different crafts. When external resources are assigned to work orders, these rates auto-populate.
+                                Agreed hourly rates per craft, kept on this vendor as the reference for costing contractor work. Saved with the vendor.
                             </p>
-
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
                                 <div className="overflow-x-auto">
                                     <table className="min-w-full divide-y divide-slate-200 text-xs">
                                         <thead className="bg-slate-100">
                                             <tr>
-                                                <th className="px-4 py-2.5 text-left font-bold text-slate-600 uppercase">Craft / Specialty</th>
-                                                <th className="px-4 py-2.5 text-right font-bold text-slate-600 uppercase">Regular Rate ($/hr)</th>
-                                                <th className="px-4 py-2.5 text-right font-bold text-slate-600 uppercase">Overtime Rate ($/hr)</th>
-                                                <th className="px-4 py-2.5 text-center font-bold text-slate-600 uppercase w-16">Action</th>
+                                                <th className="px-4 py-2.5 text-left font-bold text-slate-600 uppercase">Craft / specialty</th>
+                                                <th className="px-4 py-2.5 text-right font-bold text-slate-600 uppercase">Regular ({ccy}/h)</th>
+                                                <th className="px-4 py-2.5 text-right font-bold text-slate-600 uppercase">Overtime ({ccy}/h)</th>
+                                                <th className="px-4 py-2.5 w-16"><span className="sr-only">Remove</span></th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-150 bg-white">
-                                            {(selectedVendor.properties?.rateCard || []).map((card: any, idx: number) => (
+                                        <tbody className="divide-y divide-slate-100 bg-white">
+                                            {rateCard.map((line, idx) => (
                                                 <tr key={idx}>
                                                     <td className="px-4 py-2">
                                                         <input
                                                             type="text"
-                                                            value={card.craft}
-                                                            onChange={(e) => {
-                                                                const updatedCard = [...(selectedVendor.properties?.rateCard || [])];
-                                                                updatedCard[idx].craft = e.target.value;
-                                                                setSelectedVendor({
-                                                                    ...selectedVendor,
-                                                                    properties: {
-                                                                        ...(selectedVendor.properties || {}),
-                                                                        rateCard: updatedCard
-                                                                    }
-                                                                });
-                                                            }}
-                                                            placeholder="e.g. Mechanical Technician"
+                                                            value={line.craft}
+                                                            onChange={(e) => updateRate(idx, { craft: e.target.value })}
+                                                            placeholder="e.g. Mechanical technician"
                                                             className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-0.5"
                                                         />
                                                     </td>
                                                     <td className="px-4 py-2 text-right">
                                                         <input
-                                                            type="number"
-                                                            value={card.regRate}
-                                                            onChange={(e) => {
-                                                                const updatedCard = [...(selectedVendor.properties?.rateCard || [])];
-                                                                updatedCard[idx].regRate = parseFloat(e.target.value) || 0;
-                                                                setSelectedVendor({
-                                                                    ...selectedVendor,
-                                                                    properties: {
-                                                                        ...(selectedVendor.properties || {}),
-                                                                        rateCard: updatedCard
-                                                                    }
-                                                                });
-                                                            }}
-                                                            className="w-20 text-right bg-transparent border-b border-transparent hover:border-slate-350 focus:border-blue-500 outline-none py-0.5"
+                                                            type="number" inputMode="decimal" min={0}
+                                                            value={line.regRate ?? ''}
+                                                            onChange={(e) => updateRate(idx, { regRate: e.target.value === '' ? undefined : Number(e.target.value) })}
+                                                            className="w-24 text-right bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-0.5"
                                                         />
                                                     </td>
                                                     <td className="px-4 py-2 text-right">
                                                         <input
-                                                            type="number"
-                                                            value={card.otRate}
-                                                            onChange={(e) => {
-                                                                const updatedCard = [...(selectedVendor.properties?.rateCard || [])];
-                                                                updatedCard[idx].otRate = parseFloat(e.target.value) || 0;
-                                                                setSelectedVendor({
-                                                                    ...selectedVendor,
-                                                                    properties: {
-                                                                        ...(selectedVendor.properties || {}),
-                                                                        rateCard: updatedCard
-                                                                    }
-                                                                });
-                                                            }}
-                                                            className="w-20 text-right bg-transparent border-b border-transparent hover:border-slate-350 focus:border-blue-500 outline-none py-0.5"
+                                                            type="number" inputMode="decimal" min={0}
+                                                            value={line.otRate ?? ''}
+                                                            onChange={(e) => updateRate(idx, { otRate: e.target.value === '' ? undefined : Number(e.target.value) })}
+                                                            className="w-24 text-right bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-0.5"
                                                         />
                                                     </td>
                                                     <td className="px-4 py-2 text-center">
-                                                        <button
-                                                            onClick={() => {
-                                                                const updatedCard = (selectedVendor.properties?.rateCard || []).filter((_: any, i: number) => i !== idx);
-                                                                setSelectedVendor({
-                                                                    ...selectedVendor,
-                                                                    properties: {
-                                                                        ...(selectedVendor.properties || {}),
-                                                                        rateCard: updatedCard
-                                                                    }
-                                                                });
-                                                            }}
-                                                            className="text-red-500 hover:text-red-700 font-medium"
-                                                        >
+                                                        <button onClick={() => setRateCard(rateCard.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700 font-medium">
                                                             Remove
                                                         </button>
                                                     </td>
                                                 </tr>
                                             ))}
-                                            {(selectedVendor.properties?.rateCard || []).length === 0 && (
+                                            {rateCard.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={4} className="px-4 py-4 text-center text-slate-400">
-                                                        No standardized craft rate cards defined for this contractor.
-                                                    </td>
+                                                    <td colSpan={4} className="px-4 py-4 text-center text-slate-400">No contractor rates recorded for this vendor.</td>
                                                 </tr>
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-
                                 <button
-                                    onClick={() => {
-                                        const current = selectedVendor.properties?.rateCard || [];
-                                        setSelectedVendor({
-                                            ...selectedVendor,
-                                            properties: {
-                                                ...(selectedVendor.properties || {}),
-                                                rateCard: [...current, { craft: 'New Craft', regRate: 75, otRate: 110 }]
-                                            }
-                                        });
-                                    }}
+                                    onClick={() => setRateCard([...rateCard, { craft: '' }])}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-all border border-blue-200"
                                 >
-                                    <Plus size={14} /> Add Craft Line
+                                    <Plus size={14} /> Add craft line
                                 </button>
                             </div>
                         </div>
+                        )}
 
 
                     </div>
@@ -900,27 +895,43 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             <h3 className="text-lg font-bold text-slate-900 mb-4">Add New Vendor</h3>
                             <form onSubmit={async (e) => {
                                 e.preventDefault();
+                                if (creating) return;
                                 const formData = new FormData(e.currentTarget);
+                                const name = String(formData.get('name') || '').trim();
+                                const code = String(formData.get('code') || '').trim() || nextVendorCode();
+                                // vendors.code has no unique constraint; check here like the bulk import does.
+                                const clash = vendors.find(v => (v.code || '').toLowerCase() === code.toLowerCase() || v.name.trim().toLowerCase() === name.toLowerCase());
+                                if (clash) { showToast(`${clash.name} (${clash.code || 'no code'}) already exists.`, 'warning'); return; }
                                 const newVendor: Vendor = {
                                     id: crypto.randomUUID(),
-                                    name: formData.get('name') as string,
-                                    code: formData.get('code') as string || `V-${Math.floor(Math.random() * 1000)}`,
+                                    name,
+                                    code,
                                     type: formData.get('type') as any,
                                     active: true,
                                     email: formData.get('email') as string,
                                     phone: formData.get('phone') as string,
                                     address: { street: '', city: '', state: '', zip: '', country: '' }
                                 };
+                                setCreating(true);
                                 try {
-                                    await DatabaseService.getInstance().addVendor(newVendor);
-                                    loadData();
+                                    const created = await DatabaseService.getInstance().addVendor(newVendor);
+                                    await loadData();
                                     setIsAddModalOpen(false);
+                                    setSelectedVendor(created);
+                                    setSavedSnapshot(JSON.stringify(created));
+                                    showToast(`${created.name} created.`, 'success');
                                 } catch (err: any) { showToast(err.message, 'error'); }
+                                finally { setCreating(false); }
                             }}>
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700">Name</label>
                                         <input name="name" required className="w-full p-2 border border-slate-300 rounded" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700">Code</label>
+                                        <input name="code" placeholder={nextVendorCode()} className="w-full p-2 border border-slate-300 rounded font-mono" />
+                                        <p className="mt-1 text-xs text-slate-500">Leave blank to use {nextVendorCode()}.</p>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700">Type</label>
@@ -947,7 +958,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                 </div>
                                 <div className="mt-6 flex justify-end gap-2">
                                     <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-4 py-2 text-slate-700 hover:bg-slate-100 rounded">Cancel</button>
-                                    <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-500">Create Vendor</button>
+                                    <button type="submit" disabled={creating} className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50">{creating ? 'Creating...' : 'Create Vendor'}</button>
                                 </div>
                             </form>
                         </div>

@@ -73,6 +73,9 @@ export interface SaveReadingsResult {
     /** Non-fatal, user-facing (duplicate meter reading skipped, rollover detected…). */
     warnings: string[];
     errors: string[];
+    /** Definition ids whose reading was NOT saved (error or skipped) — the entry
+     *  sheet keeps those values so nobody retypes a round. */
+    failedIds: string[];
 }
 
 const sameName = (a?: string, b?: string) => (a || '').trim().toUpperCase() === (b || '').trim().toUpperCase();
@@ -127,6 +130,7 @@ export async function saveReadings(readings: ReadingInput[], ctx: SaveReadingsCt
     const outDefs = [...ctx.definitions];
     const breaches: BreachInfo[] = [];
     const warnings: string[] = [];
+    const failedIds: string[] = [];
     const errors: string[] = [];
     const meterCtx: { assetId: string; ctx: MeterReadingCtx }[] = [];
     let queuedAny = false;
@@ -162,6 +166,7 @@ export async function saveReadings(readings: ReadingInput[], ctx: SaveReadingsCt
             const dup = outLogs.some(l => l.definitionId === def.id && l.date === readingDate && l.isActive !== false);
             if (dup) {
                 warnings.push(`A meter reading for '${def.name}' already exists for ${readingDate}. Deactivate it before entering another.`);
+                failedIds.push(def.id);
                 continue;
             }
         }
@@ -288,6 +293,7 @@ export async function saveReadings(readings: ReadingInput[], ctx: SaveReadingsCt
         } catch (e: any) {
             console.error('Failed to save reading', e);
             errors.push(`Failed to save '${def.name}': ${e?.message || 'unknown error'}`);
+            failedIds.push(def.id);
         }
     }
 
@@ -306,5 +312,5 @@ export async function saveReadings(readings: ReadingInput[], ctx: SaveReadingsCt
         }
     }
 
-    return { logs: outLogs, definitions: outDefs, breaches, pmDue, queuedAny, propagatedCount, warnings, errors };
+    return { logs: outLogs, definitions: outDefs, breaches, pmDue, queuedAny, propagatedCount, warnings, errors, failedIds };
 }

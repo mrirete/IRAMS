@@ -22,6 +22,8 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [versioning, setVersioning] = useState(false);
 
     const [editingTask, setEditingTask] = useState<LibraryTask | null>(null);
     const [showModal, setShowModal] = useState(false);
@@ -46,11 +48,13 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
 
     const loadTasks = async () => {
         setLoading(true);
+        setLoadError(null);
         try {
             const data = await db.getLibraryTasks();
             setTasks(data);
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to load library tasks", e);
+            setLoadError(e?.message || 'The library could not be loaded.');
         } finally {
             setLoading(false);
         }
@@ -117,6 +121,9 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
 
     // Enhancement 3: Create new version of a locked template (MoC workflow)
     const handleCreateNewVersion = async (taskId: string) => {
+        if (!canCreateTL) { alert('Your role cannot create task templates (needs Task Library · Create).'); return; }
+        if (versioning) return;
+        setVersioning(true);
         try {
             const newVersion = await db.createNewVersion(taskId, user?.id || 'unknown');
             if (newVersion) {
@@ -127,6 +134,8 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
             }
         } catch (e: any) {
             alert('Error creating new version: ' + (e.message || e));
+        } finally {
+            setVersioning(false);
         }
     };
 
@@ -246,14 +255,25 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
                                     <span className="flex items-center gap-1"><Clock size={12} /> {task.estimatedDuration}h</span>
                                     <span className="flex items-center gap-1"><CheckSquare size={12} /> {task.instructions?.length || 0} Steps</span>
                                 </div>
-                                <span className="flex items-center gap-1"><Layers size={12} /> {(task.inventory?.length || 0) + (task.roles?.length || 0)} Res</span>
+                                {task.resourceCount != null && (
+                                    <span className="flex items-center gap-1" title="Roles and parts on this template"><Layers size={12} /> {task.resourceCount} resource{task.resourceCount === 1 ? '' : 's'}</span>
+                                )}
                             </div>
                         </div>
                     ))}
-                    {filteredTasks.length === 0 && (
+                    {loadError && (
+                        <div className="col-span-full p-4 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800 flex items-center justify-between gap-3">
+                            <span>The library could not be loaded: {loadError}</span>
+                            <button onClick={loadTasks} className="px-3 py-1 rounded-md bg-white border border-red-300 text-red-700 text-xs font-semibold hover:bg-red-100">Retry</button>
+                        </div>
+                    )}
+                    {loading && tasks.length === 0 && !loadError && (
+                        <div className="col-span-full py-12 text-center text-sm text-slate-400">Loading templates...</div>
+                    )}
+                    {!loading && !loadError && filteredTasks.length === 0 && (
                         <div className="col-span-full py-12 text-center text-slate-400">
                             <BookOpen className="mx-auto mb-4 opacity-50" size={48} />
-                            <p>No templates found matching your search.</p>
+                            <p>{tasks.length === 0 ? 'No templates yet. Create one to reuse it on work orders.' : 'No templates match your search.'}</p>
                         </div>
                     )}
                 </div>
@@ -265,6 +285,10 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
                     task={editingTask}
                     onClose={() => setShowModal(false)}
                     onSave={async (t, inv, roles, files) => {
+                        if (!String(t.title || '').trim() || !String(t.code || '').trim()) {
+                            alert('A template needs a code and a title.');
+                            return;
+                        }
                         try {
                             if (!t.id) {
                                 // Create
@@ -300,7 +324,9 @@ const TaskEditorModal: React.FC<{
     const [roles, setRoles] = useState<any[]>(task.roles || []);
     const [localFiles, setLocalFiles] = useState<any[]>(task.files || []);
 
-    // AI State
+    // Save in flight (a double-click on a new template created two)
+    const [saving, setSaving] = useState(false);
+    // Keyword suggestion state
     const [isThinking, setIsThinking] = useState(false);
     // Real stock, so part suggestions reference items that actually exist.
     const [stockItems, setStockItems] = useState<any[]>([]);
@@ -312,10 +338,12 @@ const TaskEditorModal: React.FC<{
         return () => { active = false; };
     }, []);
 
-    // Heuristic AI Suggestion
+    // Keyword suggestion: matches words in the title/description to crafts and
+    // real stock. It is a rule, not AI, so it runs at once (it used to sit on a
+    // fixed 1.5 s "Analyzing Task..." spinner).
     const handleAutoSuggest = () => {
         setIsThinking(true);
-        setTimeout(() => {
+        {
             // Heuristics based on description
             const desc = (formData.description + " " + formData.title).toLowerCase();
             const newRoles = [...roles];
@@ -363,7 +391,7 @@ const TaskEditorModal: React.FC<{
             }
 
             setIsThinking(false);
-        }, 1500);
+        }
     };
 
     return (
@@ -487,7 +515,7 @@ const TaskEditorModal: React.FC<{
                                     className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 rounded-full border border-blue-100 transition-colors disabled:opacity-50"
                                 >
                                     <Sparkles size={12} className={isThinking ? "animate-spin" : ""} />
-                                    {isThinking ? 'Analyzing Task...' : 'Auto-Suggest Resources'}
+                                    {isThinking ? 'Suggesting...' : 'Suggest from keywords'}
                                 </button>
                             </div>
                             <textarea
@@ -504,7 +532,7 @@ const TaskEditorModal: React.FC<{
                                 type="number"
                                 className="w-full p-2 border rounded text-sm"
                                 value={formData.estimatedDuration}
-                                onChange={e => setFormData({ ...formData, estimatedDuration: parseFloat(e.target.value) })}
+                                onChange={e => setFormData({ ...formData, estimatedDuration: e.target.value === '' ? 0 : (Number(e.target.value) || 0) })}
                                 disabled={formData.isLocked}
                             />
                         </div>
@@ -557,7 +585,7 @@ const TaskEditorModal: React.FC<{
                                     const url = await promptModal({
                                         title: 'Add Document or Media Link',
                                         message: 'Enter direct URL to technical document or manual:',
-                                        defaultValue: 'https://example.com/manual.pdf',
+                                        defaultValue: '',
                                         placeholder: 'https://...',
                                         confirmLabel: 'Attach File',
                                         icon: <FileText size={20} className="text-blue-600" />
@@ -619,10 +647,15 @@ const TaskEditorModal: React.FC<{
                 <div className="p-4 border-t bg-slate-50 flex justify-end gap-3">
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium">Cancel</button>
                     <button
-                        onClick={() => onSave(formData, inventory, roles, localFiles)}
-                        className="px-6 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-500 shadow-sm"
+                        onClick={async () => {
+                            if (saving) return;
+                            setSaving(true);
+                            try { await onSave(formData, inventory, roles, localFiles); } finally { setSaving(false); }
+                        }}
+                        disabled={saving}
+                        className="px-6 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-500 shadow-sm disabled:opacity-50"
                     >
-                        Save Template
+                        {saving ? 'Saving...' : 'Save Template'}
                     </button>
                 </div>
             </div>

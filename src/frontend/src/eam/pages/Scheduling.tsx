@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
     Calendar as CalendarIcon, List, BarChart2, ChevronLeft, ChevronRight,
     Filter, Search, Clock, AlertTriangle, CheckCircle, User, GripVertical,
@@ -95,6 +95,44 @@ function getPriorityLegend(dictionaries: DictionaryEntry[]): { code: string; des
             description: p.description,
             hex: p.colorCode || DEFAULT_PRIORITY_PALETTE[Math.min(i, DEFAULT_PRIORITY_PALETTE.length - 1)].hex
         }));
+}
+
+/**
+ * One row → WorkOrder mapping for the scheduler. The loader and the revert path
+ * each had their own copy and neither read assigned_to, so Crew showed every
+ * technician free, Backlog showed every order unassigned, and the overload
+ * check and the technician's reschedule notice never fired.
+ */
+function mapScheduleWO(raw: any, assetMap: Record<string, string>): WorkOrder {
+    return {
+        id: raw.id,
+        woNumber: raw.wo_number,
+        title: raw.title || raw.wo_number || 'Untitled',
+        description: raw.description || '',
+        status: raw.status || 'OPEN',
+        type: raw.type || 'CM',
+        scope: raw.properties?.scope || 'STANDARD',
+        priority: raw.priority_code || 'MEDIUM',
+        assetId: raw.asset_id,
+        assetName: assetMap[raw.asset_id] || raw.asset_id || 'Unknown',
+        parentWoId: raw.parent_wo_id,
+        recurringWorkId: raw.recurring_work_id,
+        assignedTo: raw.assigned_to || undefined,
+        costCenter: raw.cost_center_id,
+        enforceJobCostCenter: raw.properties?.enforceJobCostCenter || false,
+        dateCreated: raw.created_at,
+        dateDueStart: raw.date_due_start || raw.due_date || '',
+        dueDate: raw.due_date || raw.date_due_start || '',
+        estDuration: raw.est_duration || 0,
+        estDowntime: raw.properties?.est_downtime || 0,
+        actualDuration: raw.properties?.actual_duration || 0,
+        actualDowntime: raw.properties?.actual_downtime || 0,
+        createdById: raw.created_by || 'system',
+        comments: raw.properties?.comments,
+        tasks: [],
+        labor: [],
+        inventory: [],
+    } as WorkOrder;
 }
 
 // --- Date Helpers ---
@@ -228,13 +266,13 @@ export const Scheduling: React.FC = () => {
 
     // Frozen zone modal state
     const [frozenModalOpen, setFrozenModalOpen] = useState(false);
-    const [frozenPendingAction, setFrozenPendingAction] = useState<{ itemId: string; newDate: string; source: 'WO' | 'PM'; originalDate: string; woNumber: string; woTitle: string; criticality?: string } | null>(null);
+    const [frozenPendingAction, setFrozenPendingAction] = useState<{ itemId: string; newDate: string; endDate?: string; source: 'WO' | 'PM'; originalDate: string; woNumber: string; woTitle: string; criticality?: string } | null>(null);
     const [assetCritMap, setAssetCritMap] = useState<Record<string, string>>({}); // R-3: asset id → criticality
 
     // Material check modal state
     const [materialModalOpen, setMaterialModalOpen] = useState(false);
     const [materialCheckResult, setMaterialCheckResult] = useState<any>(null);
-    const [materialPendingAction, setMaterialPendingAction] = useState<{ itemId: string; newDate: string; woNumber: string; woTitle: string } | null>(null);
+    const [materialPendingAction, setMaterialPendingAction] = useState<{ itemId: string; newDate: string; endDate?: string; woNumber: string; woTitle: string } | null>(null);
 
     // Print/Export modal state
     const [printModalOpen, setPrintModalOpen] = useState(false);
@@ -248,8 +286,15 @@ export const Scheduling: React.FC = () => {
     // GAP-D: materialStatusMap for KPIs — batch-checked on load
     const [materialStatusMap, setMaterialStatusMap] = useState<Record<string, 'AVAILABLE' | 'ON_ORDER' | 'SHORTAGE' | 'UNCHECKED'>>({});
 
+    // Load once on open whatever the view — Ready Backlog (weeks) and the AI
+    // context divide by crew capacity, which read 0 ("—") until someone opened
+    // Resources. After that, reload per week only while Resources is showing.
+    // Keyed on the contact count: the first pass runs before the crew list has
+    // arrived, and capacity falls back to those contacts.
+    const mrsLoadedFor = useRef(-1);
     useEffect(() => {
-        if (viewMode !== 'MRS') return;
+        if (viewMode !== 'MRS' && mrsLoadedFor.current === laborContacts.length) return;
+        mrsLoadedFor.current = laborContacts.length;
         const loadMRS = async () => {
             setMrsLoading(true);
             try {
@@ -354,39 +399,7 @@ export const Scheduling: React.FC = () => {
                         setAssetCritMap(critMap);
                     } catch { /* use empty map */ }
 
-                    const mappedWOs: WorkOrder[] = rawWOs.map((raw: any) => ({
-                        id: raw.id,
-                        woNumber: raw.wo_number,
-                        title: raw.title || raw.wo_number || 'Untitled',
-                        description: raw.description || '',
-                        status: raw.status || 'OPEN',
-                        type: raw.type || 'CM',
-                        scope: raw.properties?.scope || 'STANDARD',
-                        priority: raw.priority_code || 'MEDIUM',
-
-                        assetId: raw.asset_id,
-                        assetName: assetMap[raw.asset_id] || raw.asset_id || 'Unknown',
-                        parentWoId: raw.parent_wo_id,
-                        recurringWorkId: raw.recurring_work_id,
-
-                        costCenter: raw.cost_center_id,
-                        enforceJobCostCenter: raw.properties?.enforceJobCostCenter || false,
-
-                        dateCreated: raw.created_at,
-                        dateDueStart: raw.date_due_start || raw.due_date || '',
-                        dueDate: raw.due_date || raw.date_due_start || '',
-                        estDuration: raw.est_duration || 0,
-                        estDowntime: raw.properties?.est_downtime || 0,
-                        actualDuration: raw.properties?.actual_duration || 0,
-                        actualDowntime: raw.properties?.actual_downtime || 0,
-
-                        createdById: raw.created_by || 'system',
-                        comments: raw.properties?.comments,
-
-                        tasks: [],
-                        labor: [],
-                        inventory: [],
-                    }));
+                    const mappedWOs: WorkOrder[] = rawWOs.map((raw: any) => mapScheduleWO(raw, assetMap));
 
                     setJobs(mappedWOs);
                     console.log(`[Scheduling] Loaded ${mappedWOs.length} live work orders`);
@@ -521,7 +534,13 @@ export const Scheduling: React.FC = () => {
                         projectedDate = new Date((rj as any).nextDueDate).toISOString().split('T')[0];
                     }
 
-                    if (projectedDate) {
+                    // A projection the planner already committed (or the PM
+                    // generator already raised) is real work now — drawing it
+                    // again invited a second drag and a duplicate order.
+                    const alreadyRaised = jobs.some(j =>
+                        j.recurringWorkId === rj.id && j.assetId === assignment.assetId &&
+                        !NON_RESCHEDULABLE_STATUSES.includes(j.status as string));
+                    if (projectedDate && !alreadyRaised) {
                         // Resolve asset name: try live map, then mock assets, then fallback
                         const assetName = liveAssetMap[assignment.assetId]
                             || MOCK_ASSETS.find(a => a.id === assignment.assetId)?.tag
@@ -542,7 +561,7 @@ export const Scheduling: React.FC = () => {
             }
         });
         return items;
-    }, [recurringJobs, showProjections, liveAssetMap]);
+    }, [recurringJobs, showProjections, liveAssetMap, jobs]);
 
     // 1b. Predicted-failure markers (Predict → WM planning horizon): each RUL
     // estimate anchors at its computed_at + rul_days. Advisory only — planners
@@ -600,6 +619,27 @@ export const Scheduling: React.FC = () => {
             }));
     }, [jobs]);
 
+    // 2b. Unscheduled pool: open work with no date. It used to be filtered out of
+    // the very list the pool was then built from, so it was always empty.
+    const poolItems = useMemo<CalendarItem[]>(() => {
+        const q = searchQuery.trim().toLowerCase();
+        return jobs
+            .filter(j => !j.dateDueStart && !NON_RESCHEDULABLE_STATUSES.includes(j.status as string))
+            .filter(j => !q || [j.title, j.assetName, j.woNumber].some(v => (v || '').toLowerCase().includes(q)))
+            .map(j => ({
+                id: j.id,
+                displayId: j.woNumber || j.id,
+                title: j.title,
+                assetName: j.assetName || 'Unknown',
+                date: '',
+                priority: j.priority,
+                type: 'WO' as const,
+                status: j.status,
+                isFromPM: !!j.recurringWorkId,
+                originalData: j,
+            }));
+    }, [jobs, searchQuery]);
+
     // 3. Combined & Filtered
     const allItems = useMemo(() => {
         const combined = [...workOrderItems, ...projections, ...riskItems];
@@ -610,11 +650,12 @@ export const Scheduling: React.FC = () => {
             item.assetName.toLowerCase().includes(q) ||
             item.displayId.toLowerCase().includes(q)
         );
-    }, [workOrderItems, projections, searchQuery]);
+    }, [workOrderItems, projections, riskItems, searchQuery]);
 
     // 4. Handle Drag & Drop Actions — synced to Supabase
     //    Phase 1: Status Gate + Frozen Zone + Auto SCHED transition
-    const handleItemDrop = async (itemId: string, newDate: string, source: 'WO' | 'PM') => {
+    // endDate: a Gantt drag keeps the bar's length; calendar drops leave it unset (due = start).
+    const handleItemDrop = async (itemId: string, newDate: string, source: 'WO' | 'PM', endDate?: string) => {
         // RISK markers are advisory — never reschedulable (belt & braces; they
         // also aren't draggable in the renderers).
         if (source !== 'WO' && source !== 'PM') return;
@@ -643,6 +684,7 @@ export const Scheduling: React.FC = () => {
                 setFrozenPendingAction({
                     itemId,
                     newDate,
+                    endDate,
                     source,
                     originalDate: wo?.dateDueStart || '',
                     woNumber: wo?.woNumber || itemId,
@@ -654,7 +696,7 @@ export const Scheduling: React.FC = () => {
             }
 
             // Execute the reschedule
-            await executeReschedule(itemId, newDate, source);
+            await executeReschedule(itemId, newDate, source, endDate);
         } else {
             // PM Projection → Create real Work Order in DB
             await executePMCommit(itemId, newDate);
@@ -726,7 +768,7 @@ export const Scheduling: React.FC = () => {
         showToast(`Schedule override logged: ${reason}`, 'warning');
 
         if (frozenPendingAction.source === 'WO') {
-            await executeReschedule(frozenPendingAction.itemId, frozenPendingAction.newDate, frozenPendingAction.source);
+            await executeReschedule(frozenPendingAction.itemId, frozenPendingAction.newDate, frozenPendingAction.source, frozenPendingAction.endDate);
         } else {
             await executePMCommit(frozenPendingAction.itemId, frozenPendingAction.newDate);
         }
@@ -734,7 +776,7 @@ export const Scheduling: React.FC = () => {
     };
 
     // Core reschedule execution (WO)
-    const executeReschedule = async (itemId: string, newDate: string, _source: 'WO' | 'PM') => {
+    const executeReschedule = async (itemId: string, newDate: string, _source: 'WO' | 'PM', endDate?: string) => {
         const db = DatabaseService.getInstance();
         const wo = jobs.find(j => j.id === itemId);
 
@@ -752,7 +794,7 @@ export const Scheduling: React.FC = () => {
             if (!materialResult.ready && materialResult.items.length > 0) {
                 // Show material check modal instead of scheduling immediately
                 setMaterialCheckResult(materialResult);
-                setMaterialPendingAction({ itemId, newDate, woNumber: wo?.woNumber || '', woTitle: wo?.title || '' });
+                setMaterialPendingAction({ itemId, newDate, endDate, woNumber: wo?.woNumber || '', woTitle: wo?.title || '' });
                 setMaterialModalOpen(true);
                 return; // Execution continues in handleMaterialScheduleAnyway or handleMaterialScheduleSuggested
             }
@@ -762,7 +804,7 @@ export const Scheduling: React.FC = () => {
         }
 
         // No material issues — proceed with scheduling
-        await commitReschedule(itemId, newDate, wo || null);
+        await commitReschedule(itemId, newDate, wo || null, endDate);
     };
 
     // Material check handlers
@@ -785,7 +827,7 @@ export const Scheduling: React.FC = () => {
         });
         showToast(`Scheduled despite shortage: ${reason}`, 'warning');
         const wo = jobs.find(j => j.id === materialPendingAction.itemId);
-        await commitReschedule(materialPendingAction.itemId, materialPendingAction.newDate, wo || null);
+        await commitReschedule(materialPendingAction.itemId, materialPendingAction.newDate, wo || null, materialPendingAction.endDate);
         setMaterialPendingAction(null);
     };
 
@@ -854,7 +896,8 @@ export const Scheduling: React.FC = () => {
     };
 
     // Shared commit logic for reschedule
-    const commitReschedule = async (itemId: string, newDate: string, wo: WorkOrder | null) => {
+    const commitReschedule = async (itemId: string, newDate: string, wo: WorkOrder | null, endDate?: string) => {
+        const due = endDate || newDate;
         const db = DatabaseService.getInstance();
 
         // AUTO SCHED TRANSITION
@@ -865,7 +908,7 @@ export const Scheduling: React.FC = () => {
             j.id === itemId ? {
                 ...j,
                 dateDueStart: newDate,
-                dueDate: newDate,
+                dueDate: due,
                 status: (newStatus || j.status) as any
             } : j
         ));
@@ -875,7 +918,7 @@ export const Scheduling: React.FC = () => {
             const oldDate = wo?.dateDueStart || '';
             await db.scheduleWorkOrder(itemId, {
                 date_due_start: newDate,
-                due_date: newDate,
+                due_date: due,
                 status: newStatus || 'SCHED',
             }, (profile?.username || 'scheduler') as string);
             showToast(`${wo?.woNumber || 'WO'} scheduled for ${new Date(newDate).toLocaleDateString()}`, 'success');
@@ -911,17 +954,7 @@ export const Scheduling: React.FC = () => {
                         const assets = await db.getAssets();
                         assets.forEach((a: any) => { assetMap[a.id] = a.tag || a.name || 'Unknown'; });
                     } catch { /* ignore */ }
-                    setJobs(rawWOs.map((raw: any) => ({
-                        id: raw.id, woNumber: raw.wo_number, title: raw.title || raw.wo_number || 'Untitled',
-                        description: raw.description || '', status: raw.status || 'OPEN', type: raw.type || 'CM',
-                        scope: raw.properties?.scope || 'STANDARD', priority: raw.priority_code || 'MEDIUM',
-                        assetId: raw.asset_id, assetName: assetMap[raw.asset_id] || raw.asset_id || 'Unknown',
-                        dateCreated: raw.created_at, dateDueStart: raw.date_due_start || raw.due_date || '',
-                        dueDate: raw.due_date || raw.date_due_start || '', estDuration: raw.est_duration || 0,
-                        estDowntime: raw.properties?.est_downtime || 0, actualDuration: raw.properties?.actual_duration || 0,
-                        actualDowntime: raw.properties?.actual_downtime || 0, createdById: raw.created_by || 'system',
-                        tasks: [], labor: [], inventory: [],
-                    })));
+                    setJobs(rawWOs.map((raw: any) => mapScheduleWO(raw, assetMap)));
                 }
             } catch { /* last resort: keep stale state */ }
         }
@@ -937,7 +970,7 @@ export const Scheduling: React.FC = () => {
 
         try {
             const woPayload = buildWorkOrder({
-                woNumber: `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+                woNumber: await db.nextWorkOrderNumber(),
                 title: rj.jobDescription || rj.description,
                 description: rj.jobDescription || rj.description,
                 status: 'SCHED', // Auto-set to SCHED since we have a date
@@ -1130,6 +1163,7 @@ export const Scheduling: React.FC = () => {
                             currentDate={currentDate}
                             setDate={setCurrentDate}
                             items={allItems}
+                            pool={poolItems}
                             onItemDrop={handleItemDrop}
                             scale={calendarScale}
                             onNavigate={navigateDate}
@@ -1141,47 +1175,14 @@ export const Scheduling: React.FC = () => {
                     <InteractiveGantt
                         jobs={jobs}
                         dictionaries={dictionaries}
-                        onReschedule={async (woId, newStart, newEnd) => {
-                            const db = DatabaseService.getInstance();
-                            const wo = jobs.find(j => j.id === woId);
-                            if (!wo) return;
-
-                            // Status gate
-                            if (NON_RESCHEDULABLE_STATUSES.includes(wo.status as string)) {
-                                showToast(`Cannot reschedule — WO is ${wo.status}`, 'error');
-                                return;
-                            }
-
-                            // Optimistic UI
-                            setJobs(prev => prev.map(j => j.id === woId ? {
-                                ...j,
-                                dateDueStart: newStart,
-                                dueDate: newEnd,
-                                status: (j.status === 'OPEN' || j.status === 'PLAN') ? 'SCHED' as any : j.status,
-                            } : j));
-
-                            try {
-                                await db.scheduleWorkOrder(woId, {
-                                    date_due_start: newStart,
-                                    due_date: newEnd,
-                                    status: (wo.status === 'OPEN' || wo.status === 'PLAN') ? 'SCHED' : wo.status as string,
-                                }, (profile?.username || 'scheduler') as string);
-                                showToast(`${wo.woNumber} rescheduled: ${new Date(newStart).toLocaleDateString()} — ${new Date(newEnd).toLocaleDateString()}`, 'success');
-                            } catch (err) {
-                                console.error('[Gantt] Reschedule failed:', err);
-                                showToast('Reschedule failed — reverting', 'error');
-                                // Revert optimistic UI
-                                setJobs(prev => prev.map(j => j.id === woId ? {
-                                    ...j,
-                                    dateDueStart: wo.dateDueStart,
-                                    dueDate: wo.dueDate,
-                                    status: wo.status,
-                                } : j));
-                            }
-                        }}
+                        priorityHex={(code) => getPriorityStyle(code, dictionaries).hex}
+                        // Same path as a calendar drop: permission, status gate, frozen
+                        // zone, materials, conflicts and the technician's notice. The
+                        // Gantt used to write the dates directly and skip all of them.
+                        onReschedule={(woId, newStart, newEnd) => { handleItemDrop(woId, newStart, 'WO', newEnd); }}
                     />
                 )}
-                {viewMode === 'BACKLOG' && <BacklogView jobs={jobs} onJobsUpdate={setJobs} dictionaries={dictionaries} laborContacts={laborContacts} />}
+                {viewMode === 'BACKLOG' && <BacklogView jobs={jobs} onJobsUpdate={setJobs} dictionaries={dictionaries} laborContacts={laborContacts} canEdit={canSchedule} />}
                 {viewMode === 'CREW' && <CrewBoard jobs={jobs} contacts={laborContacts} />}
                 {viewMode === 'MRS' && (
                     <div className="flex flex-col h-full">
@@ -1321,11 +1322,12 @@ const CalendarView: React.FC<{
     currentDate: Date;
     setDate: (d: Date) => void;
     items: CalendarItem[];
+    pool: CalendarItem[];
     onItemDrop: (id: string, date: string, type: 'WO' | 'PM') => void;
     scale: CalendarScale;
     onNavigate: (dir: number) => void;
     dictionaries: DictionaryEntry[];
-}> = ({ currentDate, setDate, items, onItemDrop, scale, onNavigate, dictionaries }) => {
+}> = ({ currentDate, setDate, items, pool, onItemDrop, scale, onNavigate, dictionaries }) => {
     const navigate = useNavigate();
     const { showToast } = useToast();
     const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -1418,7 +1420,7 @@ const CalendarView: React.FC<{
     };
 
     // Unscheduled sidebar items
-    const unscheduledJobs = items.filter(i => i.type === 'WO' && (!i.date));
+    const unscheduledJobs = pool;
 
     // GAP-I: Mobile vertical day list — shows 5 rolling days
     if (isMobile) {
@@ -1769,8 +1771,10 @@ const DayGrid: React.FC<{
 // 3. BACKLOG VIEW
 // ========================================
 
-const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) => void, dictionaries: DictionaryEntry[], laborContacts?: Contact[] }> = ({ jobs, onJobsUpdate, dictionaries, laborContacts }) => {
+const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) => void, dictionaries: DictionaryEntry[], laborContacts?: Contact[], canEdit: boolean }> = ({ jobs, onJobsUpdate, dictionaries, laborContacts, canEdit }) => {
     const navigate = useNavigate();
+    const { showToast } = useToast();
+    const [savingPriority, setSavingPriority] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [filterPriority, setFilterPriority] = useState('ALL');
     const [backlogSearch, setBacklogSearch] = useState('');
@@ -1803,10 +1807,25 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
         window.dispatchEvent(event);
     };
 
-    const handleBulkPriority = (priority: string) => {
-        const updated = jobs.map(j => selectedIds.has(j.id) ? { ...j, priority } : j);
-        onJobsUpdate(updated);
-        setSelectedIds(new Set());
+    // The most urgent code in the tenant's own priority list (was a hard-coded 'P1').
+    const topPriority = priorities[0];
+
+    // Saved, then shown: it only ever changed the screen, so rows reverted on refresh.
+    const handleBulkPriority = async (priority: string) => {
+        if (!canEdit) { showToast('Your role can view the schedule but not change it (needs Scheduling · Edit).', 'error'); return; }
+        const ids = Array.from(selectedIds);
+        setSavingPriority(true);
+        try {
+            const changed = new Set(await DatabaseService.getInstance().setWorkOrdersPriority(ids, priority));
+            onJobsUpdate(jobs.map(j => changed.has(j.id) ? { ...j, priority } : j));
+            setSelectedIds(new Set());
+            if (changed.size < ids.length) showToast(`${changed.size} of ${ids.length} set to ${priority}; the rest were not changed (no permission or already closed).`, 'warning');
+            else showToast(`${changed.size} work order${changed.size === 1 ? '' : 's'} set to ${priority}.`, 'success');
+        } catch (e: any) {
+            showToast('Priority not saved: ' + (e?.message || e), 'error');
+        } finally {
+            setSavingPriority(false);
+        }
     };
 
     return (
@@ -1836,9 +1855,11 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                         <Button variant="secondary" size="sm" onClick={handleBulkAssign} leftIcon={<UserPlus size={16} />}>
                             Assign
                         </Button>
-                        <Button variant="secondary" size="sm" onClick={() => handleBulkPriority('P1')} leftIcon={<Zap size={16} />} className="!text-red-600 hover:!bg-red-50">
-                            Set P1 (Emergency)
-                        </Button>
+                        {topPriority && canEdit && (
+                            <Button variant="secondary" size="sm" disabled={savingPriority} onClick={() => handleBulkPriority(topPriority.code)} leftIcon={<Zap size={16} />} className="!text-red-600 hover:!bg-red-50">
+                                {savingPriority ? 'Saving…' : `Set ${topPriority.code}${topPriority.description ? ` (${topPriority.description})` : ''}`}
+                            </Button>
+                        )}
                     </div>
                 )}
             </div>

@@ -584,6 +584,8 @@ export interface InventoryTransaction {
 
 export interface LibraryTask {
   id: string;
+  /** roles + parts on the template, counted by the list query (inventory/roles are not loaded there) */
+  resourceCount?: number;
   code: string;
   title: string;
   description: string;

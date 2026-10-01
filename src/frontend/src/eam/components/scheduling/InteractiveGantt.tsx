@@ -13,6 +13,9 @@ interface InteractiveGanttProps {
     jobs: WorkOrder[];
     onReschedule?: (woId: string, newStartDate: string, newEndDate: string) => void;
     dictionaries?: DictionaryEntry[];
+    /** Tenant priority code → colour (P1…P5 or custom). Bars were all grey: the
+     *  palette below only knows EMERGENCY/HIGH/MEDIUM/LOW. */
+    priorityHex?: (code: string) => string;
 }
 
 // ── Priority Color Palette ───────────────────────────────────────────
@@ -109,6 +112,7 @@ export const InteractiveGantt: React.FC<InteractiveGanttProps> = ({
     jobs,
     onReschedule,
     dictionaries,
+    priorityHex,
 }) => {
     const navigate = useNavigate();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -250,7 +254,12 @@ export const InteractiveGantt: React.FC<InteractiveGanttProps> = ({
     const getBarColor = (job: WorkOrder) => {
         if (STATUS_COMPLETED.includes(job.status as string)) return COMPLETED_COLOR;
         const pKey = (job.priority || 'DEFAULT').toUpperCase();
-        return PRIORITY_COLORS[pKey] || PRIORITY_COLORS.DEFAULT;
+        if (PRIORITY_COLORS[pKey]) return PRIORITY_COLORS[pKey];
+        if (priorityHex && job.priority) {
+            const hex = priorityHex(job.priority);
+            return { bar: hex, barLight: `${hex}40`, text: '#1e293b' };
+        }
+        return PRIORITY_COLORS.DEFAULT;
     };
 
     // ── Month header labels ──────────────────────────────────────────

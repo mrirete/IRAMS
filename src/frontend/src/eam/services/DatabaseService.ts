@@ -510,12 +510,23 @@ export class DatabaseService {
 
     // --- VENDORS ---
 
-    public async getVendors(): Promise<Vendor[]> {
-        const { data, error } = await supabase.from('vendors').select('*');
-        if (error) {
-            console.error("Supabase Error (getVendors):", error);
-            // Fallback for logic if table doesn't exist yet in real DB but we want to simulate
-            return [];
+    /**
+     * throwOnError: the Vendor Directory passes it so a failed load shows an
+     * error with Retry instead of an empty directory. Pickers keep the quiet [].
+     */
+    public async getVendors(opts: { throwOnError?: boolean } = {}): Promise<Vendor[]> {
+        // Paged and sorted by name: one un-ranged select stopped at the API row cap.
+        const data: any[] = [];
+        for (let from = 0; ; from += 1000) {
+            const { data: page, error } = await supabase.from('vendors').select('*')
+                .order('name', { ascending: true }).range(from, from + 999);
+            if (error) {
+                console.error("Supabase Error (getVendors):", error);
+                if (opts.throwOnError) throw new Error(error.message);
+                return [];
+            }
+            data.push(...(page || []));
+            if (!page || page.length < 1000) break;
         }
 
         // Same reasoning as getContacts: `vendors` is gated on vendors.view, but
@@ -542,6 +553,9 @@ export class DatabaseService {
             website: row.contact_details?.website,
             address: row.contact_details?.address,
             primaryContactName: row.contact_details?.primaryContactName,
+            // Contractor rates ride in contact_details (no column of their own);
+            // they were edited on screen and never written anywhere.
+            properties: { rateCard: Array.isArray(row.contact_details?.rateCard) ? row.contact_details.rateCard : [] },
             createdAt: row.created_at,
             updatedAt: row.updated_at
         }));
@@ -562,7 +576,8 @@ export class DatabaseService {
                 mobile: vendor.mobile,
                 website: vendor.website,
                 address: vendor.address,
-                primaryContactName: vendor.primaryContactName
+                primaryContactName: vendor.primaryContactName,
+                rateCard: vendor.properties?.rateCard || [],
             }
         };
 
@@ -587,20 +602,24 @@ export class DatabaseService {
                 mobile: vendor.mobile,
                 website: vendor.website,
                 address: vendor.address,
-                primaryContactName: vendor.primaryContactName
+                primaryContactName: vendor.primaryContactName,
+                rateCard: vendor.properties?.rateCard || [],
             },
             updated_at: new Date().toISOString()
         };
 
-        const { error } = await supabase.from('vendors').update(row).eq('id', vendor.id);
+        // return=minimal reported success when RLS matched no row.
+        const { data, error } = await supabase.from('vendors').update(row).eq('id', vendor.id).select('id');
         if (error) throw new Error(error.message);
+        if (!data || data.length === 0) throw new Error('Vendor not saved: your role cannot edit vendors, or it no longer exists.');
 
         return vendor;
     }
 
     public async deleteVendor(id: string): Promise<void> {
-        const { error } = await supabase.from('vendors').delete().eq('id', id);
+        const { data, error } = await supabase.from('vendors').delete().eq('id', id).select('id');
         if (error) throw new Error(error.message);
+        if (!data || data.length === 0) throw new Error('Vendor not deleted: your role cannot delete vendors, or it no longer exists.');
     }
 
     // --- SUB-ENTITIES (CONTACTS) ---
@@ -655,7 +674,9 @@ export class DatabaseService {
     }
 
     public async deleteVendorModel(modelId: string): Promise<void> {
-        await supabase.from('manufacturer_models').delete().eq('id', modelId);
+        const { data, error } = await supabase.from('manufacturer_models').delete().eq('id', modelId).select('id');
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) throw new Error('Model not deleted: no permission, or it no longer exists.');
     }
 
     /** Get models by manufacturer name — checks both contacts and vendors */
@@ -2493,30 +2514,51 @@ export class DatabaseService {
         if (error) throw new Error(error.message);
     }
 
+    /**
+     * Retire a reading point: is_active = false. It leaves entry sheets and lists
+     * (getReadingDefinitions reads active points only) and its readings stay —
+     * which is what the confirm dialog promised. A hard delete either broke on
+     * the reading_logs foreign key or took the history with it.
+     */
     public async deleteReadingDefinition(id: string): Promise<void> {
-        // Logs table appears empty or broken, so we skip manual cascade.
-        // If logs existed with proper FK, we'd need cascade, but currently schema is mismatched.
-        const { error } = await supabase.from('reading_definitions').delete().eq('id', id);
+        const { data, error } = await supabase.from('reading_definitions')
+            .update({ is_active: false }).eq('id', id).select('id');
         if (error) throw new Error(error.message);
+        if (!data || data.length === 0) throw new Error('Reading point not changed — no permission, or it no longer exists.');
+    }
+
+    /** Mark readings active / inactive (meter change, bad reading). Throws unless every row changed. */
+    public async setReadingLogsActive(ids: string[], active: boolean): Promise<void> {
+        if (!ids.length) return;
+        const { data, error } = await supabase.from('reading_logs')
+            .update({ is_active: active }).in('id', ids).select('id');
+        if (error) throw new Error(error.message);
+        if ((data || []).length !== ids.length) {
+            throw new Error(`Only ${(data || []).length} of ${ids.length} readings changed — check your permission to edit readings.`);
+        }
     }
 
     public async getReadingLogs(assetId?: string): Promise<any[]> {
-        let query = supabase.from('reading_logs').select('*').order('reading_date', { ascending: false });
-        if (assetId) {
-            query = query.eq('asset_id', assetId);
+        // Paged: one un-ranged select stopped at the API row cap (1,000), so the
+        // oldest readings vanished — points read "Never" and trends were cut short.
+        const PAGE = 1000;
+        const data: any[] = [];
+        for (let from = 0; ; from += PAGE) {
+            let query = supabase.from('reading_logs').select('*')
+                .order('reading_date', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, from + PAGE - 1);
+            if (assetId) query = query.eq('asset_id', assetId);
+            const { data: page, error } = await query;
+            if (error) {
+                console.error("Error fetching reading logs:", error);
+                return [];
+            }
+            data.push(...(page || []));
+            if (!page || page.length < PAGE) break;
         }
 
-        const { data, error } = await query;
-        if (data && data.length > 0) {
-            console.log("DB LOG ROW KEYS:", Object.keys(data[0]));
-            console.log("DB LOG ROW:", data[0]);
-        }
-        if (error) {
-            console.error("Error fetching reading logs:", error);
-            return [];
-        }
-
-        return (data || []).map((row: any) => ({
+        return data.map((row: any) => ({
             id: row.id,
             definitionId: row.definition_id,
             assetId: row.asset_id,
@@ -2642,6 +2684,24 @@ export class DatabaseService {
      * Handles date updates, status transitions, and optional assignment.
      * Includes fallback if 'SCHED'/'PLAN' enum values are not yet in the DB.
      */
+    /** Next work-order number from the DB sequence (collision-safe); time-based fallback. */
+    public async nextWorkOrderNumber(): Promise<string> {
+        const { data, error } = await supabase.rpc('generate_wo_number');
+        return (error || !data) ? `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}` : data;
+    }
+
+    /** Set the priority on several work orders; returns the ids that actually changed. */
+    public async setWorkOrdersPriority(ids: string[], priorityCode: string): Promise<string[]> {
+        if (!ids.length) return [];
+        const { data, error } = await supabase
+            .from('work_orders')
+            .update({ priority_code: priorityCode, updated_at: new Date().toISOString() })
+            .in('id', ids)
+            .select('id');
+        if (error) throw error;
+        return (data || []).map((r: any) => r.id);
+    }
+
     public async scheduleWorkOrder(
         woId: string,
         updates: {
@@ -6330,9 +6390,23 @@ export class DatabaseService {
     }
 
     public async getLibraryTasks(): Promise<LibraryTask[]> {
-        const { data, error } = await supabase.from('task_library_items').select('*').order('title');
+        // Count roles + parts in the same call: the list never loaded them, so
+        // every card read "0 Res". Falls back to the plain list if the embedded
+        // count is refused (no FK relationship exposed).
+        let { data, error } = await supabase.from('task_library_items')
+            .select('*, task_library_roles(count), task_library_inventory(count)').order('title');
+        if (error) {
+            ({ data, error } = await supabase.from('task_library_items').select('*').order('title'));
+        }
         if (error) throw new Error(error.message);
-        return data.map((d: any) => this.mapLibraryTaskRow(d));
+        return (data || []).map((d: any) => {
+            const roles = d.task_library_roles?.[0]?.count;
+            const parts = d.task_library_inventory?.[0]?.count;
+            return {
+                ...this.mapLibraryTaskRow(d),
+                resourceCount: roles == null && parts == null ? undefined : (roles || 0) + (parts || 0),
+            };
+        });
     }
 
     // Enhancement 2: Filtered query by asset class code
@@ -6541,8 +6615,14 @@ export class DatabaseService {
         const original = await this.getLibraryTask(taskId);
         if (!original) throw new Error('Original template not found');
 
-        const newVersion = (original.version || 1) + 1;
-        const newCode = original.code.replace(/(-v\d+)$/, '') + `-v${newVersion}`;
+        // Next number after the highest in the family, not after the one clicked:
+        // versioning v1 twice made two "v2" templates with the same code.
+        const base = original.code.replace(/(-v\d+)$/, '');
+        const { data: family } = await supabase.from('task_library_items').select('code, version').like('code', `${base}%`);
+        const sameFamily = (family || []).filter((f: any) => f.code === base
+            || (String(f.code).startsWith(`${base}-v`) && /^\d+$/.test(String(f.code).slice(base.length + 2))));
+        const newVersion = Math.max(original.version || 1, ...sameFamily.map((f: any) => f.version || 1)) + 1;
+        const newCode = `${base}-v${newVersion}`;
 
         const newTask = await this.createLibraryTask(
             {
