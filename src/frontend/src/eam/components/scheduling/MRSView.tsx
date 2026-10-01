@@ -596,7 +596,8 @@ export const MRSView: React.FC<MRSViewProps> = ({
     onAssignJob,
     loading = false,
 }) => {
-    const [poolOpen, setPoolOpen] = useState(true);
+    // On a phone the open pool covered the grid it feeds, so it starts closed there.
+    const [poolOpen, setPoolOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 768);
     const [myScheduleMode, setMyScheduleMode] = useState(false);
     const gridRef = useRef<HTMLDivElement>(null);
     const { permissions } = useAuth();

@@ -85,6 +85,9 @@ export const ManagementOfChange: React.FC = () => {
     const [extraMoc, setExtraMoc] = useState<MocRequest | null>(null);
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [chip, setChip] = useState<'MINE' | 'RAISED' | null>(null);
+    const [filterType, setFilterType] = useState<string>('ALL');
+    const [sortBy, setSortBy] = useState<'NEWEST' | 'OLDEST' | 'UPDATED'>('NEWEST');
+    const [limit, setLimit] = useState(50);
     const [searchTerm, setSearchTerm] = useState('');
     const [userNames, setUserNames] = useState<Record<string, string>>({});
     const me = profile?.id || null;
@@ -93,12 +96,21 @@ export const ManagementOfChange: React.FC = () => {
         setLoading(true);
         setLoadError(null);
         try {
-            const { data, error } = await supabase
-                .from('moc_requests')
-                .select('*')
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            setRequests((data || []) as MocRequest[]);
+            // Paged: one un-ranged select stopped at the API row cap (1,000) and
+            // the oldest requests dropped off without a word.
+            const all: MocRequest[] = [];
+            for (let from = 0; ; from += 1000) {
+                const { data, error } = await supabase
+                    .from('moc_requests')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .order('id', { ascending: true })
+                    .range(from, from + 999);
+                if (error) throw error;
+                all.push(...((data || []) as MocRequest[]));
+                if (!data || data.length < 1000) break;
+            }
+            setRequests(all);
         } catch (err: any) {
             console.error('Failed to fetch MoC requests:', err);
             setLoadError(err?.message || 'Requests could not be loaded.');
@@ -147,6 +159,7 @@ export const ManagementOfChange: React.FC = () => {
 
     const filteredRequests = requests.filter(r => {
         if (filterStatus !== 'ALL' && r.status !== filterStatus) return false;
+        if (filterType !== 'ALL' && r.change_type !== filterType) return false;
         if (chip === 'MINE' && !needsMe(r)) return false;
         if (chip === 'RAISED' && r.requested_by !== me) return false;
         if (searchTerm) {
@@ -156,6 +169,16 @@ export const ManagementOfChange: React.FC = () => {
         }
         return true;
     });
+
+    const sortedRequests = useMemo(() => {
+        const t = (d: string | null) => (d ? new Date(d).getTime() : 0);
+        const list = [...filteredRequests];
+        if (sortBy === 'OLDEST') list.sort((a, b) => t(a.created_at) - t(b.created_at));
+        else if (sortBy === 'UPDATED') list.sort((a, b) => t(b.updated_at) - t(a.updated_at));
+        else list.sort((a, b) => t(b.created_at) - t(a.created_at));
+        return list;
+    }, [filteredRequests, sortBy]);
+    useEffect(() => { setLimit(50); }, [filterStatus, filterType, chip, searchTerm, sortBy]);
 
     const APPROVER_STEPS = ['UNDER_REVIEW', 'APPROVED', 'REJECTED'];
 
@@ -247,15 +270,27 @@ export const ManagementOfChange: React.FC = () => {
                         className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200"
                     />
                 </div>
+                {/* Status is the tile row below; this was a second copy of it. */}
                 <select
-                    value={filterStatus}
-                    onChange={e => setFilterStatus(e.target.value)}
+                    value={filterType}
+                    onChange={e => setFilterType(e.target.value)}
+                    aria-label="Change type"
                     className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
-                    <option value="ALL">All Statuses</option>
-                    {Object.keys(STATUS_STYLES).map(s => (
-                        <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                    <option value="ALL">All change types</option>
+                    {Object.entries(CHANGE_TYPES).map(([k, info]) => (
+                        <option key={k} value={k}>{info.label}</option>
                     ))}
+                </select>
+                <select
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                    aria-label="Sort"
+                    className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200"
+                >
+                    <option value="NEWEST">Newest first</option>
+                    <option value="OLDEST">Oldest first</option>
+                    <option value="UPDATED">Recently updated</option>
                 </select>
                 <button onClick={fetchRequests} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition">
                     <RefreshCw size={16} />
@@ -319,7 +354,7 @@ export const ManagementOfChange: React.FC = () => {
                             {requests.length === 0 && <p className="text-xs text-slate-400 mt-1">Raise a request to track changes to PM intervals, set-points, or configurations.</p>}
                         </div>
                     ) : (
-                        filteredRequests.map(moc => {
+                        sortedRequests.slice(0, limit).map(moc => {
                             const changeInfo = CHANGE_TYPES[moc.change_type] || CHANGE_TYPES.OTHER;
                             const statusStyle = STATUS_STYLES[moc.status] || STATUS_STYLES.DRAFT;
 
@@ -344,8 +379,9 @@ export const ManagementOfChange: React.FC = () => {
                                         </div>
                                         <h4 className="text-sm font-semibold text-slate-900 truncate">{moc.title}</h4>
                                         <p className="text-xs text-slate-500 truncate mt-0.5">{moc.justification}</p>
+                                        <p className="sm:hidden text-[11px] text-slate-400 mt-0.5">{new Date(moc.created_at).toLocaleDateString()}</p>
                                     </div>
-                                    <span className="text-xs text-slate-400 whitespace-nowrap">
+                                    <span className="hidden sm:inline text-xs text-slate-400 whitespace-nowrap">
                                         {new Date(moc.created_at).toLocaleDateString()}
                                     </span>
                                     <ChevronRight size={16} className="text-slate-300" />
@@ -354,6 +390,11 @@ export const ManagementOfChange: React.FC = () => {
                         })
                     )}
                 </div>
+                {sortedRequests.length > limit && (
+                    <button onClick={() => setLimit(l => l + 50)} className="w-full py-2.5 text-xs font-medium text-slate-600 border-t border-slate-100 hover:bg-slate-50">
+                        Show more · {sortedRequests.length - limit} left
+                    </button>
+                )}
             </div>
 
             {/* Detail Drawer */}

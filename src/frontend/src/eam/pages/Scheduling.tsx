@@ -4,7 +4,8 @@ import {
     Calendar as CalendarIcon, List, BarChart2, ChevronLeft, ChevronRight,
     Filter, Search, Clock, AlertTriangle, CheckCircle, User, GripVertical,
     Layers, Zap, CalendarRange, Briefcase, Lock, UserPlus, ArrowRight,
-    Repeat, Eye, EyeOff, CalendarDays, Loader2, Users, Shield
+    Repeat, Eye, EyeOff, CalendarDays, Loader2, Users, Shield,
+    MoreHorizontal, Printer, CalendarPlus, ArrowUp, ArrowDown, Archive
 } from 'lucide-react';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { aiContextService } from '../services/AIContextService';
@@ -28,9 +29,9 @@ import type { LaborResource } from '../components/scheduling/MRSView';
 import { ScheduleKPIs } from '../components/scheduling/ScheduleKPIs';
 import { CapacityChart } from '../components/scheduling/CapacityChart';
 import { InteractiveGantt } from '../components/scheduling/InteractiveGantt';
-import { SchedulePrintModal, PrintExportButton } from '../components/scheduling/SchedulePrint';
+import { SchedulePrintModal } from '../components/scheduling/SchedulePrint';
 import { NotificationService } from '../services/NotificationService';
-import { Button } from '../components/ui';
+import { Button, Modal } from '../components/ui';
 
 // --- Scheduling Constants ---
 const FROZEN_ZONE_DAYS = 7; // Industry standard — weekly schedule lock
@@ -200,9 +201,31 @@ export const Scheduling: React.FC = () => {
     const canSchedule = permissions?.scheduling?.edit === true;
     const canAssign = permissions?.scheduling?.assign === true || permissions?.workOrders?.assign === true;
     const [handoverOpen, setHandoverOpen] = useState(false);
+    // Handover and Print/Export sit behind one "More" button — the header is the
+    // view tabs and Ask Specialist; everything else is a tap away, not on show.
+    const [moreOpen, setMoreOpen] = useState(false);
+    const moreRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!moreOpen) return;
+        const close = (e: MouseEvent | TouchEvent) => {
+            if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+        };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoreOpen(false); };
+        document.addEventListener('mousedown', close);
+        document.addEventListener('touchstart', close);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', close);
+            document.removeEventListener('touchstart', close);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [moreOpen]);
     const [viewMode, setViewMode] = useState<ViewMode>('CALENDAR');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showProjections, setShowProjections] = useState(true);
+    // Finished and cancelled orders crowded the calendar and can't be moved
+    // anyway (status gate), so they are off unless asked for.
+    const [showClosed, setShowClosed] = useState(false);
     // Predict → scheduler horizon: predicted-failure markers from ers_rul_estimates
     const [showRisk, setShowRisk] = useState(true);
     const [riskItems, setRiskItems] = useState<CalendarItem[]>([]);
@@ -642,7 +665,10 @@ export const Scheduling: React.FC = () => {
 
     // 3. Combined & Filtered
     const allItems = useMemo(() => {
-        const combined = [...workOrderItems, ...projections, ...riskItems];
+        const visibleWOs = showClosed
+            ? workOrderItems
+            : workOrderItems.filter(i => !NON_RESCHEDULABLE_STATUSES.includes(i.status as string));
+        const combined = [...visibleWOs, ...projections, ...riskItems];
         if (!searchQuery.trim()) return combined;
         const q = searchQuery.toLowerCase();
         return combined.filter(item =>
@@ -650,7 +676,7 @@ export const Scheduling: React.FC = () => {
             item.assetName.toLowerCase().includes(q) ||
             item.displayId.toLowerCase().includes(q)
         );
-    }, [workOrderItems, projections, riskItems, searchQuery]);
+    }, [workOrderItems, projections, riskItems, searchQuery, showClosed]);
 
     // 4. Handle Drag & Drop Actions — synced to Supabase
     //    Phase 1: Status Gate + Frozen Zone + Auto SCHED transition
@@ -1041,7 +1067,8 @@ export const Scheduling: React.FC = () => {
                     <h1 className="text-2xl font-bold text-slate-900">Work Scheduling</h1>
                     <p className="text-sm text-slate-500">Plan maintenance, manage backlog, and optimize resource utilization.</p>
                 </div>
-                <div className="flex items-center gap-3 overflow-x-auto">
+                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-3 overflow-x-auto min-w-0">
                     <AskRelanternButton
                         contextType="scheduling"
                         contextSummary={aiContextService.buildSchedulingContext({
@@ -1091,14 +1118,42 @@ export const Scheduling: React.FC = () => {
                             <Briefcase size={16} /><span className="hidden sm:inline">Crew</span>
                         </button>
                     </div>
-                    <button
-                        onClick={() => setHandoverOpen(true)}
-                        title="Shift handover — what the next shift needs to know"
-                        className="px-3 sm:px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
-                    >
-                        <ArrowRight size={16} className="rotate-90 sm:rotate-0" /><span className="hidden sm:inline">Handover</span>
-                    </button>
-                    <PrintExportButton onClick={() => setPrintModalOpen(true)} />
+                </div>
+                    {/* Outside the scrolling strip: overflow-x-auto would clip the menu */}
+                    <div className="relative flex-shrink-0" ref={moreRef}>
+                        <button
+                            onClick={() => setMoreOpen(o => !o)}
+                            aria-haspopup="menu"
+                            aria-expanded={moreOpen}
+                            title="More — shift handover, print or export"
+                            className="px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
+                        >
+                            <MoreHorizontal size={16} /><span className="hidden sm:inline">More</span>
+                        </button>
+                        {moreOpen && (
+                            <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+                                <button
+                                    role="menuitem"
+                                    onClick={() => { setMoreOpen(false); setHandoverOpen(true); }}
+                                    className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5"
+                                >
+                                    <ArrowRight size={15} className="text-slate-400 flex-shrink-0" />
+                                    <span>
+                                        <span className="block font-medium">Shift handover</span>
+                                        <span className="block text-[11px] text-slate-400">What the next shift needs to know</span>
+                                    </span>
+                                </button>
+                                <button
+                                    role="menuitem"
+                                    onClick={() => { setMoreOpen(false); setPrintModalOpen(true); }}
+                                    className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5"
+                                >
+                                    <Printer size={15} className="text-slate-400 flex-shrink-0" />
+                                    <span className="font-medium">Print / Export</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -1157,6 +1212,15 @@ export const Scheduling: React.FC = () => {
                                     <AlertTriangle size={14} />
                                     {showRisk ? 'Predicted Failures: on' : 'Predicted Failures: off'}
                                 </button>
+                                <button
+                                    onClick={() => setShowClosed(!showClosed)}
+                                    aria-pressed={showClosed}
+                                    title="Completed (TECO/CLOSED) and cancelled work orders"
+                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showClosed ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                >
+                                    <Archive size={14} />
+                                    Show closed
+                                </button>
                             </div>
                         </div>
                         <CalendarView
@@ -1165,6 +1229,7 @@ export const Scheduling: React.FC = () => {
                             items={allItems}
                             pool={poolItems}
                             onItemDrop={handleItemDrop}
+                            canSchedule={canSchedule}
                             scale={calendarScale}
                             onNavigate={navigateDate}
                             dictionaries={dictionaries}
@@ -1318,19 +1383,45 @@ export const Scheduling: React.FC = () => {
 // 1. CALENDAR VIEW — Month / Week / Day
 // ========================================
 
+// One busy day used to grow its cell, and auto-rows-fr then stretched every
+// row of the month to match; cells now stop at a few chips plus "+N more".
+const MONTH_CHIP_CAP = 3;
+const WEEK_CHIP_CAP = 6;
+const MOBILE_ROW_CAP = 4;
+const TYPE_ORDER: Record<CalendarItem['type'], number> = { WO: 0, PM: 1, RISK: 2 };
+
+/** Rank by the tenant's own priority order (dictionary sequence); unknown codes last. */
+function priorityRanker(dictionaries: DictionaryEntry[]): (code: string) => number {
+    const ordered = dictionaries
+        .filter(d => d.type === 'PRIORITY' && d.active)
+        .sort((a, b) => (a.sequence ?? 99) - (b.sequence ?? 99));
+    const rank = new Map(ordered.map((p, i) => [p.code, i] as const));
+    return code => rank.get(code) ?? ordered.length;
+}
+
+/** 'YYYY-MM-DD' as a local date — new Date(str) reads it as UTC and can land on the day before. */
+function parseDateStr(s: string): Date {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+}
+
+const shortDate = (d: Date) => d.toLocaleDateString('default', { month: 'short', day: 'numeric' });
+
+const isClosedItem = (item: CalendarItem) => item.type === 'WO' && NON_RESCHEDULABLE_STATUSES.includes(item.status as string);
+
 const CalendarView: React.FC<{
     currentDate: Date;
     setDate: (d: Date) => void;
     items: CalendarItem[];
     pool: CalendarItem[];
     onItemDrop: (id: string, date: string, type: 'WO' | 'PM') => void;
+    canSchedule: boolean;
     scale: CalendarScale;
     onNavigate: (dir: number) => void;
     dictionaries: DictionaryEntry[];
-}> = ({ currentDate, setDate, items, pool, onItemDrop, scale, onNavigate, dictionaries }) => {
+}> = ({ currentDate, setDate, items, pool, onItemDrop, canSchedule, scale, onNavigate, dictionaries }) => {
     const navigate = useNavigate();
     const { showToast } = useToast();
-    const [draggingId, setDraggingId] = useState<string | null>(null);
 
     // GAP-I: Mobile detection
     const [isMobile, setIsMobile] = useState(false);
@@ -1341,11 +1432,53 @@ const CalendarView: React.FC<{
         return () => window.removeEventListener('resize', check);
     }, []);
 
+    // Touch has no HTML5 drag, so on a phone nothing could be scheduled at all.
+    // "Schedule…" picks a date and goes through the same onItemDrop gates
+    // (permission, status, frozen zone, materials, conflicts) as a drop.
+    const [scheduleTarget, setScheduleTarget] = useState<CalendarItem | null>(null);
+    const [scheduleDate, setScheduleDate] = useState('');
+    const [moreDay, setMoreDay] = useState<string | null>(null);
+    const [poolOpen, setPoolOpen] = useState(false);
+
     const legend = getPriorityLegend(dictionaries);
+
+    // Each day's items, most urgent first — grouped once instead of filtering
+    // the whole list for every cell.
+    const itemsByDate = useMemo(() => {
+        const rank = priorityRanker(dictionaries);
+        const map = new Map<string, CalendarItem[]>();
+        for (const item of items) {
+            const list = map.get(item.date);
+            if (list) list.push(item); else map.set(item.date, [item]);
+        }
+        for (const list of map.values()) {
+            list.sort((a, b) => (rank(a.priority) - rank(b.priority)) || (TYPE_ORDER[a.type] - TYPE_ORDER[b.type]));
+        }
+        return map;
+    }, [items, dictionaries]);
+    const itemsOn = (dateStr: string) => itemsByDate.get(dateStr) || [];
+
+    const canMove = (item: CalendarItem) => canSchedule && item.type !== 'RISK' && !isClosedItem(item);
+
+    const openSchedule = (item: CalendarItem) => {
+        const todayStr = formatDateStr(new Date());
+        const cursor = formatDateStr(currentDate);
+        setScheduleDate(item.date || (cursor >= todayStr ? cursor : todayStr));
+        // One overlay at a time — stacked modals fight over Esc and the body scroll lock.
+        setMoreDay(null);
+        setPoolOpen(false);
+        setScheduleTarget(item);
+    };
+
+    const confirmSchedule = () => {
+        if (!scheduleTarget || !scheduleDate) return;
+        const target = scheduleTarget;
+        setScheduleTarget(null);
+        onItemDrop(target.id, scheduleDate, target.type as 'WO' | 'PM');
+    };
 
     // Drag Handlers
     const onDragStart = (e: React.DragEvent, id: string, type: 'WO' | 'PM') => {
-        setDraggingId(id);
         e.dataTransfer.setData('itemId', id);
         e.dataTransfer.setData('itemType', type);
         e.dataTransfer.effectAllowed = 'move';
@@ -1360,7 +1493,6 @@ const CalendarView: React.FC<{
         const itemId = e.dataTransfer.getData('itemId');
         const itemType = e.dataTransfer.getData('itemType') as 'WO' | 'PM';
         if (itemId) onItemDrop(itemId, dateStr, itemType);
-        setDraggingId(null);
     };
 
     const handleJobClick = (item: CalendarItem) => {
@@ -1369,7 +1501,7 @@ const CalendarView: React.FC<{
         } else if (item.type === 'RISK') {
             showToast(`${item.assetName}: predicted failure window from Predict (${item.title.split('— ')[1] || 'RUL'}). Advisory — schedule preventive work before this date, or review in Reliability Tier → Forecast · Predict.`, 'info');
         } else {
-            showToast(`Projected Recurring Job: ${item.title}. Drag this item to a date to schedule it firmly.`, 'info');
+            showToast(`Projected Recurring Job: ${item.title}. Drag it to a date, or use Schedule…, to commit it as a work order.`, 'info');
         }
     };
 
@@ -1385,26 +1517,27 @@ const CalendarView: React.FC<{
         return currentDate.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
     };
 
-    // Render a calendar item chip
+    // Compact chip for the month and week grids
     const renderItem = (item: CalendarItem) => {
         const isPM = item.type === 'PM';
         const isRisk = item.type === 'RISK';
+        const closed = isClosedItem(item);
         const pStyle = getPriorityStyle(item.priority, dictionaries);
 
         return (
             <div
                 key={item.id}
-                draggable={!isRisk}
-                onDragStart={(e) => { if (!isRisk) onDragStart(e, item.id, item.type as 'WO' | 'PM'); }}
+                draggable={!isRisk && !closed}
+                onDragStart={(e) => { if (!isRisk && !closed) onDragStart(e, item.id, item.type as 'WO' | 'PM'); }}
                 onClick={(e) => { e.stopPropagation(); handleJobClick(item); }}
                 className={`text-[10px] px-1.5 py-1 rounded border cursor-pointer hover:shadow-md transition flex flex-col gap-0.5 ${isPM ? 'border-dashed opacity-80 hover:opacity-100 bg-white text-slate-500 border-slate-300 hover:border-blue-300 hover:text-blue-700' : ''
-                    }${isRisk ? 'border-dashed bg-amber-50 text-amber-700 border-amber-300 hover:border-amber-400' : ''}`}
+                    }${isRisk ? 'border-dashed bg-amber-50 text-amber-700 border-amber-300 hover:border-amber-400' : ''}${closed ? ' opacity-60 line-through decoration-slate-400' : ''}`}
                 style={!isPM && !isRisk ? {
                     backgroundColor: pStyle.hex + '18',
                     color: pStyle.hex,
                     borderColor: pStyle.hex + '40',
                 } : undefined}
-                title={isRisk ? `${item.title} (${item.assetName}) — advisory from Predict; schedule preventive work before this window` : `${isPM ? 'Projected: ' : ''}${item.title} (${item.assetName}) [${item.priority}]`}
+                title={isRisk ? `${item.title} (${item.assetName}) — advisory from Predict; schedule preventive work before this window` : `${isPM ? 'Projected: ' : ''}${item.title} (${item.assetName}) [${item.priority}]${closed ? ` — ${item.status}` : ''}`}
             >
                 <div className="flex items-center gap-1 truncate">
                     {isPM && <Repeat size={10} className="flex-shrink-0" />}
@@ -1413,14 +1546,158 @@ const CalendarView: React.FC<{
                     <span className="font-bold">{item.displayId}</span>
                     <span className="opacity-75">·</span>
                     <span className="font-medium truncate">{item.assetName}</span>
+                    {canMove(item) && (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openSchedule(item); }}
+                            title={isPM ? 'Commit on a date…' : 'Schedule on a date…'}
+                            aria-label={`Schedule ${item.displayId}`}
+                            className="ml-auto flex-shrink-0 rounded p-0.5 opacity-60 hover:opacity-100 hover:bg-white/70"
+                        >
+                            <CalendarPlus size={11} />
+                        </button>
+                    )}
                 </div>
                 <div className="truncate opacity-80 text-[9px] leading-tight">{item.title}</div>
             </div>
         );
     };
 
-    // Unscheduled sidebar items
-    const unscheduledJobs = pool;
+    // Full row for the day view, phone list, "+N more" and pool sheets
+    const renderRow = (item: CalendarItem, opts: { inSheet?: boolean } = {}) => {
+        const isPM = item.type === 'PM';
+        const isRisk = item.type === 'RISK';
+        const closed = isClosedItem(item);
+        const pStyle = getPriorityStyle(item.priority, dictionaries);
+        return (
+            <div
+                key={item.id}
+                draggable={!isRisk && !closed}
+                onDragStart={(e) => {
+                    if (isRisk || closed) return;
+                    onDragStart(e, item.id, item.type as 'WO' | 'PM');
+                    // The sheet's backdrop sits over the calendar, so it steps aside
+                    // once the drag has started and the day cells can take the drop.
+                    if (opts.inSheet) setTimeout(() => { setMoreDay(null); setPoolOpen(false); }, 0);
+                }}
+                onClick={() => handleJobClick(item)}
+                title={item.type === 'WO' ? 'Open work order' : undefined}
+                className={`bg-white rounded-lg border border-slate-200 p-3 flex items-center gap-3 hover:shadow-md transition cursor-pointer group ${closed ? 'opacity-60' : ''}`}
+                style={{ borderLeftWidth: '4px', borderLeftColor: isPM ? '#A855F7' : isRisk ? '#F59E0B' : pStyle.hex }}
+            >
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs font-mono font-bold text-slate-500">{item.displayId}</span>
+                        <span
+                            className="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                            style={{ backgroundColor: pStyle.hex + '18', color: pStyle.hex }}
+                        >
+                            {item.priority}
+                        </span>
+                        {isPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">PROJECTED PM</span>}
+                        {isRisk && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><AlertTriangle size={8} />PREDICTED FAILURE</span>}
+                        {!isPM && !isRisk && item.isFromPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Repeat size={8} />PM</span>}
+                        {closed && <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{item.status}</span>}
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 truncate">{item.title}</div>
+                    <div className="text-xs text-slate-500 mt-0.5 truncate">{item.assetName}</div>
+                </div>
+                <div className="flex-shrink-0 flex items-center gap-1.5">
+                    {canMove(item) && (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openSchedule(item); }}
+                            className="min-h-[36px] px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-primary-700 hover:bg-primary-50 hover:border-primary-200 flex items-center gap-1.5 transition"
+                        >
+                            <CalendarPlus size={14} /> Schedule…
+                        </button>
+                    )}
+                    {item.type === 'WO' && <ArrowRight size={14} className="text-slate-300 group-hover:text-blue-500 transition" />}
+                </div>
+            </div>
+        );
+    };
+
+    const moreButton = (dateStr: string, hidden: number) => hidden > 0 && (
+        <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setMoreDay(dateStr); }}
+            className="w-full text-left text-[10px] font-bold text-primary-600 hover:bg-primary-50 rounded px-1.5 py-1"
+        >
+            +{hidden} more
+        </button>
+    );
+
+    const poolButton = (className: string) => pool.length > 0 && (
+        <button
+            type="button"
+            onClick={() => setPoolOpen(true)}
+            className={`items-center gap-2 text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-100 transition ${className}`}
+        >
+            <Layers size={14} className="text-slate-500" /> Unscheduled
+            <span className="ml-auto sm:ml-1 bg-slate-200 text-slate-700 rounded-full px-1.5 py-0.5 text-[10px]">{pool.length}</span>
+        </button>
+    );
+
+    const overlays = (
+        <>
+            {/* A crowded day's full list */}
+            <Modal
+                open={!!moreDay}
+                onClose={() => setMoreDay(null)}
+                size="md"
+                title={moreDay ? `${parseDateStr(moreDay).toLocaleDateString('default', { weekday: 'long', month: 'short', day: 'numeric' })} · ${itemsOn(moreDay).length} jobs` : undefined}
+            >
+                <div className="space-y-2">
+                    {moreDay && itemsOn(moreDay).map(item => renderRow(item, { inSheet: true }))}
+                </div>
+            </Modal>
+
+            {/* The pool on screens too narrow for the sidebar */}
+            <Modal open={poolOpen} onClose={() => setPoolOpen(false)} size="md" title={`Unscheduled · ${pool.length}`}>
+                <div className="space-y-2">
+                    {pool.length === 0 && <div className="text-center text-sm text-slate-400 py-6">No unscheduled jobs.</div>}
+                    {pool.map(item => renderRow(item, { inSheet: true }))}
+                </div>
+            </Modal>
+
+            <Modal
+                open={!!scheduleTarget}
+                onClose={() => setScheduleTarget(null)}
+                size="sm"
+                title={scheduleTarget ? `${scheduleTarget.type === 'PM' ? 'Commit' : 'Schedule'} ${scheduleTarget.displayId}` : undefined}
+                footer={
+                    <>
+                        <Button variant="secondary" size="sm" onClick={() => setScheduleTarget(null)}>Cancel</Button>
+                        <Button size="sm" disabled={!scheduleDate} onClick={confirmSchedule} leftIcon={<CalendarPlus size={14} />}>Schedule</Button>
+                    </>
+                }
+            >
+                {scheduleTarget && (
+                    <div className="space-y-3">
+                        <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-800">{scheduleTarget.title}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                                {scheduleTarget.assetName} · {scheduleTarget.date ? `now ${shortDate(parseDateStr(scheduleTarget.date))}` : 'not yet scheduled'}
+                            </div>
+                        </div>
+                        <label className="block">
+                            <span className="text-xs font-bold text-slate-600">Date</span>
+                            <input
+                                type="date"
+                                value={scheduleDate}
+                                onChange={(e) => setScheduleDate(e.target.value)}
+                                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-600"
+                            />
+                        </label>
+                        {scheduleTarget.type === 'PM' && (
+                            <p className="text-[11px] text-slate-500 m-0">Creates a work order from this recurring job on the chosen date.</p>
+                        )}
+                    </div>
+                )}
+            </Modal>
+        </>
+    );
 
     // GAP-I: Mobile vertical day list — shows 5 rolling days
     if (isMobile) {
@@ -1430,26 +1707,34 @@ const CalendarView: React.FC<{
             d.setDate(d.getDate() + i);
             mobileDays.push(d);
         }
+        // The arrows went through the page navigator, which steps by the desktop
+        // scale (a month by default) — a phone showing five days now steps one.
+        const stepDay = (dir: number) => {
+            const d = new Date(currentDate);
+            d.setDate(d.getDate() + dir);
+            setDate(d);
+        };
 
         return (
             <div className="flex flex-col h-full overflow-y-auto">
                 {/* Mobile header */}
                 <div className="p-3 flex items-center justify-between border-b border-slate-200 bg-white sticky top-0 z-10">
-                    <button onClick={() => onNavigate(-1)} className="p-1.5 hover:bg-slate-100 rounded"><ChevronLeft size={18} /></button>
+                    <button onClick={() => stepDay(-1)} aria-label="Previous day" className="p-1.5 hover:bg-slate-100 rounded"><ChevronLeft size={18} /></button>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setDate(new Date())}
                             className="px-3 py-1 text-xs font-bold text-blue-600 bg-blue-50 rounded-full"
                         >Today</button>
-                        <span className="text-sm font-bold text-slate-800">{getTitle()}</span>
+                        <span className="text-sm font-bold text-slate-800">{shortDate(mobileDays[0])} – {shortDate(mobileDays[mobileDays.length - 1])}</span>
                     </div>
-                    <button onClick={() => onNavigate(1)} className="p-1.5 hover:bg-slate-100 rounded"><ChevronRight size={18} /></button>
+                    <button onClick={() => stepDay(1)} aria-label="Next day" className="p-1.5 hover:bg-slate-100 rounded"><ChevronRight size={18} /></button>
                 </div>
+                {pool.length > 0 && <div className="px-3 pt-3">{poolButton('flex w-full')}</div>}
 
                 {/* Vertical day list */}
                 {mobileDays.map(day => {
                     const dateStr = formatDateStr(day);
-                    const dayItems = items.filter(i => i.date === dateStr);
+                    const dayItems = itemsOn(dateStr);
                     const todayHere = isToday(day);
 
                     return (
@@ -1470,13 +1755,23 @@ const CalendarView: React.FC<{
                                 {todayHere && <span className="text-[9px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">TODAY</span>}
                                 <span className="ml-auto text-[10px] text-slate-400">{dayItems.length} job{dayItems.length !== 1 ? 's' : ''}</span>
                             </div>
-                            <div className="space-y-1.5 pl-2">
+                            <div className="space-y-1.5">
                                 {dayItems.length === 0 && <div className="text-[11px] text-slate-300 py-3 text-center">No jobs</div>}
-                                {dayItems.map(renderItem)}
+                                {dayItems.slice(0, MOBILE_ROW_CAP).map(item => renderRow(item))}
+                                {dayItems.length > MOBILE_ROW_CAP && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setMoreDay(dateStr)}
+                                        className="w-full min-h-[40px] text-xs font-bold text-primary-600 bg-white border border-slate-200 rounded-lg"
+                                    >
+                                        +{dayItems.length - MOBILE_ROW_CAP} more
+                                    </button>
+                                )}
                             </div>
                         </div>
                     );
                 })}
+                {overlays}
             </div>
         );
     }
@@ -1491,8 +1786,8 @@ const CalendarView: React.FC<{
                     </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                    {unscheduledJobs.length === 0 && <div className="text-center text-xs text-slate-400 py-8">No unscheduled jobs.</div>}
-                    {unscheduledJobs.map(item => {
+                    {pool.length === 0 && <div className="text-center text-xs text-slate-400 py-8">No unscheduled jobs.</div>}
+                    {pool.map(item => {
                         const pStyle = getPriorityStyle(item.priority, dictionaries);
                         return (
                             <div
@@ -1508,7 +1803,20 @@ const CalendarView: React.FC<{
                                         <span className="text-xs font-mono font-bold text-slate-500">{item.displayId}</span>
                                         {item.isFromPM && <Repeat size={10} className="text-blue-400" />}
                                     </div>
-                                    <GripVertical size={14} className="text-slate-300 group-hover:text-slate-500" />
+                                    <div className="flex items-center gap-0.5">
+                                        {canMove(item) && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); openSchedule(item); }}
+                                                title="Schedule on a date…"
+                                                aria-label={`Schedule ${item.displayId}`}
+                                                className="p-1 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50"
+                                            >
+                                                <CalendarPlus size={14} />
+                                            </button>
+                                        )}
+                                        <GripVertical size={14} className="text-slate-300 group-hover:text-slate-500" />
+                                    </div>
                                 </div>
                                 <div className="text-xs font-bold text-slate-800 truncate">{item.title}</div>
                                 <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
@@ -1524,8 +1832,8 @@ const CalendarView: React.FC<{
             {/* Main Calendar Grid */}
             <div className="flex-1 flex flex-col min-w-0">
                 {/* Header */}
-                <div className="p-4 flex justify-between items-center border-b border-slate-200 bg-white">
-                    <div className="flex items-center gap-3">
+                <div className="p-4 flex justify-between items-center gap-3 border-b border-slate-200 bg-white">
+                    <div className="flex items-center gap-3 min-w-0">
                         <button onClick={() => onNavigate(-1)} className="p-1.5 hover:bg-slate-100 rounded"><ChevronLeft size={18} /></button>
                         <button
                             onClick={() => setDate(new Date())}
@@ -1534,9 +1842,10 @@ const CalendarView: React.FC<{
                             Today
                         </button>
                         <button onClick={() => onNavigate(1)} className="p-1.5 hover:bg-slate-100 rounded"><ChevronRight size={18} /></button>
-                        <h2 className="text-lg font-bold text-slate-900">{getTitle()}</h2>
+                        <h2 className="text-lg font-bold text-slate-900 truncate">{getTitle()}</h2>
                     </div>
-                    <div className="hidden sm:flex items-center gap-3 text-xs">
+                    {poolButton('flex md:hidden flex-shrink-0')}
+                    <div className="hidden md:flex items-center gap-3 text-xs">
                         {legend.map(p => (
                             <span key={p.code} className="flex items-center gap-1" title={p.description}>
                                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.hex }}></span>
@@ -1549,10 +1858,11 @@ const CalendarView: React.FC<{
                 </div>
 
                 {/* Render based on scale */}
-                {scale === 'MONTH' && <MonthGrid currentDate={currentDate} items={items} onDragOver={onDragOver} onDropDate={onDropDate} renderItem={renderItem} />}
-                {scale === 'WEEK' && <WeekGrid currentDate={currentDate} items={items} onDragOver={onDragOver} onDropDate={onDropDate} renderItem={renderItem} dictionaries={dictionaries} />}
-                {scale === 'DAY' && <DayGrid currentDate={currentDate} items={items} onDragOver={onDragOver} onDropDate={onDropDate} renderItem={renderItem} dictionaries={dictionaries} handleJobClick={handleJobClick} />}
+                {scale === 'MONTH' && <MonthGrid currentDate={currentDate} itemsOn={itemsOn} onDragOver={onDragOver} onDropDate={onDropDate} renderItem={renderItem} moreButton={moreButton} />}
+                {scale === 'WEEK' && <WeekGrid currentDate={currentDate} itemsOn={itemsOn} onDragOver={onDragOver} onDropDate={onDropDate} renderItem={renderItem} moreButton={moreButton} />}
+                {scale === 'DAY' && <DayGrid currentDate={currentDate} itemsOn={itemsOn} onDragOver={onDragOver} onDropDate={onDropDate} renderRow={renderRow} />}
             </div>
+            {overlays}
         </div>
     );
 };
@@ -1562,11 +1872,12 @@ const CalendarView: React.FC<{
 // ========================================
 const MonthGrid: React.FC<{
     currentDate: Date;
-    items: CalendarItem[];
+    itemsOn: (date: string) => CalendarItem[];
     onDragOver: (e: React.DragEvent) => void;
     onDropDate: (e: React.DragEvent, date: string) => void;
     renderItem: (item: CalendarItem) => React.ReactNode;
-}> = ({ currentDate, items, onDragOver, onDropDate, renderItem }) => {
+    moreButton: (date: string, hidden: number) => React.ReactNode;
+}> = ({ currentDate, itemsOn, onDragOver, onDropDate, renderItem, moreButton }) => {
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
     const startDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
     const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
@@ -1583,7 +1894,7 @@ const MonthGrid: React.FC<{
                 {blanksArray.map(i => <div key={`blank-${i}`} className="bg-slate-50/30 border-b border-r border-slate-100"></div>)}
                 {daysArray.map(day => {
                     const dateStr = formatDateStr(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
-                    const dayItems = items.filter(i => i.date === dateStr);
+                    const dayItems = itemsOn(dateStr);
                     const todayClass = isToday(new Date(currentDate.getFullYear(), currentDate.getMonth(), day)) ? 'bg-blue-50/40' : '';
 
                     return (
@@ -1591,14 +1902,15 @@ const MonthGrid: React.FC<{
                             key={day}
                             onDragOver={onDragOver}
                             onDrop={(e) => onDropDate(e, dateStr)}
-                            className={`calendar-grid-cell min-h-[120px] border-b border-r border-slate-100 p-1 hover:bg-blue-50/30 transition-colors relative ${todayClass}`}
+                            className={`calendar-grid-cell min-h-[120px] min-w-0 border-b border-r border-slate-100 p-1 hover:bg-blue-50/30 transition-colors relative ${todayClass}`}
                         >
                             <span className={`text-xs font-bold p-1 ${isToday(new Date(currentDate.getFullYear(), currentDate.getMonth(), day))
                                 ? 'text-white bg-primary-600 rounded-full w-6 h-6 flex items-center justify-center'
                                 : dayItems.length > 0 ? 'text-slate-800' : 'text-slate-400'
                                 }`}>{day}</span>
                             <div className="space-y-0.5 mt-1">
-                                {dayItems.map(renderItem)}
+                                {dayItems.slice(0, MONTH_CHIP_CAP).map(renderItem)}
+                                {moreButton(dateStr, dayItems.length - MONTH_CHIP_CAP)}
                             </div>
                         </div>
                     );
@@ -1613,12 +1925,12 @@ const MonthGrid: React.FC<{
 // ========================================
 const WeekGrid: React.FC<{
     currentDate: Date;
-    items: CalendarItem[];
+    itemsOn: (date: string) => CalendarItem[];
     onDragOver: (e: React.DragEvent) => void;
     onDropDate: (e: React.DragEvent, date: string) => void;
     renderItem: (item: CalendarItem) => React.ReactNode;
-    dictionaries: DictionaryEntry[];
-}> = ({ currentDate, items, onDragOver, onDropDate, renderItem }) => {
+    moreButton: (date: string, hidden: number) => React.ReactNode;
+}> = ({ currentDate, itemsOn, onDragOver, onDropDate, renderItem, moreButton }) => {
     const weekDates = getWeekDates(currentDate);
 
     return (
@@ -1643,20 +1955,21 @@ const WeekGrid: React.FC<{
             <div className="flex-1 grid grid-cols-7 overflow-y-auto">
                 {weekDates.map((d, i) => {
                     const dateStr = formatDateStr(d);
-                    const dayItems = items.filter(item => item.date === dateStr);
+                    const dayItems = itemsOn(dateStr);
                     return (
                         <div
                             key={i}
                             onDragOver={onDragOver}
                             onDrop={(e) => onDropDate(e, dateStr)}
-                            className={`border-r border-slate-100 p-2 space-y-1.5 min-h-[400px] hover:bg-blue-50/20 transition ${isToday(d) ? 'bg-blue-50/30' : ''}`}
+                            className={`min-w-0 border-r border-slate-100 p-2 space-y-1.5 min-h-[400px] hover:bg-blue-50/20 transition ${isToday(d) ? 'bg-blue-50/30' : ''}`}
                         >
                             {dayItems.length === 0 && <div className="text-[10px] text-slate-300 text-center py-8">No jobs</div>}
-                            {dayItems.map(item => (
+                            {dayItems.slice(0, WEEK_CHIP_CAP).map(item => (
                                 <div key={item.id} className="text-xs">
                                     {renderItem(item)}
                                 </div>
                             ))}
+                            {moreButton(dateStr, dayItems.length - WEEK_CHIP_CAP)}
                         </div>
                     );
                 })}
@@ -1668,98 +1981,40 @@ const WeekGrid: React.FC<{
 // ========================================
 // DAY GRID
 // ========================================
+// The day used to open on twelve empty hour rows (6 AM–5 PM) that nothing was
+// ever placed in, with the real jobs below the fold. Now it is the day's list,
+// most urgent first, and the whole panel takes a drop.
 const DayGrid: React.FC<{
     currentDate: Date;
-    items: CalendarItem[];
+    itemsOn: (date: string) => CalendarItem[];
     onDragOver: (e: React.DragEvent) => void;
     onDropDate: (e: React.DragEvent, date: string) => void;
-    renderItem: (item: CalendarItem) => React.ReactNode;
-    dictionaries: DictionaryEntry[];
-    handleJobClick: (item: CalendarItem) => void;
-}> = ({ currentDate, items, onDragOver, onDropDate, dictionaries, handleJobClick }) => {
+    renderRow: (item: CalendarItem) => React.ReactNode;
+}> = ({ currentDate, itemsOn, onDragOver, onDropDate, renderRow }) => {
     const dateStr = formatDateStr(currentDate);
-    const dayItems = items.filter(i => i.date === dateStr);
-
-    const hours = Array.from({ length: 12 }, (_, i) => i + 6); // 6 AM to 5 PM
+    const dayItems = itemsOn(dateStr);
 
     return (
-        <div className="flex-1 overflow-y-auto">
-            {/* Day Summary Header */}
-            <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="text-lg font-bold text-slate-900">
-                            {currentDate.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' })}
-                        </div>
-                        <div className="text-sm text-slate-500 mt-0.5">{dayItems.length} job{dayItems.length !== 1 ? 's' : ''} scheduled</div>
-                    </div>
-                    {isToday(currentDate) && (
-                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">TODAY</span>
-                    )}
-                </div>
-            </div>
-
-            {/* Time Slots */}
-            <div
-                onDragOver={onDragOver}
-                onDrop={(e) => onDropDate(e, dateStr)}
-                className="relative"
-            >
-                {hours.map(hour => (
-                    <div key={hour} className="flex border-b border-slate-100 min-h-[60px]">
-                        <div className="w-20 py-2 px-4 text-xs font-medium text-slate-400 border-r border-slate-100 flex-shrink-0 text-right">
-                            {hour > 12 ? `${hour - 12} PM` : hour === 12 ? '12 PM' : `${hour} AM`}
-                        </div>
-                        <div className="flex-1 py-1 px-3">
-                            {/* Place items visually — for now all items shown at top */}
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* All Jobs for the Day — Full Cards */}
-            <div className="px-6 py-4 border-t-2 border-slate-200 bg-slate-50">
-                <h3 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
-                    <CalendarDays size={14} /> All Scheduled Work — {currentDate.toLocaleDateString('default', { month: 'short', day: 'numeric' })}
-                </h3>
-                {dayItems.length === 0 && (
-                    <div className="text-center text-sm text-slate-400 py-8">No jobs scheduled for this day. Drag work from the unscheduled pool.</div>
+        <div
+            className="flex-1 overflow-y-auto"
+            onDragOver={onDragOver}
+            onDrop={(e) => onDropDate(e, dateStr)}
+        >
+            <div className="px-4 sm:px-6 py-3 border-b border-slate-100 flex items-center gap-2 text-xs text-slate-500">
+                <CalendarDays size={14} className="text-slate-400" />
+                <span className="font-semibold text-slate-700">{dayItems.length} job{dayItems.length !== 1 ? 's' : ''}</span>
+                {dayItems.length > 1 && <span>· most urgent first</span>}
+                {isToday(currentDate) && (
+                    <span className="ml-auto px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">TODAY</span>
                 )}
-                <div className="space-y-2">
-                    {dayItems.map(item => {
-                        const isPM = item.type === 'PM';
-                        const isRisk = item.type === 'RISK';
-                        const pStyle = getPriorityStyle(item.priority, dictionaries);
-                        return (
-                            <div
-                                key={item.id}
-                                onClick={() => handleJobClick(item)}
-                                className="bg-white rounded-lg border border-slate-200 p-3 flex items-center gap-4 hover:shadow-md transition cursor-pointer group"
-                                style={{ borderLeftWidth: '4px', borderLeftColor: isPM ? '#A855F7' : isRisk ? '#F59E0B' : pStyle.hex }}
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-mono font-bold text-slate-500">{item.displayId}</span>
-                                        {isPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">PROJECTED PM</span>}
-                                        {isRisk && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><AlertTriangle size={8} />PREDICTED FAILURE</span>}
-                                        {!isPM && !isRisk && item.isFromPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Repeat size={8} />PM</span>}
-                                    </div>
-                                    <div className="text-sm font-bold text-slate-900 truncate">{item.title}</div>
-                                    <div className="text-xs text-slate-500 mt-0.5">{item.assetName}</div>
-                                </div>
-                                <div className="flex-shrink-0 flex items-center gap-2">
-                                    <span
-                                        className="px-2 py-1 rounded text-[10px] font-bold"
-                                        style={{ backgroundColor: pStyle.hex + '18', color: pStyle.hex }}
-                                    >
-                                        {item.priority}
-                                    </span>
-                                    <ArrowRight size={14} className="text-slate-300 group-hover:text-blue-500 transition" />
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
+            </div>
+            <div className="p-4 sm:px-6 space-y-2 min-h-[240px]">
+                {dayItems.length === 0 && (
+                    <div className="text-center text-sm text-slate-400 py-12 border-2 border-dashed border-slate-200 rounded-lg">
+                        Nothing scheduled for this day. Drag work here from the unscheduled pool, or use Schedule… on a job.
+                    </div>
+                )}
+                {dayItems.map(item => renderRow(item))}
             </div>
         </div>
     );
@@ -1771,6 +2026,9 @@ const DayGrid: React.FC<{
 // 3. BACKLOG VIEW
 // ========================================
 
+const BACKLOG_PAGE = 50;
+type BacklogSortKey = 'priority' | 'due';
+
 const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) => void, dictionaries: DictionaryEntry[], laborContacts?: Contact[], canEdit: boolean }> = ({ jobs, onJobsUpdate, dictionaries, laborContacts, canEdit }) => {
     const navigate = useNavigate();
     const { showToast } = useToast();
@@ -1778,20 +2036,51 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [filterPriority, setFilterPriority] = useState('ALL');
     const [backlogSearch, setBacklogSearch] = useState('');
+    // The backlog used to be every order not CLOSED/CANC — TECO and work already
+    // on the calendar included — so what still needed a date was buried in it.
+    // It opens on the to-schedule queue; "All open" widens it.
+    const [scope, setScope] = useState<'NEEDS' | 'ALL'>('NEEDS');
+    const [sort, setSort] = useState<{ key: BacklogSortKey; dir: 1 | -1 }>({ key: 'priority', dir: 1 });
+    const [limit, setLimit] = useState(BACKLOG_PAGE);
 
     const priorities = dictionaries
         .filter(d => d.type === 'PRIORITY' && d.active)
         .sort((a, b) => (a.sequence ?? 99) - (b.sequence ?? 99));
 
-    const backlogJobs = jobs.filter(j => {
-        if (j.status === 'CLOSED' || j.status === 'CANC') return false;
-        if (filterPriority !== 'ALL' && j.priority !== filterPriority) return false;
-        if (backlogSearch.trim()) {
-            const q = backlogSearch.toLowerCase();
-            return (j.title?.toLowerCase().includes(q) || j.woNumber?.toLowerCase().includes(q) || j.assetName?.toLowerCase().includes(q) || j.description?.toLowerCase().includes(q));
-        }
-        return true;
-    });
+    const backlogJobs = useMemo(() => {
+        const rank = priorityRanker(dictionaries);
+        const q = backlogSearch.trim().toLowerCase();
+        const list = jobs.filter(j => {
+            const status = String(j.status || '');
+            if (NON_RESCHEDULABLE_STATUSES.includes(status)) return false;
+            if (scope === 'NEEDS' && status !== 'OPEN' && status !== 'PLAN' && j.dateDueStart) return false;
+            if (filterPriority !== 'ALL' && j.priority !== filterPriority) return false;
+            if (q) return [j.title, j.woNumber, j.assetName, j.description].some(v => (v || '').toLowerCase().includes(q));
+            return true;
+        });
+        const dueOf = (j: WorkOrder) => j.dueDate || j.dateDueStart || '';
+        // Undated work sorts last whichever way the dates run.
+        const byDue = (a: WorkOrder, b: WorkOrder, dir: number) => {
+            const da = dueOf(a), db = dueOf(b);
+            if (!da || !db) return (da ? -1 : 0) + (db ? 1 : 0);
+            return (da < db ? -1 : da > db ? 1 : 0) * dir;
+        };
+        const byPriority = (a: WorkOrder, b: WorkOrder, dir: number) => (rank(a.priority) - rank(b.priority)) * dir;
+        return list.sort((a, b) => sort.key === 'priority'
+            ? byPriority(a, b, sort.dir) || byDue(a, b, 1)
+            : byDue(a, b, sort.dir) || byPriority(a, b, 1));
+    }, [jobs, dictionaries, backlogSearch, scope, filterPriority, sort]);
+
+    const visibleJobs = backlogJobs.slice(0, limit);
+    // Bulk actions act on what is selected AND still in the list — a row that a
+    // filter or an assignment has since moved out is not silently included.
+    const selectedInList = backlogJobs.filter(j => selectedIds.has(j.id));
+    const visibleSelected = visibleJobs.filter(j => selectedIds.has(j.id)).length;
+    const allVisibleSelected = visibleJobs.length > 0 && visibleSelected === visibleJobs.length;
+    const someVisibleSelected = visibleSelected > 0 && !allVisibleSelected;
+
+    // A changed filter starts the list (and the page count) over.
+    const refilter = () => { setLimit(BACKLOG_PAGE); setSelectedIds(new Set()); };
 
     const toggleSelect = (id: string) => {
         const newSet = new Set(selectedIds);
@@ -1800,10 +2089,22 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
         setSelectedIds(newSet);
     };
 
+    // The header box used to select every filtered row (rendered or not) and
+    // never showed the current selection; it now mirrors and selects what is shown.
+    const toggleSelectVisible = () => {
+        setSelectedIds(allVisibleSelected ? new Set() : new Set(visibleJobs.map(j => j.id)));
+    };
+    const selectAllRef = (el: HTMLInputElement | null) => { if (el) el.indeterminate = someVisibleSelected; };
+
+    const toggleSort = (key: BacklogSortKey) => {
+        setSort(prev => prev.key === key ? { key, dir: prev.dir === 1 ? -1 : 1 } : { key, dir: 1 });
+        setLimit(BACKLOG_PAGE);
+    };
+
     // Assignment handled by parent's AssignmentModal — triggered via state lift
     const handleBulkAssign = () => {
         // Dispatch event to parent to open AssignmentModal
-        const event = new CustomEvent('open-assignment-modal', { detail: { ids: Array.from(selectedIds) } });
+        const event = new CustomEvent('open-assignment-modal', { detail: { ids: selectedInList.map(j => j.id) } });
         window.dispatchEvent(event);
     };
 
@@ -1813,7 +2114,7 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
     // Saved, then shown: it only ever changed the screen, so rows reverted on refresh.
     const handleBulkPriority = async (priority: string) => {
         if (!canEdit) { showToast('Your role can view the schedule but not change it (needs Scheduling · Edit).', 'error'); return; }
-        const ids = Array.from(selectedIds);
+        const ids = selectedInList.map(j => j.id);
         setSavingPriority(true);
         try {
             const changed = new Set(await DatabaseService.getInstance().setWorkOrdersPriority(ids, priority));
@@ -1828,19 +2129,48 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
         }
     };
 
+    const sortHeader = (key: BacklogSortKey, label: string, className = '') => (
+        <th
+            className={`px-6 py-3 text-left ${className}`}
+            aria-sort={sort.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}
+        >
+            <button
+                type="button"
+                onClick={() => toggleSort(key)}
+                className={`inline-flex items-center gap-1 text-xs font-bold uppercase transition ${sort.key === key ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                {label}
+                {sort.key === key && (sort.dir === 1 ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+            </button>
+        </th>
+    );
+
     return (
         <div className="flex flex-col h-full bg-white">
             {/* Toolbar */}
-            <div className="p-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
+            <div className="p-3 sm:p-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
                 <div className="flex flex-wrap gap-3 items-center">
+                    <div className="flex bg-slate-100 rounded-lg p-0.5" role="group" aria-label="Which work">
+                        {([['NEEDS', 'Needs scheduling'], ['ALL', 'All open']] as const).map(([value, label]) => (
+                            <button
+                                key={value}
+                                type="button"
+                                aria-pressed={scope === value}
+                                onClick={() => { setScope(value); refilter(); }}
+                                className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${scope === value ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                        <input type="text" placeholder="Search backlog..." value={backlogSearch} onChange={e => setBacklogSearch(e.target.value)} className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
+                        <input type="text" placeholder="Search backlog..." value={backlogSearch} onChange={e => { setBacklogSearch(e.target.value); refilter(); }} className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
                     </div>
                     <select
                         className="p-2 border border-slate-300 rounded-lg text-sm bg-white"
                         value={filterPriority}
-                        onChange={(e) => setFilterPriority(e.target.value)}
+                        onChange={(e) => { setFilterPriority(e.target.value); refilter(); }}
                     >
                         <option value="ALL">All Priorities</option>
                         {priorities.map(p => (
@@ -1849,9 +2179,9 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                     </select>
                 </div>
 
-                {selectedIds.size > 0 && (
-                    <div className="flex gap-2 animate-in fade-in slide-in-from-right-4">
-                        <span className="text-sm font-bold text-slate-600 self-center mr-2">{selectedIds.size} Selected</span>
+                {selectedInList.length > 0 && (
+                    <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-right-4">
+                        <span className="text-sm font-bold text-slate-600 self-center mr-2">{selectedInList.length} Selected</span>
                         <Button variant="secondary" size="sm" onClick={handleBulkAssign} leftIcon={<UserPlus size={16} />}>
                             Assign
                         </Button>
@@ -1866,9 +2196,40 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
 
             {/* List */}
             <div className="flex-1 overflow-y-auto table-responsive">
+                {backlogJobs.length === 0 && (
+                    <div className="text-center text-sm text-slate-400 py-12 px-4">
+                        {scope === 'NEEDS' && !backlogSearch.trim() && filterPriority === 'ALL'
+                            ? <>Nothing is waiting for a date. <button type="button" onClick={() => { setScope('ALL'); refilter(); }} className="font-semibold text-primary-600 hover:underline">Show all open work</button></>
+                            : 'No work orders match.'}
+                    </div>
+                )}
+
                 {/* ═══ Mobile Card View for Backlog (≤640px) ═══ */}
                 <div className="mobile-cards">
-                    {backlogJobs.map(job => {
+                    {/* Phones had no checkboxes, so bulk Assign / priority could not be reached there */}
+                    {visibleJobs.length > 0 && (
+                        <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50/60">
+                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                <input type="checkbox" ref={selectAllRef} checked={allVisibleSelected} onChange={toggleSelectVisible} className="rounded" />
+                                Select shown ({visibleJobs.length})
+                            </label>
+                            <select
+                                aria-label="Sort by"
+                                value={`${sort.key}:${sort.dir}`}
+                                onChange={(e) => {
+                                    const [key, dir] = e.target.value.split(':');
+                                    setSort({ key: key as BacklogSortKey, dir: Number(dir) === -1 ? -1 : 1 });
+                                    setLimit(BACKLOG_PAGE);
+                                }}
+                                className="p-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+                            >
+                                <option value="priority:1">Most urgent first</option>
+                                <option value="due:1">Due soonest first</option>
+                                <option value="due:-1">Due latest first</option>
+                            </select>
+                        </div>
+                    )}
+                    {visibleJobs.map(job => {
                         const pStyle = getPriorityStyle(job.priority, dictionaries);
                         return (
                             <div
@@ -1876,6 +2237,18 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                                 onClick={() => navigate(`/work-orders/${job.id}`)}
                                 className={`mobile-card-contact ${selectedIds.has(job.id) ? 'bg-blue-50' : ''}`}
                             >
+                                <label
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex items-center justify-center w-10 h-10 -ml-2 flex-shrink-0"
+                                    aria-label={`Select ${job.woNumber || job.title}`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.has(job.id)}
+                                        onChange={() => toggleSelect(job.id)}
+                                        className="rounded text-blue-600 focus:ring-primary-500"
+                                    />
+                                </label>
                                 <div className="mobile-card-contact-avatar" style={{ backgroundColor: pStyle.hex + '18', color: pStyle.hex }}>
                                     {job.priority?.charAt(0) || '?'}
                                 </div>
@@ -1896,21 +2269,31 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                 </div>
 
                 {/* ═══ Desktop Table View for Backlog (≥640px) ═══ */}
+                {backlogJobs.length > 0 && (
                 <div className="desktop-table">
                 <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50 sticky top-0 z-10">
                         <tr>
-                            <th className="w-12 px-6 py-3 text-left"><input type="checkbox" className="rounded" onChange={(e) => e.target.checked ? setSelectedIds(new Set(backlogJobs.map(j => j.id))) : setSelectedIds(new Set())} /></th>
+                            <th className="w-12 px-6 py-3 text-left">
+                                <input
+                                    type="checkbox"
+                                    className="rounded"
+                                    ref={selectAllRef}
+                                    checked={allVisibleSelected}
+                                    onChange={toggleSelectVisible}
+                                    aria-label="Select all shown rows"
+                                />
+                            </th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">WO Number</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Description</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Asset</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Priority</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase hidden sm:table-cell">Due Date</th>
+                            {sortHeader('priority', 'Priority')}
+                            {sortHeader('due', 'Due Date', 'hidden sm:table-cell')}
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase hidden md:table-cell">Assigned To</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-200">
-                        {backlogJobs.map(job => {
+                        {visibleJobs.map(job => {
                             const pStyle = getPriorityStyle(job.priority, dictionaries);
                             return (
                                 <tr
@@ -1927,10 +2310,15 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                                         />
                                     </td>
                                     {/* Business identifier, never the DB UUID — the row itself links to the WO */}
-                                    <td className="px-6 py-4 text-sm font-mono font-medium text-blue-600 whitespace-nowrap">{job.woNumber || '—'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <div className="text-sm font-mono font-medium text-blue-600">{job.woNumber || '—'}</div>
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase">{job.status}</div>
+                                    </td>
                                     <td className="px-6 py-4">
                                         <div className="text-sm font-medium text-slate-900">{job.title}</div>
-                                        <div className="text-xs text-slate-500">{job.description.substring(0, 50)}...</div>
+                                        {job.description && (
+                                            <div className="text-xs text-slate-500">{job.description.length > 50 ? `${job.description.substring(0, 50)}…` : job.description}</div>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-sm text-slate-600">{job.assetName}</td>
                                     <td className="px-6 py-4">
@@ -1941,7 +2329,7 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                                             {job.priority}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-slate-600 hidden sm:table-cell">{job.dueDate}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-600 hidden sm:table-cell">{job.dueDate || <span className="text-slate-400 italic">No date</span>}</td>
                                     <td className="px-6 py-4 hidden md:table-cell">
                                         {(() => {
                                             if (!job.assignedTo) return <span className="text-xs text-slate-400 italic">Unassigned</span>;
@@ -1962,6 +2350,15 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                     </tbody>
                 </table>
                 </div>
+                )}
+
+                {/* Every open order used to render at once — thousands of rows on a large tenant */}
+                {backlogJobs.length > visibleJobs.length && (
+                    <div className="flex items-center justify-center gap-3 p-4 border-t border-slate-100">
+                        <span className="text-xs text-slate-500">Showing {visibleJobs.length} of {backlogJobs.length}</span>
+                        <Button variant="secondary" size="sm" onClick={() => setLimit(l => l + BACKLOG_PAGE)}>Show more</Button>
+                    </div>
+                )}
             </div>
         </div>
     );

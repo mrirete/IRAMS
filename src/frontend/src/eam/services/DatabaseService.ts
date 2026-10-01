@@ -6457,10 +6457,17 @@ export class DatabaseService {
         };
 
         const [inv, roles, files] = await Promise.all([
-            supabase.from('task_library_inventory').select('*, inventory_items(code, description, uom)').eq('task_id', id),
+            // inventory_items has part_number, not code: the old embed 400'd, so a
+            // template's parts never loaded — and the editor then saved them away.
+            supabase.from('task_library_inventory').select('*, inventory_items(part_number, description, uom)').eq('task_id', id),
             supabase.from('task_library_roles').select('*').eq('task_id', id),
             supabase.from('task_library_files').select('*').eq('task_id', id)
         ]);
+
+        // Refuse rather than return a template with silently empty parts/roles/
+        // files: the editor would show nothing and Save would write that back.
+        const childErr = inv.error || roles.error || files.error;
+        if (childErr) throw new Error(`Template details could not be loaded: ${childErr.message}`);
 
         if (inv.data) {
             task.inventory = inv.data.map((i: any) => ({
@@ -6469,7 +6476,7 @@ export class DatabaseService {
                 inventoryItemId: i.inventory_item_id,
                 quantity: i.quantity,
                 notes: i.notes,
-                itemCode: i.inventory_items?.code,
+                itemCode: i.inventory_items?.part_number,
                 itemDescription: i.inventory_items?.description,
                 uom: i.inventory_items?.uom
             }));
@@ -6499,6 +6506,58 @@ export class DatabaseService {
         return task;
     }
 
+    private libraryChildRows(taskId: string, inventory: any[], roles: any[], files: any[]) {
+        return {
+            task_library_inventory: inventory.map((i: any) => ({
+                task_id: taskId, inventory_item_id: i.inventoryItemId, quantity: i.quantity, notes: i.notes,
+            })),
+            task_library_roles: roles.map((r: any) => ({
+                task_id: taskId, role_code: r.roleCode, quantity: r.quantity, estimated_hours: r.estimatedHours,
+            })),
+            task_library_files: files.map((f: any) => ({
+                task_id: taskId, name: f.name, url: f.url, type: f.type,
+            })),
+        } as Record<'task_library_inventory' | 'task_library_roles' | 'task_library_files', any[]>;
+    }
+
+    /**
+     * Replace a template's parts / roles / files. Inserts the new rows FIRST and
+     * only then removes the old ones, so a failure leaves what was there. It
+     * used to delete all three tables and re-insert without checking any error:
+     * a failed insert saved the template stripped of its resources, silently.
+     */
+    private async replaceLibraryChildren(taskId: string, inventory: any[], roles: any[], files: any[]): Promise<void> {
+        const rows = this.libraryChildRows(taskId, inventory, roles, files);
+        // A template part must be a stock item (FK). Free-text work-order parts
+        // ("Save as template") carry a WO line id instead; they are left out
+        // rather than failing the whole template, as before.
+        const partIds = [...new Set(rows.task_library_inventory.map(r => r.inventory_item_id).filter(Boolean))];
+        if (partIds.length) {
+            const { data: stock } = await supabase.from('inventory_items').select('id').in('id', partIds);
+            const known = new Set((stock || []).map((r: any) => r.id));
+            const skipped = rows.task_library_inventory.filter(r => !known.has(r.inventory_item_id));
+            if (skipped.length) console.warn(`[library] ${skipped.length} part line(s) are not stock items and were not added to the template.`);
+            rows.task_library_inventory = rows.task_library_inventory.filter(r => known.has(r.inventory_item_id));
+        } else {
+            rows.task_library_inventory = [];
+        }
+        for (const table of Object.keys(rows) as (keyof typeof rows)[]) {
+            const { data: before, error: readErr } = await supabase.from(table).select('id').eq('task_id', taskId);
+            if (readErr) throw new Error(`${table}: ${readErr.message}`);
+            let keep: string[] = [];
+            if (rows[table].length > 0) {
+                const { data: added, error } = await supabase.from(table).insert(rows[table]).select('id');
+                if (error) throw new Error(`Saving ${table.replace('task_library_', '')} failed: ${error.message}`);
+                keep = (added || []).map((r: any) => r.id);
+            }
+            const stale = (before || []).map((r: any) => r.id).filter((id: string) => !keep.includes(id));
+            if (stale.length) {
+                const { error } = await supabase.from(table).delete().in('id', stale);
+                if (error) throw new Error(`Removing old ${table.replace('task_library_', '')} failed: ${error.message}`);
+            }
+        }
+    }
+
     public async createLibraryTask(task: Partial<LibraryTask>, inventory: any[], roles: any[], files: any[] = [], actor: string): Promise<LibraryTask | null> {
         // 1. Create Core
         const { data, error } = await supabase.from('task_library_items').insert({
@@ -6521,32 +6580,14 @@ export class DatabaseService {
         if (error) throw error;
         const taskId = data.id;
 
-        // 2. Add sub-items
-        if (inventory.length > 0) {
-            await supabase.from('task_library_inventory').insert(inventory.map((i: any) => ({
-                task_id: taskId,
-                inventory_item_id: i.inventoryItemId,
-                quantity: i.quantity,
-                notes: i.notes
-            })));
-        }
-
-        if (roles.length > 0) {
-            await supabase.from('task_library_roles').insert(roles.map((r: any) => ({
-                task_id: taskId,
-                role_code: r.roleCode,
-                quantity: r.quantity,
-                estimated_hours: r.estimatedHours
-            })));
-        }
-
-        if (files.length > 0) {
-            await supabase.from('task_library_files').insert(files.map((f: any) => ({
-                task_id: taskId,
-                name: f.name,
-                url: f.url,
-                type: f.type
-            })));
+        // 2. Add sub-items (errors checked: they were ignored before). If they
+        // fail, take the new template back out — otherwise each retry of Save
+        // left another half-saved copy with the same code.
+        try {
+            await this.replaceLibraryChildren(taskId, inventory, roles, files);
+        } catch (e) {
+            await supabase.from('task_library_items').delete().eq('id', taskId);
+            throw e;
         }
 
         return this.getLibraryTask(taskId);
@@ -6574,37 +6615,8 @@ export class DatabaseService {
 
         if (error) throw error;
 
-        // 2. Replace Sub-items (Delete all and re-insert strategies for simple synchronization)
-        await supabase.from('task_library_inventory').delete().eq('task_id', id);
-        await supabase.from('task_library_roles').delete().eq('task_id', id);
-        await supabase.from('task_library_files').delete().eq('task_id', id);
-
-        if (inventory.length > 0) {
-            await supabase.from('task_library_inventory').insert(inventory.map((i: any) => ({
-                task_id: id,
-                inventory_item_id: i.inventoryItemId,
-                quantity: i.quantity,
-                notes: i.notes
-            })));
-        }
-
-        if (roles.length > 0) {
-            await supabase.from('task_library_roles').insert(roles.map((r: any) => ({
-                task_id: id,
-                role_code: r.roleCode,
-                quantity: r.quantity,
-                estimated_hours: r.estimatedHours
-            })));
-        }
-
-        if (files.length > 0) {
-            await supabase.from('task_library_files').insert(files.map((f: any) => ({
-                task_id: id,
-                name: f.name,
-                url: f.url,
-                type: f.type
-            })));
-        }
+        // 2. Replace sub-items: insert-then-prune, every step checked
+        await this.replaceLibraryChildren(id, inventory, roles, files);
 
         return this.getLibraryTask(id);
     }

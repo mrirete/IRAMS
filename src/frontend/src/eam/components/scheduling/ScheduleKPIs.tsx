@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     CheckCircle,
+    ChevronDown,
     TrendingUp,
     Briefcase,
     AlertTriangle,
@@ -182,9 +183,28 @@ export const ScheduleKPIs: React.FC<ScheduleKPIsProps> = ({
 
     const schedTier = getComplianceTier(metrics.scheduleCompliance);
     const pmTier = getComplianceTier(metrics.pmCompliance);
+    // Below sm the six cards stacked one per row and filled the phone before the
+    // schedule began, so a phone gets one summary line that opens the cards.
+    const [expanded, setExpanded] = useState(false);
 
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="mb-3">
+        <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            aria-expanded={expanded}
+            className="sm:hidden w-full flex items-center justify-between gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2.5 text-left text-xs font-medium text-slate-600"
+        >
+            <span className="truncate">
+                <span className="font-bold text-slate-900">{metrics.readyBacklog}</span> ready
+                {' · '}
+                <span className={`font-bold ${metrics.overdue > 0 ? 'text-red-700' : 'text-slate-900'}`}>{metrics.overdue}</span> overdue
+                {' · '}
+                <span className={`font-bold ${schedTier.text}`}>{metrics.scheduleCompliance.toFixed(0)}%</span> on schedule
+            </span>
+            <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+        <div className={`${expanded ? 'grid mt-2' : 'hidden'} sm:grid sm:mt-0 grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-4`}>
             {/* ── 1. Schedule Compliance ── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 group overflow-hidden relative">
                 {/* Top accent bar */}
@@ -461,6 +481,7 @@ export const ScheduleKPIs: React.FC<ScheduleKPIsProps> = ({
                     </div>
                 </div>
             </div>
+        </div>
         </div>
     );
 };

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-    Search, Plus, Truck, Mail, Phone, MapPin, Globe, Save, Trash2, X, FileText, DollarSign,
-    Calendar, Users, Building, Package, Upload, History, Receipt, Loader2
+    Search, Plus, Truck, Mail, Phone, MapPin, Globe, Trash2, X, FileText, DollarSign,
+    Users, Building, Package, Upload, History, Receipt, Loader2, MoreVertical, ChevronLeft,
+    ArrowUp, ArrowDown, Info
 } from 'lucide-react';
 import { getVendorHistory, VendorHistory } from '../services/vendorHistory';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -14,11 +15,93 @@ import { DatabaseService } from '../services/DatabaseService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import { Button, Badge } from '../components/ui';
+import { Button, Badge, Modal, Tabs, cn } from '../components/ui';
+import type { Tone } from '../components/ui';
 
 interface VendorsProps {
     onAnalyze?: (context: string) => void;
 }
+
+// A directory of thousands renders 100 rows at a time.
+const PAGE = 100;
+
+// Common ISO 4217 codes. A vendor already holding another code keeps it as an option.
+const CURRENCIES = [
+    'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'CHF', 'JPY', 'CNY', 'HKD', 'SGD', 'INR',
+    'AED', 'SAR', 'QAR', 'ZAR', 'NGN', 'GHS', 'KES', 'EGP', 'BRL', 'MXN', 'CLP', 'COP',
+    'PEN', 'IDR', 'MYR', 'PHP', 'THB', 'KRW', 'TRY', 'PLN', 'SEK', 'NOK', 'DKK',
+];
+let ccyNames: Intl.DisplayNames | null = null;
+try { ccyNames = new Intl.DisplayNames(undefined, { type: 'currency' }); } catch { /* engine without DisplayNames */ }
+const currencyName = (code: string) => {
+    try { return ccyNames?.of(code) ?? code; } catch { return code; }
+};
+
+// Used until the VENDOR_TYPE dictionary loads, or for a code it no longer lists.
+const TYPE_FALLBACK: Record<string, string> = { VENDOR: 'Vendor', MANUFACTURER: 'Manufacturer', SUPPLIER: 'Supplier' };
+const typeTone = (t?: string): Tone => (t === 'MANUFACTURER' ? 'info' : t === 'SUPPLIER' ? 'success' : 'purple');
+
+const FIELD_LABEL = 'block text-xs font-semibold text-slate-600 mb-1';
+const FIELD_INPUT = 'w-full px-3 py-2 min-h-[44px] md:min-h-0 border border-slate-300 rounded-lg text-sm bg-white focus:ring-1 focus:ring-primary-500 focus:outline-none';
+const ICON_INPUT = 'flex items-center gap-2 border border-slate-300 rounded-lg px-2 bg-white focus-within:ring-1 focus-within:ring-primary-500';
+const SECTION_TITLE = 'text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2 mb-3';
+
+type MenuItem = { label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean };
+
+/** Kebab menu — keeps rare or destructive actions off the resting screen. */
+const OverflowMenu: React.FC<{ items: MenuItem[]; label: string; className?: string }> = ({ items, label, className }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const onDown = (e: MouseEvent | TouchEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('touchstart', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('touchstart', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [open]);
+    return (
+        <div ref={ref} className={cn('relative', className)}>
+            <button
+                type="button"
+                aria-label={label}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen(o => !o)}
+                className="inline-flex items-center justify-center w-11 h-11 md:w-8 md:h-8 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            >
+                <MoreVertical size={18} />
+            </button>
+            {open && (
+                <div role="menu" className="absolute right-0 top-full mt-1 z-30 min-w-[180px] bg-white rounded-lg border border-slate-200 shadow-lg py-1">
+                    {items.map(it => (
+                        <button
+                            key={it.label}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setOpen(false); it.onClick(); }}
+                            className={cn(
+                                'w-full flex items-center gap-2 px-3 min-h-[44px] md:min-h-[36px] text-sm text-left hover:bg-slate-50',
+                                it.danger ? 'text-red-600' : 'text-slate-700'
+                            )}
+                        >
+                            {it.icon}{it.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+type SortKey = 'name' | 'code' | 'type';
+type StatusFilter = 'active' | 'inactive' | 'all';
+type DetailTab = 'details' | 'models' | 'rates' | 'history';
 
 export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -31,7 +114,13 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'name', dir: 1 });
+    const [typeFilter, setTypeFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
+    const [limit, setLimit] = useState(PAGE);
+    const [detailTab, setDetailTab] = useState<DetailTab>('details');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     // Deep-linked from Admin › Migration Center (/vendors?action=import).
     const [isBulkImportOpen, setIsBulkImportOpen] = useState(
@@ -47,6 +136,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [newModelCode, setNewModelCode] = useState('');
     const [newModelDesc, setNewModelDesc] = useState('');
     const [addingModel, setAddingModel] = useState(false);
+    const [isAddModelOpen, setIsAddModelOpen] = useState(false);
 
     // Supplier history — the orders, receipts and invoices behind this vendor.
     const [history, setHistory] = useState<VendorHistory | null>(null);
@@ -111,13 +201,46 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         if (dirty && !(await confirm(`Discard your unsaved changes to ${selectedVendor?.name || 'this vendor'}?`))) return;
         setSelectedVendor(v);
         setSavedSnapshot(v ? JSON.stringify(v) : '');
+        setDetailTab('details');
     };
+    const discardChanges = () => { if (savedSnapshot) setSelectedVendor(JSON.parse(savedSnapshot)); };
+
+    const typeLabel = (code?: string | null) =>
+        (code && (vendorTypes.find(t => t.code === code)?.description || TYPE_FALLBACK[code])) || code || '—';
+    // Name-only directory rows may carry no `active`; treat them as active.
+    const isActive = (v: Vendor) => v.active !== false;
 
     // Name-only directory rows (callers without vendors.view) have no code;
     // `v.code.toLowerCase()` threw on the first keystroke.
     const q = searchTerm.trim().toLowerCase();
-    const shownVendors = vendors.filter(v => !q || [v.name, v.code, v.email, v.primaryContactName, v.type]
-        .some(f => (f || '').toLowerCase().includes(q)));
+    const filteredVendors = vendors
+        .filter(v => statusFilter === 'all' || (statusFilter === 'active') === isActive(v))
+        .filter(v => !typeFilter || v.type === typeFilter)
+        .filter(v => !q || [v.name, v.code, v.email, v.primaryContactName, v.type, typeLabel(v.type)]
+            .some(f => (f || '').toLowerCase().includes(q)))
+        .sort((a, b) => {
+            const pick = (v: Vendor) => (sort.key === 'type' ? typeLabel(v.type) : v[sort.key]) || '';
+            return (pick(a).localeCompare(pick(b), undefined, { numeric: true, sensitivity: 'base' })
+                || (a.name || '').localeCompare(b.name || '')) * sort.dir;
+        });
+    const shownVendors = filteredVendors.slice(0, limit);
+    const inactiveCount = vendors.filter(v => !isActive(v)).length;
+    // Chips for the types actually in the directory, in dictionary order.
+    const typeChips = [
+        ...vendorTypes.map(t => t.code),
+        ...vendors.map(v => v.type).filter(t => t && !vendorTypes.some(d => d.code === t)),
+    ].filter((t, i, all) => all.indexOf(t) === i && vendors.some(v => v.type === t));
+    const filtersOn = !!q || !!typeFilter || statusFilter !== 'active';
+
+    const toggleSort = (key: SortKey) => { setSort(s => ({ key, dir: s.key === key ? (-s.dir as 1 | -1) : 1 })); setLimit(PAGE); };
+    const sortIcon = (key: SortKey) => sort.key !== key ? null : sort.dir === 1 ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+    const sortTh = (k: SortKey, label: string) => (
+        <th key={k} className="px-4 py-2 text-left" aria-sort={sort.key === k ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}>
+            <button type="button" onClick={() => toggleSort(k)} className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 uppercase hover:text-slate-800">
+                {label}{sortIcon(k)}
+            </button>
+        </th>
+    );
 
     // Next free V-#### code (random V-0..999 collided).
     const nextVendorCode = () => {
@@ -136,6 +259,22 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     // Copy-on-write: the old handlers mutated the shared row, so the list's copy changed too.
     const updateRate = (idx: number, patch: Partial<RateLine>) => setRateCard(rateCard.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
     const ccy = selectedVendor?.currency || 'USD';
+    const currencyOptions = CURRENCIES.includes(ccy) ? CURRENCIES : [ccy, ...CURRENCIES];
+
+    // Orders in different currencies cannot be added together; total each one.
+    // GRNs carry no currency of their own — they are valued at their order's.
+    const orderedByCcy = Object.entries((history?.purchaseOrders || []).reduce<Record<string, number>>((m, p) => {
+        const c = p.currency || ccy;
+        m[c] = (m[c] || 0) + p.total;
+        return m;
+    }, {}));
+    const poCurrency = new Map((history?.purchaseOrders || []).map(p => [p.id, p.currency]));
+
+    const showModels = selectedVendor?.type === 'MANUFACTURER' || selectedVendor?.type === 'SUPPLIER';
+    const showRates = !!selectedVendor && selectedVendor.type !== 'MANUFACTURER';
+    const activeTab: DetailTab =
+        (detailTab === 'models' && !showModels) || (detailTab === 'rates' && !showRates) ? 'details' : detailTab;
+    const modelOwner = selectedVendor?.type === 'MANUFACTURER' ? 'manufacturer' : 'supplier';
 
     const handleDeleteClick = (id: string, name: string) => {
         setDeleteModal({ isOpen: true, vendorId: id, vendorName: name });
@@ -155,7 +294,8 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     };
 
     const handleSave = async () => {
-        if (!selectedVendor) return;
+        if (!selectedVendor || saving) return;
+        setSaving(true);
         try {
             await DatabaseService.getInstance().updateVendor(selectedVendor);
             setSavedSnapshot(JSON.stringify(selectedVendor));
@@ -163,6 +303,8 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
             loadData();
         } catch (e: any) {
             showToast('Save failed: ' + e.message, 'error');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -178,6 +320,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
             setVendorModels(prev => [...prev, { id: model.id, code: newModelCode.trim(), description: newModelDesc.trim(), active: true }]);
             setNewModelCode('');
             setNewModelDesc('');
+            setIsAddModelOpen(false);
         } catch (e: any) {
             showToast('Failed to add model: ' + e.message, 'error');
         } finally {
@@ -239,46 +382,96 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         return res;
     };
 
+    const chip = (on: boolean) => cn(
+        'inline-flex items-center gap-1 px-2.5 min-h-[36px] md:min-h-[28px] rounded-full border text-xs font-medium whitespace-nowrap transition-colors',
+        on ? 'bg-primary-50 border-primary-300 text-primary-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+    );
+
     return (
-        <div className="ers-page-wide w-full flex h-full gap-6">
+        <div className="ers-page-wide w-full flex h-full gap-4">
             {/* List View */}
-            <div className={`${selectedVendor ? 'hidden lg:flex lg:w-1/3' : 'w-full flex'} flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300`}>
-                <div className="p-4 border-b border-slate-100 bg-white flex flex-col gap-4">
-                    <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                            <Truck className="text-blue-600" size={24} />
-                            <h2 className="text-xl font-bold text-slate-900">Vendor Directory</h2>
+            <div className={cn(
+                'flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden',
+                selectedVendor ? 'hidden lg:flex lg:w-72 xl:w-80 flex-shrink-0' : 'w-full flex'
+            )}>
+                <div className="p-4 border-b border-slate-100 bg-white flex flex-col gap-3">
+                    <div className="flex justify-between items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <Truck className="text-blue-600 flex-shrink-0" size={selectedVendor ? 20 : 24} />
+                            <h2 className={cn('font-bold text-slate-900 truncate', selectedVendor ? 'text-base' : 'text-xl')}>Vendor Directory</h2>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                onClick={() => setIsBulkImportOpen(true)}
-                                size="sm"
-                                variant="secondary"
-                                leftIcon={<Upload size={16} />}
-                                className="hidden sm:inline-flex"
-                            >
-                                Import
-                            </Button>
-                            <Button
-                                onClick={() => setIsAddModalOpen(true)}
-                                size="sm"
-                                leftIcon={<Plus size={16} />}
-                                className="hidden sm:inline-flex"
-                            >
-                                Add Vendor
-                            </Button>
-                        </div>
+                        {!selectedVendor && (
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    onClick={() => setIsBulkImportOpen(true)}
+                                    size="sm"
+                                    variant="secondary"
+                                    leftIcon={<Upload size={16} />}
+                                    className="hidden sm:inline-flex"
+                                >
+                                    Import
+                                </Button>
+                                <Button
+                                    onClick={() => setIsAddModalOpen(true)}
+                                    size="sm"
+                                    leftIcon={<Plus size={16} />}
+                                    className="hidden sm:inline-flex"
+                                >
+                                    Add Vendor
+                                </Button>
+                                {/* Phones: header buttons are hidden, so Import lives here with Add. */}
+                                <OverflowMenu
+                                    label="Vendor actions"
+                                    className="sm:hidden"
+                                    items={[
+                                        { label: 'Add vendor', icon: <Plus size={16} />, onClick: () => setIsAddModalOpen(true) },
+                                        { label: 'Import vendors', icon: <Upload size={16} />, onClick: () => setIsBulkImportOpen(true) },
+                                    ]}
+                                />
+                            </div>
+                        )}
                     </div>
                     <div className="relative">
-                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                         <input
                             type="text"
                             placeholder="Search vendors..."
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
+                            onChange={(e) => { setSearchTerm(e.target.value); setLimit(PAGE); }}
+                            className="w-full pl-9 pr-3 py-2 min-h-[44px] md:min-h-0 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
                         />
                     </div>
+                    {(typeChips.length > 1 || inactiveCount > 0 || statusFilter !== 'active') && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {(inactiveCount > 0 || statusFilter !== 'active') && ([
+                                ['active', 'Active'], ['inactive', `Inactive · ${inactiveCount}`], ['all', 'All'],
+                            ] as const).map(([id, label]) => (
+                                <button key={id} type="button" aria-pressed={statusFilter === id} onClick={() => { setStatusFilter(id); setLimit(PAGE); }} className={chip(statusFilter === id)}>
+                                    {label}
+                                </button>
+                            ))}
+                            {typeChips.length > 1 && (inactiveCount > 0 || statusFilter !== 'active') && <span className="w-px h-4 bg-slate-200 mx-0.5" aria-hidden />}
+                            {typeChips.length > 1 && typeChips.map(t => (
+                                <button key={t} type="button" aria-pressed={typeFilter === t} onClick={() => { setTypeFilter(f => (f === t ? '' : t)); setLimit(PAGE); }} className={chip(typeFilter === t)}>
+                                    {typeLabel(t)}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {!loading && vendors.length > 0 && (
+                        <div className="flex items-center justify-between text-xs text-slate-500">
+                            <span>{filteredVendors.length.toLocaleString()} of {vendors.length.toLocaleString()} vendors</span>
+                            {filtersOn && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setSearchTerm(''); setTypeFilter(''); setStatusFilter('active'); setLimit(PAGE); }}
+                                    className="font-medium text-primary-600 hover:text-primary-700"
+                                >
+                                    Clear filters
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {loadError && (
@@ -288,604 +481,696 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                     </div>
                 )}
                 {loading && !vendors.length && <div className="p-6 text-sm text-slate-400">Loading vendors...</div>}
-                {!loading && !loadError && shownVendors.length === 0 && (
+                {!loading && !loadError && filteredVendors.length === 0 && (
                     <div className="p-8 text-center text-sm text-slate-500">
-                        {vendors.length === 0 ? 'No vendors yet. Add one or import your supplier list.' : `No vendors match "${searchTerm}".`}
+                        {vendors.length === 0
+                            ? 'No vendors yet. Add one or import your supplier list.'
+                            : q ? `No vendors match "${searchTerm}".` : 'No vendors match these filters.'}
                     </div>
                 )}
                 <div className="flex-1 overflow-auto table-responsive">
                     {/* ═══ Mobile Card View (≤640px) ═══ */}
                     <div className="mobile-cards">
-                        {shownVendors
-                            .map(vendor => (
-                                <div
-                                    key={vendor.id}
-                                    className={`mobile-card-contact ${selectedVendor?.id === vendor.id ? 'bg-blue-50' : ''}`}
-                                    onClick={() => selectVendor(vendor)}
-                                >
-                                    <div className={`mobile-card-contact-avatar ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
-                                        {vendor.name.charAt(0)}
-                                    </div>
-                                    <div className="mobile-card-contact-body">
-                                        <div className="mobile-card-contact-name">{vendor.name}</div>
-                                        <div className="mobile-card-contact-sub">
-                                            {vendor.code} · {vendor.email || vendor.phone || vendor.type}
-                                        </div>
-                                    </div>
-                                    <div className="mobile-card-contact-badge">
-                                        <Badge tone={vendor.type === 'MANUFACTURER' ? 'info' : 'success'}>
-                                            {vendor.type === 'MANUFACTURER' ? 'MFR' : vendor.type === 'SUPPLIER' ? 'SUP' : 'VND'}
-                                        </Badge>
+                        {shownVendors.map(vendor => (
+                            <div
+                                key={vendor.id}
+                                className={cn('mobile-card-contact', selectedVendor?.id === vendor.id && 'bg-blue-50', !isActive(vendor) && 'opacity-60')}
+                                onClick={() => selectVendor(vendor)}
+                            >
+                                <div className={`mobile-card-contact-avatar ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+                                    {vendor.name.charAt(0)}
+                                </div>
+                                <div className="mobile-card-contact-body">
+                                    <div className="mobile-card-contact-name">{vendor.name}</div>
+                                    <div className="mobile-card-contact-sub">
+                                        {[vendor.code, vendor.email || vendor.phone].filter(Boolean).join(' · ')}
                                     </div>
                                 </div>
-                            ))}
+                                <div className="mobile-card-contact-badge flex flex-col items-end gap-1">
+                                    <Badge tone={typeTone(vendor.type)}>{typeLabel(vendor.type)}</Badge>
+                                    {!isActive(vendor) && <Badge tone="neutral">Inactive</Badge>}
+                                </div>
+                            </div>
+                        ))}
                     </div>
 
-                    {/* ═══ Desktop Table View (≥640px) ═══ */}
+                    {/* ═══ Desktop (≥640px) ═══ */}
                     <div className="desktop-table">
-                    <table className="min-w-full divide-y divide-slate-200">
-                        <thead className="bg-slate-50 sticky top-0">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Name</th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Type</th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase hidden sm:table-cell">Contact</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-slate-200">
-                            {shownVendors
-                                .map(vendor => (
-                                    <tr
-                                        key={vendor.id}
-                                        onClick={() => selectVendor(vendor)}
-                                        className={`cursor-pointer hover:bg-slate-50 ${selectedVendor?.id === vendor.id ? 'bg-blue-50' : ''}`}
-                                    >
-                                        <td className="px-6 py-4">
-                                            <div className="text-sm font-medium text-slate-900">{vendor.name}</div>
-                                            <div className="text-xs text-slate-500">{vendor.code}</div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <Badge tone={vendor.type === 'MANUFACTURER' ? 'info' : 'success'}>{vendor.type}</Badge>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-slate-500 hidden sm:table-cell">
-                                            <div>{vendor.phone || '-'}</div>
-                                            <div>{vendor.email || '-'}</div>
-                                        </td>
+                        {selectedVendor ? (
+                            // Master–detail: one dense column so the detail pane gets the width.
+                            <>
+                                <div className="sticky top-0 z-10 flex items-center gap-3 px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500">
+                                    <span className="font-semibold uppercase">Sort</span>
+                                    {(['name', 'code', 'type'] as const).map(k => (
+                                        <button key={k} type="button" onClick={() => toggleSort(k)} className={cn('inline-flex items-center gap-0.5 capitalize hover:text-slate-800', sort.key === k && 'font-bold text-slate-800')}>
+                                            {k}{sortIcon(k)}
+                                        </button>
+                                    ))}
+                                </div>
+                                <ul className="divide-y divide-slate-100">
+                                    {shownVendors.map(vendor => (
+                                        <li key={vendor.id}>
+                                            <button
+                                                type="button"
+                                                onClick={() => selectVendor(vendor)}
+                                                aria-current={selectedVendor.id === vendor.id}
+                                                className={cn(
+                                                    'w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-slate-50 border-l-2',
+                                                    selectedVendor.id === vendor.id ? 'bg-blue-50 border-blue-600' : 'border-transparent',
+                                                    !isActive(vendor) && 'opacity-60'
+                                                )}
+                                            >
+                                                <span
+                                                    className={cn('w-2 h-2 rounded-full flex-shrink-0', isActive(vendor) ? 'bg-emerald-500' : 'bg-slate-300')}
+                                                    title={isActive(vendor) ? 'Active' : 'Inactive'}
+                                                />
+                                                <span className="min-w-0">
+                                                    <span className="block text-sm font-medium text-slate-900 truncate">{vendor.name}</span>
+                                                    <span className="block text-[11px] font-mono text-slate-500 truncate">{vendor.code || '—'}</span>
+                                                </span>
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </>
+                        ) : (
+                            <table className="min-w-full divide-y divide-slate-200">
+                                <thead className="bg-slate-50 sticky top-0 z-10">
+                                    <tr>
+                                        {sortTh('name', 'Name')}
+                                        {sortTh('code', 'Code')}
+                                        {sortTh('type', 'Type')}
+                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase hidden md:table-cell">Contact</th>
                                     </tr>
-                                ))}
-                        </tbody>
-                    </table>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-slate-100">
+                                    {shownVendors.map(vendor => (
+                                        <tr
+                                            key={vendor.id}
+                                            onClick={() => selectVendor(vendor)}
+                                            className={cn('cursor-pointer hover:bg-slate-50', !isActive(vendor) && 'opacity-60')}
+                                        >
+                                            <td className="px-4 py-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-medium text-slate-900">{vendor.name}</span>
+                                                    {!isActive(vendor) && <Badge tone="neutral">Inactive</Badge>}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-xs font-mono text-slate-600">{vendor.code || '—'}</td>
+                                            <td className="px-4 py-2.5">
+                                                <Badge tone={typeTone(vendor.type)}>{typeLabel(vendor.type)}</Badge>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-xs text-slate-500 hidden md:table-cell">
+                                                <div className="truncate max-w-[16rem]">{vendor.primaryContactName || vendor.email || '—'}</div>
+                                                {vendor.phone && <div>{vendor.phone}</div>}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
+
+                    {filteredVendors.length > shownVendors.length && (
+                        <div className="p-3 text-center border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setLimit(l => l + PAGE)}
+                                className="px-4 min-h-[44px] md:min-h-[32px] text-sm font-medium text-primary-600 hover:text-primary-700"
+                            >
+                                Show more ({(filteredVendors.length - shownVendors.length).toLocaleString()} left)
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
             {/* Detail View */}
             {selectedVendor && (
-                <div className="w-full lg:w-2/3 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
-                    <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
-                        <div>
-                            <h1 className="text-xl font-bold text-slate-900">{selectedVendor.name}</h1>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="text-sm font-mono bg-slate-200 px-2 py-0.5 rounded text-slate-700">{selectedVendor.code}</span>
-                                <span className="text-sm text-slate-500">{selectedVendor.type}</span>
+                <div className="w-full lg:flex-1 min-w-0 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
+                    <div className="px-3 md:px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-start gap-2 flex-shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => selectVendor(null)}
+                            aria-label="Back to vendors"
+                            className="lg:hidden -ml-1 inline-flex items-center gap-1 min-h-[44px] min-w-[44px] px-1.5 text-sm font-medium text-primary-600 rounded-lg hover:bg-slate-100"
+                        >
+                            <ChevronLeft size={20} /> <span className="hidden sm:inline">Back</span>
+                        </button>
+                        <div className="min-w-0 flex-1 pt-1 lg:pt-0">
+                            <h1 className="text-lg font-bold text-slate-900 truncate">{selectedVendor.name || 'Unnamed vendor'}</h1>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                <span className="text-xs font-mono bg-slate-200 px-1.5 py-0.5 rounded text-slate-700">{selectedVendor.code || 'no code'}</span>
+                                <Badge tone={typeTone(selectedVendor.type)}>{typeLabel(selectedVendor.type)}</Badge>
+                                <Badge tone={isActive(selectedVendor) ? 'success' : 'neutral'} dot>{isActive(selectedVendor) ? 'Active' : 'Inactive'}</Badge>
                             </div>
+                            {(selectedVendor.primaryContactName || selectedVendor.email) && (
+                                <div className="mt-1 text-xs text-slate-500 truncate">
+                                    {selectedVendor.primaryContactName}
+                                    {selectedVendor.primaryContactName && selectedVendor.email && ' · '}
+                                    {selectedVendor.email && <a href={`mailto:${selectedVendor.email}`} className="text-primary-600 hover:underline">{selectedVendor.email}</a>}
+                                </div>
+                            )}
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                             <AskRelanternButton
+                                compact
+                                className="min-h-[44px] min-w-[44px] md:min-h-[32px] md:min-w-[32px]"
                                 contextType="vendor"
-                                contextSummary={`═══ VENDOR CONTEXT ═══\nVendor: ${selectedVendor.code} — ${selectedVendor.name}\nType: ${selectedVendor.type || 'N/A'} | Active: ${selectedVendor.active ? 'Yes' : 'No'}\nPayment Terms: ${selectedVendor.paymentTerms || 'N/A'} | Currency: ${selectedVendor.currency || 'USD'}\nHourly Rate: $${selectedVendor.hourlyRate || 0}/hr\nContact: ${selectedVendor.primaryContactName || 'N/A'} | Email: ${selectedVendor.email || 'N/A'}\nTotal Vendors in Directory: ${vendors.length}`}
+                                contextSummary={`═══ VENDOR CONTEXT ═══\nVendor: ${selectedVendor.code} — ${selectedVendor.name}\nType: ${typeLabel(selectedVendor.type)} | Active: ${selectedVendor.active ? 'Yes' : 'No'}\nPayment Terms: ${selectedVendor.paymentTerms || 'N/A'} | Currency: ${ccy}\nHourly Rate: ${ccy} ${selectedVendor.hourlyRate || 0}/hr\nContact: ${selectedVendor.primaryContactName || 'N/A'} | Email: ${selectedVendor.email || 'N/A'}\nTotal Vendors in Directory: ${vendors.length}`}
                             />
-                            <button onClick={() => selectVendor(null)} className="lg:hidden text-slate-400 hover:text-slate-600 p-1 flex items-center gap-1 text-sm">
-                                <X size={18} /> Back
-                            </button>
-                            <Button onClick={handleSave} size="sm" leftIcon={<Save size={16} />}>
-                                Save
-                            </Button>
-                            <button onClick={() => handleDeleteClick(selectedVendor.id, selectedVendor.name)} className="px-3 py-1.5 text-red-600 border border-red-200 rounded hover:bg-red-50 flex items-center gap-2 text-sm">
-                                <Trash2 size={16} /> Delete
-                            </button>
-                            <button onClick={() => selectVendor(null)} className="hidden lg:block text-slate-400 hover:text-slate-600 ml-2">
-                                <X size={20} />
+                            <OverflowMenu
+                                label="More vendor actions"
+                                items={[{
+                                    label: 'Delete vendor', icon: <Trash2 size={16} />, danger: true,
+                                    onClick: () => handleDeleteClick(selectedVendor.id, selectedVendor.name),
+                                }]}
+                            />
+                            <button onClick={() => selectVendor(null)} aria-label="Close" className="hidden lg:inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                                <X size={18} />
                             </button>
                         </div>
                     </div>
 
-                    <div className="p-6 overflow-y-auto space-y-6">
-                        {/* General Info */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Vendor Name</label>
-                                <input
-                                    type="text"
-                                    value={selectedVendor.name}
-                                    onChange={e => setSelectedVendor({ ...selectedVendor, name: e.target.value })}
-                                    className="w-full p-2 border border-slate-300 rounded text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Vendor Code</label>
-                                <input
-                                    type="text"
-                                    value={selectedVendor.code}
-                                    onChange={e => setSelectedVendor({ ...selectedVendor, code: e.target.value })}
-                                    className="w-full p-2 border border-slate-300 rounded text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                                <select
-                                    value={selectedVendor.type}
-                                    onChange={e => setSelectedVendor({ ...selectedVendor, type: e.target.value as any })}
-                                    className="w-full p-2 border border-slate-300 rounded text-sm"
-                                >
-                                    {vendorTypes.length > 0 ? vendorTypes.map(vt => (
-                                        <option key={vt.id} value={vt.code}>{vt.description}</option>
-                                    )) : (
-                                        <>
-                                            <option value="VENDOR">Vendor</option>
-                                            <option value="MANUFACTURER">Manufacturer</option>
-                                            <option value="SUPPLIER">Supplier</option>
-                                        </>
-                                    )}
-                                </select>
-                            </div>
-                        </div>
+                    <Tabs
+                        activeTab={activeTab}
+                        onTabChange={id => setDetailTab(id as DetailTab)}
+                        tabs={[
+                            { id: 'details', label: 'Details', icon: Building },
+                            { id: 'models', label: 'Models', icon: Package, show: showModels, badge: vendorModels.length },
+                            { id: 'rates', label: 'Rates', icon: Users, show: showRates, badge: rateCard.length },
+                            { id: 'history', label: 'History', icon: History, badge: history?.purchaseOrders.length },
+                        ]}
+                    />
 
-                        {/* Models Section — Only for MANUFACTURER type */}
-                        {(selectedVendor.type === 'MANUFACTURER' || selectedVendor.type === 'SUPPLIER') && (
-                            <>
-                                <hr className="border-slate-100" />
-
-                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                                    <Package size={16} /> Equipment Models
-                                </h3>
-                                <p className="text-xs text-slate-500 -mt-4">
-                                    Manage model numbers for this manufacturer. These will be available in the Asset Details model dropdown.
-                                </p>
-
-                                {/* Add Model Inline Form */}
-                                <div className="flex flex-wrap items-end gap-3">
-                                    <div className="flex-1">
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Model Code <span className="text-red-500">*</span></label>
-                                        <input
-                                            type="text"
-                                            value={newModelCode}
-                                            onChange={e => setNewModelCode(e.target.value)}
-                                            placeholder="e.g. HPX-200, 1LA7-096"
-                                            className="w-full p-2 border border-slate-300 rounded text-sm"
-                                        />
+                    <div className="flex-1 overflow-y-auto p-4 md:p-5">
+                        {activeTab === 'details' && (
+                            <div className="space-y-6 max-w-3xl">
+                                <section>
+                                    <h3 className={SECTION_TITLE}><Info size={14} /> General</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={FIELD_LABEL}>Vendor name</label>
+                                            <input
+                                                type="text"
+                                                value={selectedVendor.name}
+                                                onChange={e => setSelectedVendor({ ...selectedVendor, name: e.target.value })}
+                                                className={FIELD_INPUT}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className={FIELD_LABEL}>Vendor code</label>
+                                            <input
+                                                type="text"
+                                                value={selectedVendor.code}
+                                                onChange={e => setSelectedVendor({ ...selectedVendor, code: e.target.value })}
+                                                className={cn(FIELD_INPUT, 'font-mono')}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className={FIELD_LABEL}>Type</label>
+                                            <select
+                                                value={selectedVendor.type}
+                                                onChange={e => setSelectedVendor({ ...selectedVendor, type: e.target.value as any })}
+                                                className={FIELD_INPUT}
+                                            >
+                                                {vendorTypes.length > 0 ? vendorTypes.map(vt => (
+                                                    <option key={vt.id} value={vt.code}>{vt.description}</option>
+                                                )) : (
+                                                    <>
+                                                        <option value="VENDOR">Vendor</option>
+                                                        <option value="MANUFACTURER">Manufacturer</option>
+                                                        <option value="SUPPLIER">Supplier</option>
+                                                    </>
+                                                )}
+                                            </select>
+                                        </div>
+                                        <label className="flex items-center gap-3 sm:mt-5 min-h-[44px] md:min-h-0 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedVendor.active}
+                                                onChange={e => setSelectedVendor({ ...selectedVendor, active: e.target.checked })}
+                                                className="h-4 w-4 text-blue-600 rounded"
+                                            />
+                                            <span className="text-sm text-slate-700">
+                                                Active
+                                                <span className="block text-xs text-slate-400">Inactive vendors drop out of the default list.</span>
+                                            </span>
+                                        </label>
                                     </div>
-                                    <div className="flex-1">
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                                        <input
-                                            type="text"
-                                            value={newModelDesc}
-                                            onChange={e => setNewModelDesc(e.target.value)}
-                                            placeholder="e.g. High-Pressure Centrifugal Pump"
-                                            className="w-full p-2 border border-slate-300 rounded text-sm"
-                                        />
+                                </section>
+
+                                <section>
+                                    <h3 className={SECTION_TITLE}><Building size={14} /> Contact</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={FIELD_LABEL}>Email</label>
+                                            <div className={ICON_INPUT}>
+                                                <Mail size={16} className="text-slate-400" />
+                                                <input
+                                                    type="email"
+                                                    value={selectedVendor.email || ''}
+                                                    onChange={e => setSelectedVendor({ ...selectedVendor, email: e.target.value })}
+                                                    className="w-full p-2 min-h-[42px] md:min-h-0 text-sm outline-none border-none"
+                                                    placeholder="contact@vendor.com"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={FIELD_LABEL}>Phone</label>
+                                            <div className={ICON_INPUT}>
+                                                <Phone size={16} className="text-slate-400" />
+                                                <input
+                                                    type="tel"
+                                                    value={selectedVendor.phone || ''}
+                                                    onChange={e => setSelectedVendor({ ...selectedVendor, phone: e.target.value })}
+                                                    className="w-full p-2 min-h-[42px] md:min-h-0 text-sm outline-none border-none"
+                                                    placeholder="+1 555-0000"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={FIELD_LABEL}>Website</label>
+                                            <div className={ICON_INPUT}>
+                                                <Globe size={16} className="text-slate-400" />
+                                                <input
+                                                    type="url"
+                                                    value={selectedVendor.website || ''}
+                                                    onChange={e => setSelectedVendor({ ...selectedVendor, website: e.target.value })}
+                                                    className="w-full p-2 min-h-[42px] md:min-h-0 text-sm outline-none border-none"
+                                                    placeholder="https://vendor.com"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={FIELD_LABEL}>Primary contact</label>
+                                            <div className={ICON_INPUT}>
+                                                <Users size={16} className="text-slate-400" />
+                                                <input
+                                                    type="text"
+                                                    value={selectedVendor.primaryContactName || ''}
+                                                    onChange={e => setSelectedVendor({ ...selectedVendor, primaryContactName: e.target.value })}
+                                                    className="w-full p-2 min-h-[42px] md:min-h-0 text-sm outline-none border-none"
+                                                    placeholder="John Salesman"
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
-                                    <button
-                                        onClick={handleAddModel}
-                                        disabled={addingModel || !newModelCode.trim()}
-                                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 flex items-center gap-1 text-sm whitespace-nowrap"
-                                    >
-                                        <Plus size={14} /> {addingModel ? 'Adding...' : 'Add Model'}
-                                    </button>
-                                </div>
+                                </section>
 
-                                {/* Models Table */}
-                                {vendorModels.length > 0 ? (
-                                    <div className="border border-slate-200 rounded-lg overflow-hidden table-responsive">
-                                        <table className="min-w-full divide-y divide-slate-200">
-                                            <thead className="bg-slate-50">
-                                                <tr>
-                                                    <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Model Code</th>
-                                                    <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Description</th>
-                                                    <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Status</th>
-                                                    <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {vendorModels.map(model => (
-                                                    <tr key={model.id} className="hover:bg-slate-50">
-                                                        <td className="px-4 py-2 text-sm font-mono font-medium text-slate-900">{model.code}</td>
-                                                        <td className="px-4 py-2 text-sm text-slate-600">{model.description || '-'}</td>
-                                                        <td className="px-4 py-2">
-                                                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${model.active ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-500'}`}>
-                                                                {model.active ? 'Active' : 'Inactive'}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-right">
-                                                            <button
-                                                                onClick={() => handleDeleteModel(model.id)}
-                                                                className="text-red-500 hover:text-red-700 p-1"
-                                                                title="Delete Model"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-6 text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg">
-                                        No models registered yet. Add a model above.
-                                    </div>
-                                )}
-                            </>
-                        )}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            <div className="flex items-center gap-2 mt-6">
-                                <input
-                                    type="checkbox"
-                                    checked={selectedVendor.active}
-                                    onChange={e => setSelectedVendor({ ...selectedVendor, active: e.target.checked })}
-                                    className="h-4 w-4 text-blue-600 rounded"
-                                />
-                                <span className="text-sm text-slate-700">Active Status</span>
-                            </div>
-                        </div>
-
-                        <hr className="border-slate-100" />
-
-                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                            <Building size={16} /> Contact & Address
-                        </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                                <div className="flex items-center gap-2 border border-slate-300 rounded px-2 bg-white">
-                                    <Mail size={16} className="text-slate-400" />
-                                    <input
-                                        type="email"
-                                        value={selectedVendor.email || ''}
-                                        onChange={e => setSelectedVendor({ ...selectedVendor, email: e.target.value })}
-                                        className="w-full p-2 text-sm outline-none border-none"
-                                        placeholder="contact@vendor.com"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
-                                <div className="flex items-center gap-2 border border-slate-300 rounded px-2 bg-white">
-                                    <Phone size={16} className="text-slate-400" />
-                                    <input
-                                        type="tel"
-                                        value={selectedVendor.phone || ''}
-                                        onChange={e => setSelectedVendor({ ...selectedVendor, phone: e.target.value })}
-                                        className="w-full p-2 text-sm outline-none border-none"
-                                        placeholder="+1 555-0000"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Website</label>
-                                <div className="flex items-center gap-2 border border-slate-300 rounded px-2 bg-white">
-                                    <Globe size={16} className="text-slate-400" />
-                                    <input
-                                        type="url"
-                                        value={selectedVendor.website || ''}
-                                        onChange={e => setSelectedVendor({ ...selectedVendor, website: e.target.value })}
-                                        className="w-full p-2 text-sm outline-none border-none"
-                                        placeholder="https://vendor.com"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Primary Contact</label>
-                                <div className="flex items-center gap-2 border border-slate-300 rounded px-2 bg-white">
-                                    <Users size={16} className="text-slate-400" />
-                                    <input
-                                        type="text"
-                                        value={selectedVendor.primaryContactName || ''}
-                                        onChange={e => setSelectedVendor({ ...selectedVendor, primaryContactName: e.target.value })}
-                                        className="w-full p-2 text-sm outline-none border-none"
-                                        placeholder="John Salesman"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
-                                <div className="flex items-start gap-2 border border-slate-300 rounded px-2 bg-white">
-                                    <MapPin size={16} className="text-slate-400 mt-2.5" />
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full p-2">
+                                <section>
+                                    <h3 className={SECTION_TITLE}><MapPin size={14} /> Address</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <input
                                             placeholder="Street"
-                                            className="col-span-2 p-1 border-b border-slate-100 outline-none text-sm"
+                                            className={cn(FIELD_INPUT, 'sm:col-span-2')}
                                             value={selectedVendor.address?.street || ''}
                                             onChange={e => setSelectedVendor({ ...selectedVendor, address: { ...selectedVendor.address!, street: e.target.value } })}
                                         />
                                         <input
                                             placeholder="City"
-                                            className="p-1 border-b border-slate-100 outline-none text-sm"
+                                            className={FIELD_INPUT}
                                             value={selectedVendor.address?.city || ''}
                                             onChange={e => setSelectedVendor({ ...selectedVendor, address: { ...selectedVendor.address!, city: e.target.value } })}
                                         />
                                         <input
                                             placeholder="State"
-                                            className="p-1 border-b border-slate-100 outline-none text-sm"
+                                            className={FIELD_INPUT}
                                             value={selectedVendor.address?.state || ''}
                                             onChange={e => setSelectedVendor({ ...selectedVendor, address: { ...selectedVendor.address!, state: e.target.value } })}
                                         />
                                         <input
                                             placeholder="Zip"
-                                            className="p-1 border-b border-slate-100 outline-none text-sm"
+                                            className={FIELD_INPUT}
                                             value={selectedVendor.address?.zip || ''}
                                             onChange={e => setSelectedVendor({ ...selectedVendor, address: { ...selectedVendor.address!, zip: e.target.value } })}
                                         />
                                         <input
                                             placeholder="Country"
-                                            className="p-1 outline-none text-sm"
+                                            className={FIELD_INPUT}
                                             value={selectedVendor.address?.country || ''}
                                             onChange={e => setSelectedVendor({ ...selectedVendor, address: { ...selectedVendor.address!, country: e.target.value } })}
                                         />
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                                </section>
 
-                        <hr className="border-slate-100" />
-
-                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                            <DollarSign size={16} /> Financials
-                        </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Payment Terms</label>
-                                <input
-                                    type="text"
-                                    value={selectedVendor.paymentTerms || ''}
-                                    onChange={e => setSelectedVendor({ ...selectedVendor, paymentTerms: e.target.value })}
-                                    className="w-full p-2 border border-slate-300 rounded text-sm"
-                                    placeholder="Net 30"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-                                <input
-                                    type="text"
-                                    value={selectedVendor.currency || 'USD'}
-                                    onChange={e => setSelectedVendor({ ...selectedVendor, currency: e.target.value })}
-                                    className="w-full p-2 border border-slate-300 rounded text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Hourly Rate</label>
-                                <input
-                                    type="number"
-                                    value={selectedVendor.hourlyRate || 0}
-                                    onChange={e => setSelectedVendor({ ...selectedVendor, hourlyRate: parseFloat(e.target.value) })}
-                                    className="w-full p-2 border border-slate-300 rounded text-sm"
-                                />
-                            </div>
-                        </div>
-
-                        <hr className="border-slate-100" />
-
-                        {/* Supplier History — what has actually been bought from, received from and invoiced by this vendor */}
-                        <div>
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                                    <History size={16} /> Supplier History
-                                    {historyLoading && <Loader2 size={14} className="animate-spin text-slate-400" />}
-                                </h3>
-                                <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
-                                    {([
-                                        { id: 'orders', label: 'Orders', n: history?.purchaseOrders.length ?? 0, icon: FileText },
-                                        { id: 'receipts', label: 'Receipts', n: history?.goodsReceipts.length ?? 0, icon: Package },
-                                        { id: 'invoices', label: 'Invoices', n: history?.invoices.length ?? 0, icon: Receipt },
-                                    ] as const).map(t => (
-                                        <button
-                                            key={t.id}
-                                            type="button"
-                                            onClick={() => setHistoryTab(t.id)}
-                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition ${historyTab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                                        >
-                                            <t.icon size={13} /> {t.label}
-                                            <span className={`ml-0.5 px-1.5 rounded-full text-[10px] ${historyTab === t.id ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>{t.n}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {history && history.warnings.length > 0 && (
-                                <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 space-y-0.5">
-                                    {history.warnings.map((w, i) => <div key={i}>{w}</div>)}
-                                </div>
-                            )}
-
-                            <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
-                                {historyLoading && !history ? (
-                                    <div className="py-8 text-center text-sm text-slate-400">Loading history…</div>
-                                ) : historyTab === 'orders' ? (
-                                    history && history.purchaseOrders.length > 0 ? (
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-slate-200 text-sm">
-                                                <thead className="bg-slate-50">
-                                                    <tr>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Status</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Created</th>
-                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Lines</th>
-                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Total</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {history.purchaseOrders.map(po => (
-                                                        <tr key={po.id} className="hover:bg-slate-50">
-                                                            <td className="px-4 py-2 font-mono font-medium text-slate-900">{po.poCode}</td>
-                                                            <td className="px-4 py-2"><Badge tone="neutral">{po.status}</Badge></td>
-                                                            <td className="px-4 py-2 text-slate-600">{fmtDate(po.dateCreated)}</td>
-                                                            <td className="px-4 py-2 text-right text-slate-600">{po.lineCount}</td>
-                                                            <td className="px-4 py-2 text-right font-medium text-slate-900">{fmtMoney(po.total, po.currency)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                                <tfoot className="bg-slate-50">
-                                                    <tr>
-                                                        <td colSpan={4} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-right">Ordered to date</td>
-                                                        <td className="px-4 py-2 text-right font-bold text-slate-900">
-                                                            {fmtMoney(history.purchaseOrders.reduce((s, p) => s + p.total, 0))}
-                                                        </td>
-                                                    </tr>
-                                                </tfoot>
-                                            </table>
+                                <section>
+                                    <h3 className={SECTION_TITLE}><DollarSign size={14} /> Financials</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className={FIELD_LABEL}>Payment terms</label>
+                                            <input
+                                                type="text"
+                                                value={selectedVendor.paymentTerms || ''}
+                                                onChange={e => setSelectedVendor({ ...selectedVendor, paymentTerms: e.target.value })}
+                                                className={FIELD_INPUT}
+                                                placeholder="Net 30"
+                                            />
                                         </div>
-                                    ) : (
-                                        <div className="py-8 text-center text-sm text-slate-400">No purchase orders have been placed with this vendor.</div>
-                                    )
-                                ) : historyTab === 'receipts' ? (
-                                    history && history.goodsReceipts.length > 0 ? (
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-slate-200 text-sm">
-                                                <thead className="bg-slate-50">
-                                                    <tr>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">GRN</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Received</th>
-                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Qty</th>
-                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Value</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {history.goodsReceipts.map(gr => (
-                                                        <tr key={gr.id} className="hover:bg-slate-50">
-                                                            <td className="px-4 py-2 font-mono font-medium text-slate-900">{gr.grnNumber}</td>
-                                                            <td className="px-4 py-2 font-mono text-slate-600">{gr.poCode || '—'}</td>
-                                                            <td className="px-4 py-2 text-slate-600">{fmtDate(gr.receivedDate)}</td>
-                                                            <td className="px-4 py-2 text-right text-slate-600">{gr.quantity.toLocaleString()}</td>
-                                                            <td className="px-4 py-2 text-right font-medium text-slate-900">{fmtMoney(gr.totalCost)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                        <div>
+                                            <label className={FIELD_LABEL}>Currency</label>
+                                            <select
+                                                value={ccy}
+                                                onChange={e => setSelectedVendor({ ...selectedVendor, currency: e.target.value })}
+                                                className={FIELD_INPUT}
+                                            >
+                                                {currencyOptions.map(c => (
+                                                    <option key={c} value={c}>{c} — {currencyName(c)}</option>
+                                                ))}
+                                            </select>
                                         </div>
-                                    ) : (
-                                        <div className="py-8 text-center text-sm text-slate-400">
-                                            {history && history.purchaseOrders.length > 0
-                                                ? 'Nothing has been received against this vendor\'s orders yet.'
-                                                : 'No goods receipts — nothing has been ordered from this vendor.'}
+                                        <div>
+                                            <label className={FIELD_LABEL}>Hourly rate ({ccy}/h)</label>
+                                            <input
+                                                type="number"
+                                                value={selectedVendor.hourlyRate || 0}
+                                                onChange={e => setSelectedVendor({ ...selectedVendor, hourlyRate: parseFloat(e.target.value) })}
+                                                className={FIELD_INPUT}
+                                            />
                                         </div>
-                                    )
+                                    </div>
+                                </section>
+                            </div>
+                        )}
+
+                        {activeTab === 'models' && (
+                            <div className="space-y-3 max-w-3xl">
+                                <div className="flex items-start justify-between gap-3">
+                                    <p className="text-xs text-slate-500">
+                                        {modelOwner === 'manufacturer'
+                                            ? 'Model numbers made by this manufacturer.'
+                                            : 'Model numbers this supplier carries.'}
+                                        {' '}They appear in the Asset Details model dropdown.
+                                    </p>
+                                    <Button size="sm" variant="secondary" leftIcon={<Plus size={14} />} onClick={() => setIsAddModelOpen(true)} className="flex-shrink-0">
+                                        Add model
+                                    </Button>
+                                </div>
+                                {vendorModels.length > 0 ? (
+                                    <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                                        {vendorModels.map(model => (
+                                            <li key={model.id} className="flex items-center gap-3 pl-3 pr-1 py-1.5 hover:bg-slate-50">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-sm font-mono font-medium text-slate-900 truncate">{model.code}</div>
+                                                    {model.description && <div className="text-xs text-slate-500 truncate">{model.description}</div>}
+                                                </div>
+                                                {!model.active && <Badge tone="neutral">Inactive</Badge>}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteModel(model.id)}
+                                                    aria-label={`Delete model ${model.code}`}
+                                                    className="inline-flex items-center justify-center w-11 h-11 md:w-8 md:h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                                >
+                                                    <Trash2 size={15} />
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 ) : (
-                                    history && history.invoices.length > 0 ? (
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-slate-200 text-sm">
-                                                <thead className="bg-slate-50">
-                                                    <tr>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Invoice</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Date</th>
-                                                        <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Amount</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Match</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Payables</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {history.invoices.map(inv => (
-                                                        <tr key={inv.id} className="hover:bg-slate-50">
-                                                            <td className="px-4 py-2 font-mono font-medium text-slate-900">{inv.invoiceNumber}</td>
-                                                            <td className="px-4 py-2 font-mono text-slate-600">{inv.poCode || '—'}</td>
-                                                            <td className="px-4 py-2 text-slate-600">{fmtDate(inv.invoiceDate)}</td>
-                                                            <td className="px-4 py-2 text-right font-medium text-slate-900">{fmtMoney(inv.invoiceAmount, inv.currency)}</td>
-                                                            <td className="px-4 py-2"><Badge tone={matchTone(inv.matchStatus)}>{inv.matchStatus}</Badge></td>
-                                                            <td className="px-4 py-2 text-slate-600">{inv.payablesStatus}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    ) : (
-                                        <div className="py-8 text-center text-sm text-slate-400">No invoices have been entered for this vendor.</div>
-                                    )
+                                    <div className="text-center py-8 text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg">
+                                        No models registered for this {modelOwner} yet.
+                                    </div>
                                 )}
                             </div>
-                        </div>
+                        )}
 
                         {/* Contractor rates: saved with the vendor (contact_details.rateCard) */}
-                        {selectedVendor.type !== 'MANUFACTURER' && (
-                        <div className="border-t border-slate-100 pt-6 mt-6">
-                            <h4 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-2">
-                                <Users size={16} className="text-blue-600" />
-                                Contractor rates
-                            </h4>
-                            <p className="text-xs text-slate-500 mb-4">
-                                Agreed hourly rates per craft, kept on this vendor as the reference for costing contractor work. Saved with the vendor.
-                            </p>
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-slate-200 text-xs">
-                                        <thead className="bg-slate-100">
+                        {activeTab === 'rates' && (
+                            <div className="space-y-3 max-w-3xl">
+                                <p className="text-xs text-slate-500">
+                                    Agreed hourly rates per craft, kept on this vendor as the reference for costing contractor work. Saved with the vendor, in {ccy}.
+                                </p>
+                                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                        <thead className="bg-slate-50">
                                             <tr>
-                                                <th className="px-4 py-2.5 text-left font-bold text-slate-600 uppercase">Craft / specialty</th>
-                                                <th className="px-4 py-2.5 text-right font-bold text-slate-600 uppercase">Regular ({ccy}/h)</th>
-                                                <th className="px-4 py-2.5 text-right font-bold text-slate-600 uppercase">Overtime ({ccy}/h)</th>
-                                                <th className="px-4 py-2.5 w-16"><span className="sr-only">Remove</span></th>
+                                                <th className="px-3 py-2 text-left text-xs font-bold text-slate-500 uppercase">Craft / specialty</th>
+                                                <th className="px-3 py-2 text-right text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Regular ({ccy}/h)</th>
+                                                <th className="px-3 py-2 text-right text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Overtime ({ccy}/h)</th>
+                                                <th className="px-1 py-2 w-12"><span className="sr-only">Remove</span></th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 bg-white">
                                             {rateCard.map((line, idx) => (
                                                 <tr key={idx}>
-                                                    <td className="px-4 py-2">
+                                                    <td className="px-3 py-1.5">
                                                         <input
                                                             type="text"
                                                             value={line.craft}
                                                             onChange={(e) => updateRate(idx, { craft: e.target.value })}
                                                             placeholder="e.g. Mechanical technician"
-                                                            className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-0.5"
+                                                            className="w-full min-w-[10rem] min-h-[44px] md:min-h-0 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-1"
                                                         />
                                                     </td>
-                                                    <td className="px-4 py-2 text-right">
+                                                    <td className="px-3 py-1.5 text-right">
                                                         <input
                                                             type="number" inputMode="decimal" min={0}
                                                             value={line.regRate ?? ''}
                                                             onChange={(e) => updateRate(idx, { regRate: e.target.value === '' ? undefined : Number(e.target.value) })}
-                                                            className="w-24 text-right bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-0.5"
+                                                            className="w-24 min-h-[44px] md:min-h-0 text-right bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-1"
                                                         />
                                                     </td>
-                                                    <td className="px-4 py-2 text-right">
+                                                    <td className="px-3 py-1.5 text-right">
                                                         <input
                                                             type="number" inputMode="decimal" min={0}
                                                             value={line.otRate ?? ''}
                                                             onChange={(e) => updateRate(idx, { otRate: e.target.value === '' ? undefined : Number(e.target.value) })}
-                                                            className="w-24 text-right bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-0.5"
+                                                            className="w-24 min-h-[44px] md:min-h-0 text-right bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none py-1"
                                                         />
                                                     </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        <button onClick={() => setRateCard(rateCard.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700 font-medium">
-                                                            Remove
+                                                    <td className="px-1 py-1 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setRateCard(rateCard.filter((_, i) => i !== idx))}
+                                                            aria-label={`Remove ${line.craft || 'rate line'}`}
+                                                            className="inline-flex items-center justify-center w-11 h-11 md:w-8 md:h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                                        >
+                                                            <Trash2 size={15} />
                                                         </button>
                                                     </td>
                                                 </tr>
                                             ))}
                                             {rateCard.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={4} className="px-4 py-4 text-center text-slate-400">No contractor rates recorded for this vendor.</td>
+                                                    <td colSpan={4} className="px-4 py-6 text-center text-slate-400">No contractor rates recorded for this vendor.</td>
                                                 </tr>
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-                                <button
-                                    onClick={() => setRateCard([...rateCard, { craft: '' }])}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-all border border-blue-200"
-                                >
-                                    <Plus size={14} /> Add craft line
-                                </button>
+                                <Button size="sm" variant="secondary" leftIcon={<Plus size={14} />} onClick={() => setRateCard([...rateCard, { craft: '' }])}>
+                                    Add craft line
+                                </Button>
                             </div>
-                        </div>
                         )}
 
+                        {/* Supplier History — what has actually been bought from, received from and invoiced by this vendor */}
+                        {activeTab === 'history' && (
+                            <div>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
+                                        {([
+                                            { id: 'orders', label: 'Orders', n: history?.purchaseOrders.length ?? 0, icon: FileText },
+                                            { id: 'receipts', label: 'Receipts', n: history?.goodsReceipts.length ?? 0, icon: Package },
+                                            { id: 'invoices', label: 'Invoices', n: history?.invoices.length ?? 0, icon: Receipt },
+                                        ] as const).map(t => (
+                                            <button
+                                                key={t.id}
+                                                type="button"
+                                                onClick={() => setHistoryTab(t.id)}
+                                                className={`flex items-center gap-1.5 px-3 min-h-[40px] md:min-h-[30px] rounded-md font-medium transition ${historyTab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                                            >
+                                                <t.icon size={13} /> {t.label}
+                                                <span className={`ml-0.5 px-1.5 rounded-full text-[10px] ${historyTab === t.id ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>{t.n}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {historyLoading && <Loader2 size={14} className="animate-spin text-slate-400" />}
+                                </div>
 
+                                {history && history.warnings.length > 0 && (
+                                    <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 space-y-0.5">
+                                        {history.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                                    </div>
+                                )}
+
+                                <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
+                                    {historyLoading && !history ? (
+                                        <div className="py-8 text-center text-sm text-slate-400">Loading history…</div>
+                                    ) : historyTab === 'orders' ? (
+                                        history && history.purchaseOrders.length > 0 ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                                    <thead className="bg-slate-50">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Status</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Created</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Lines</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                                        {history.purchaseOrders.map(po => (
+                                                            <tr key={po.id} className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2 font-mono font-medium text-slate-900">{po.poCode}</td>
+                                                                <td className="px-4 py-2"><Badge tone="neutral">{po.status}</Badge></td>
+                                                                <td className="px-4 py-2 text-slate-600">{fmtDate(po.dateCreated)}</td>
+                                                                <td className="px-4 py-2 text-right text-slate-600">{po.lineCount}</td>
+                                                                <td className="px-4 py-2 text-right font-medium text-slate-900 whitespace-nowrap">{fmtMoney(po.total, po.currency)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                    <tfoot className="bg-slate-50">
+                                                        {orderedByCcy.length > 1 && (
+                                                            <tr>
+                                                                <td colSpan={5} className="px-4 pt-2 text-xs text-slate-500 text-right">
+                                                                    Mixed currencies — totalled per currency, not added together.
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        {orderedByCcy.map(([c, total], i) => (
+                                                            <tr key={c}>
+                                                                <td colSpan={4} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-right">
+                                                                    {i === 0 ? 'Ordered to date' : ''}
+                                                                </td>
+                                                                <td className="px-4 py-2 text-right font-bold text-slate-900 whitespace-nowrap">{fmtMoney(total, c)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tfoot>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="py-8 text-center text-sm text-slate-400">No purchase orders have been placed with this vendor.</div>
+                                        )
+                                    ) : historyTab === 'receipts' ? (
+                                        history && history.goodsReceipts.length > 0 ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                                    <thead className="bg-slate-50">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">GRN</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Received</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Qty</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Value</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                                        {history.goodsReceipts.map(gr => (
+                                                            <tr key={gr.id} className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2 font-mono font-medium text-slate-900">{gr.grnNumber}</td>
+                                                                <td className="px-4 py-2 font-mono text-slate-600">{gr.poCode || '—'}</td>
+                                                                <td className="px-4 py-2 text-slate-600">{fmtDate(gr.receivedDate)}</td>
+                                                                <td className="px-4 py-2 text-right text-slate-600">{gr.quantity.toLocaleString()}</td>
+                                                                <td className="px-4 py-2 text-right font-medium text-slate-900 whitespace-nowrap">
+                                                                    {fmtMoney(gr.totalCost, gr.poId ? poCurrency.get(gr.poId) : null)}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="py-8 text-center text-sm text-slate-400">
+                                                {history && history.purchaseOrders.length > 0
+                                                    ? 'Nothing has been received against this vendor\'s orders yet.'
+                                                    : 'No goods receipts — nothing has been ordered from this vendor.'}
+                                            </div>
+                                        )
+                                    ) : (
+                                        history && history.invoices.length > 0 ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                                    <thead className="bg-slate-50">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Invoice</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">PO</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Date</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Amount</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Match</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Payables</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                                        {history.invoices.map(inv => (
+                                                            <tr key={inv.id} className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2 font-mono font-medium text-slate-900">{inv.invoiceNumber}</td>
+                                                                <td className="px-4 py-2 font-mono text-slate-600">{inv.poCode || '—'}</td>
+                                                                <td className="px-4 py-2 text-slate-600">{fmtDate(inv.invoiceDate)}</td>
+                                                                <td className="px-4 py-2 text-right font-medium text-slate-900 whitespace-nowrap">{fmtMoney(inv.invoiceAmount, inv.currency)}</td>
+                                                                <td className="px-4 py-2"><Badge tone={matchTone(inv.matchStatus)}>{inv.matchStatus}</Badge></td>
+                                                                <td className="px-4 py-2 text-slate-600">{inv.payablesStatus}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="py-8 text-center text-sm text-slate-400">No invoices have been entered for this vendor.</div>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
+
+                    {/* Save appears only when there is something to save. */}
+                    {dirty && (
+                        <div
+                            className="flex items-center gap-2 px-4 py-2.5 border-t border-slate-200 bg-white flex-shrink-0 shadow-[0_-2px_8px_rgba(15,23,42,0.06)]"
+                            style={{ paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom, 0px))' }}
+                        >
+                            <span className="flex-1 min-w-0 text-sm font-medium text-amber-700 truncate">Unsaved changes</span>
+                            <Button variant="ghost" size="md" onClick={discardChanges} disabled={saving}>Discard</Button>
+                            <Button size="md" onClick={handleSave} loading={saving}>Save</Button>
+                        </div>
+                    )}
                 </div>
             )}
+
+            {/* Add model — models save straight away, not with the vendor's Save. */}
+            <Modal
+                open={isAddModelOpen}
+                onClose={() => { if (!addingModel) setIsAddModelOpen(false); }}
+                title={`Add model${selectedVendor ? ` · ${selectedVendor.name}` : ''}`}
+                size="sm"
+                footer={(
+                    <>
+                        <Button variant="ghost" onClick={() => setIsAddModelOpen(false)} disabled={addingModel}>Cancel</Button>
+                        <Button onClick={handleAddModel} loading={addingModel} disabled={!newModelCode.trim()}>Add model</Button>
+                    </>
+                )}
+            >
+                <form
+                    className="space-y-4"
+                    onSubmit={e => { e.preventDefault(); handleAddModel(); }}
+                    // Enter submits from either field; the submit button sits in the Modal footer, outside the form.
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddModel(); } }}
+                >
+                    <div>
+                        <label className={FIELD_LABEL}>Model code <span className="text-red-500">*</span></label>
+                        <input
+                            type="text"
+                            autoFocus
+                            value={newModelCode}
+                            onChange={e => setNewModelCode(e.target.value)}
+                            placeholder="e.g. HPX-200, 1LA7-096"
+                            className={cn(FIELD_INPUT, 'font-mono')}
+                        />
+                    </div>
+                    <div>
+                        <label className={FIELD_LABEL}>Description</label>
+                        <input
+                            type="text"
+                            value={newModelDesc}
+                            onChange={e => setNewModelDesc(e.target.value)}
+                            placeholder="e.g. High-Pressure Centrifugal Pump"
+                            className={FIELD_INPUT}
+                        />
+                    </div>
+                </form>
+            </Modal>
 
             {/* Add Modal */}
             {isAddModalOpen && (
@@ -919,6 +1204,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                     setIsAddModalOpen(false);
                                     setSelectedVendor(created);
                                     setSavedSnapshot(JSON.stringify(created));
+                                    setDetailTab('details');
                                     showToast(`${created.name} created.`, 'success');
                                 } catch (err: any) { showToast(err.message, 'error'); }
                                 finally { setCreating(false); }
