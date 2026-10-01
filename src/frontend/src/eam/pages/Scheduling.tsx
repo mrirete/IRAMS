@@ -1001,7 +1001,7 @@ export const Scheduling: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-6rem)]">
+        <div className="ers-page-wide w-full flex flex-col h-[calc(100vh-6rem)]">
             {/* Top Toolbar */}
             <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
                 <div>

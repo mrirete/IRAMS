@@ -568,7 +568,7 @@ export const Readings: React.FC = () => {
     };
 
     return (
-        <div className="flex h-[calc(100vh-6rem)] gap-4 sm:gap-6">
+        <div className="ers-page-wide w-full flex h-[calc(100vh-6rem)] gap-4 sm:gap-6">
             {/* Sidebar List */}
             <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${sheetOpen ? 'hidden' : selectedAssetId ? 'hidden sm:flex sm:w-1/3' : 'w-full sm:w-1/3'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center gap-2">

@@ -1,7 +1,7 @@
 import React from 'react';
-import { AlertOctagon, Clock, FileText, MapPin, User, Copy, Ban } from 'lucide-react';
+import { AlertOctagon, Clock, FileText, Copy, Ban } from 'lucide-react';
 import { RequestStatus, type ServiceRequest } from '../../types';
-import { PriorityPill, cn } from '../ui';
+import { cn } from '../ui';
 import { ageLabel, dueState, plantOf, type DueKind } from '../../lib/requestBoard';
 import { statusLabel as woStatusLabel } from '../../lib/woTimeline';
 
@@ -55,80 +55,82 @@ export interface RequestCardProps {
     bare?: boolean;
 }
 
+const STRIPE: Record<string, string> = {
+    EMERGENCY: 'bg-red-500',
+    HIGH: 'bg-amber-400',
+    MEDIUM: 'bg-primary-400',
+    LOW: 'bg-slate-300',
+};
+const PRIORITY_WORD: Record<string, string> = { EMERGENCY: 'Emergency', HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low' };
+const STATUS_WORD = (s: RequestStatus) => (s === RequestStatus.REJECTED ? 'Rejected' : 'Converted');
+
 /**
- * One request on the board. Line 1 says how urgent and how old, line 2 what is
- * wrong, line 3 where, the footer who raised it and how long is left — or, once
- * closed, what became of it.
+ * One request on the board, in two lines so a column shows ten or more at a
+ * glance (it held four at three-plus lines). The left stripe is the priority;
+ * line 1 is what is wrong and how old, line 2 where, who, and how long is left
+ * — or, once closed, what became of it. The full text is in the drawer.
  */
 export const RequestCard: React.FC<RequestCardProps> = ({ request: r, dupCount = 0, selected, onSelect, onOpenWO, onShowDuplicates, bare }) => {
     const closed = r.status === RequestStatus.CONVERTED || r.status === RequestStatus.APPROVED || r.status === RequestStatus.REJECTED;
     const plant = plantOf(r);
+    const where = [r.assetName, plant !== 'Unassigned' ? plant : null].filter(Boolean).join(' · ');
+    const stripe = closed
+        ? (r.status === RequestStatus.REJECTED ? 'bg-slate-200' : 'bg-green-400')
+        : STRIPE[r.priority] || STRIPE.LOW;
+    const priorityWord = closed ? STATUS_WORD(r.status) : `${PRIORITY_WORD[r.priority] || 'Low'} priority`;
+
     const body = (
         <>
-            <div className="flex items-center gap-1.5 min-w-0">
-                <span className="font-mono text-[11px] text-slate-500 truncate" title="Request number">{r.requestNumber}</span>
-                {!closed && <PriorityPill priority={r.priority} />}
-                {r.isBreakdown && !closed && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700" title="Equipment stopped">
-                        <AlertOctagon size={11} /> Stopped
-                    </span>
-                )}
-                <span className="ml-auto text-[11px] text-slate-400 whitespace-nowrap" title={`Raised ${new Date(r.createdAt).toLocaleString()}`}>
+            <span className={cn('absolute left-0 inset-y-0 w-1 rounded-l-md', stripe)} aria-hidden />
+            <span className="sr-only">{priorityWord}. </span>
+            <div className="flex items-baseline gap-2 min-w-0">
+                <span className="font-mono text-[10.5px] text-slate-400 flex-shrink-0" title="Request number">{r.requestNumber}</span>
+                <span
+                    className={cn('flex-1 min-w-0 truncate text-[13px] leading-5', closed ? 'text-slate-600' : 'font-medium text-slate-900')}
+                    title={r.description}
+                >
+                    {r.description}
+                </span>
+                <span className="flex-shrink-0 text-[11px] text-slate-400 tabular-nums" title={`Raised ${new Date(r.createdAt).toLocaleString()}`}>
                     {ageLabel(r.createdAt)}
                 </span>
             </div>
-
-            <p className={cn('mt-1.5 text-sm leading-snug line-clamp-2', closed ? 'text-slate-600' : 'font-medium text-slate-900')}>
-                {r.description}
-            </p>
-
-            {(r.assetName || plant !== 'Unassigned') && (
-                <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-500 min-w-0">
-                    <MapPin size={11} className="flex-shrink-0 text-slate-400" />
-                    <span className="truncate">
-                        {r.assetName && <span className="font-medium text-slate-600">{r.assetName}</span>}
-                        {r.assetName && plant !== 'Unassigned' && ' · '}
-                        {plant !== 'Unassigned' && plant}
-                    </span>
-                </div>
-            )}
-
-            {dupCount > 0 && !closed && (
-                <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onShowDuplicates?.(r); }}
-                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:underline"
-                    title="Other open requests on the same asset — possible duplicates"
-                >
-                    <Copy size={11} /> +{dupCount} open on this asset
-                </button>
-            )}
-
-            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-slate-500">
-                {closed ? (
-                    // Once closed, what became of it is the question — not who raised it.
-                    <OutcomeLabel request={r} onOpenWO={onOpenWO} />
-                ) : (
-                    <>
-                        <span className="inline-flex items-center gap-1 min-w-0">
-                            <User size={12} className="flex-shrink-0" /> <span className="truncate">{r.requesterName}</span>
-                        </span>
-                        <DueLabel request={r} />
-                    </>
+            <div className="mt-0.5 flex items-center gap-2 min-w-0 text-[11.5px] text-slate-500">
+                {r.isBreakdown && !closed && (
+                    <span className="flex-shrink-0 text-red-600" title="Equipment stopped"><AlertOctagon size={12} /></span>
                 )}
+                <span className="flex-1 min-w-0 truncate">
+                    {where && <span className="text-slate-600">{where}</span>}
+                    {!closed && <>{where && ' · '}{r.requesterName}</>}
+                </span>
+                {dupCount > 0 && !closed && (
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onShowDuplicates?.(r); }}
+                        className="flex-shrink-0 inline-flex items-center gap-0.5 px-1 rounded bg-amber-50 text-[10.5px] font-semibold text-amber-700 hover:bg-amber-100"
+                        title={`${dupCount} other open request${dupCount > 1 ? 's' : ''} on this asset — possible duplicates`}
+                    >
+                        <Copy size={10} /> +{dupCount}
+                    </button>
+                )}
+                <span className="flex-shrink-0 min-w-0">
+                    {closed ? <OutcomeLabel request={r} onOpenWO={onOpenWO} /> : <DueLabel request={r} />}
+                </span>
             </div>
         </>
     );
 
-    if (bare) return body;
+    if (bare) return <div className="relative pl-3">{body}</div>;
     return (
         <div
             role="button"
             tabIndex={0}
             onClick={() => onSelect?.(r)}
             onKeyDown={(e) => { if (e.key === 'Enter') onSelect?.(r); }}
+            title={`${r.requestNumber} — ${priorityWord}`}
             className={cn(
-                'bg-white p-3 rounded-lg border shadow-sm cursor-pointer transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400',
+                'relative bg-white pl-3 pr-2.5 py-2 min-h-[56px] sm:min-h-0 rounded-md border cursor-pointer transition',
+                'hover:border-slate-300 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400',
                 selected ? 'border-primary-400 ring-1 ring-primary-200' : 'border-slate-200'
             )}
         >
@@ -136,3 +138,4 @@ export const RequestCard: React.FC<RequestCardProps> = ({ request: r, dupCount =
         </div>
     );
 };
+

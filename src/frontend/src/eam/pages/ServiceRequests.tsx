@@ -18,7 +18,7 @@ import { RequestDetailDrawer, type RequestEdits } from '../components/requests/R
 import { RequestFiltersModal, type ClosedWindow } from '../components/requests/RequestFiltersModal';
 import { RPN_FOR_PRIORITY } from '../lib/requestPriority';
 import {
-    EMPTY_FILTERS, STATUS_LABEL, activeFilterCount, ageLabel, duplicateCounts, isClosed, matchesChip,
+    EMPTY_FILTERS, STATUS_LABEL, activeFilterCount, ageLabel, dueState, duplicateCounts, isClosed, matchesChip,
     matchesFilters, plantOf, sortRequests,
     type FilterContext, type QuickChip, type RaisedWithin, type RequestFilters, type SortKey,
 } from '../lib/requestBoard';
@@ -41,8 +41,10 @@ const CHIPS: { key: QuickChip; label: string; icon: React.ReactNode; tone: strin
     { key: 'RAISED_BY_ME', label: 'Raised by me', icon: <UserPen size={13} />, tone: 'slate' },
 ];
 
-const SORT_LABEL: Record<SortKey, string> = { date: 'Newest', priority: 'Priority', sla: 'Time left', type: 'Equipment type' };
-const PAGE = 20;
+// Time left first: the most overdue request tops every column.
+const SORT_LABEL: Record<SortKey, string> = { sla: 'Time left', date: 'Newest', priority: 'Priority', type: 'Equipment type' };
+const DEFAULT_SORT: SortKey = 'sla';
+const PAGE = 50;
 const LIST_PAGE = 100;
 const VIEW_KEY = 'ireams.requests.view';
 const REFRESH_MS = 60_000;
@@ -79,7 +81,7 @@ export const ServiceRequests: React.FC = () => {
         requester: searchParams.get('by') || 'ALL',
         raised: (searchParams.get('raised') as RaisedWithin) || 'ANY',
     }));
-    const [sortBy, setSortBy] = useState<SortKey>(() => (searchParams.get('sort') as SortKey) || 'date');
+    const [sortBy, setSortBy] = useState<SortKey>(() => (searchParams.get('sort') as SortKey) || DEFAULT_SORT);
     const [view, setView] = useState<View>(() => (searchParams.get('view') as View) || readView());
     const [closedWindow, setClosedWindow] = useState<ClosedWindow>(() => {
         const c = searchParams.get('closed');
@@ -233,7 +235,7 @@ export const ServiceRequests: React.FC = () => {
             put('type', filters.type, 'ALL');
             put('by', filters.requester, 'ALL');
             put('raised', filters.raised, 'ANY');
-            put('sort', sortBy, 'date');
+            put('sort', sortBy, DEFAULT_SORT);
             put('view', view, 'board');
             put('closed', closedWindow == null ? 'all' : String(closedWindow), '30');
             return next;
@@ -414,7 +416,7 @@ export const ServiceRequests: React.FC = () => {
     const closedTitle = `Closed · ${closedWindow == null ? 'all' : `last ${closedWindow} days`}`;
 
     return (
-        <div className="flex flex-col h-[calc(100vh-6rem)] min-h-0">
+        <div className="ers-page-wide w-full flex flex-col h-[calc(100vh-6rem)] min-h-0">
             {/* Header */}
             <div className="mb-3 flex flex-wrap justify-between items-center gap-3">
                 <div className="hidden sm:block">
@@ -701,13 +703,17 @@ const BoardColumn: React.FC<CardHandlers & {
     }
 
     const shown = items.slice(0, limit);
+    const overdue = closed ? 0 : items.filter(r => dueState(r)?.kind === 'overdue').length;
     return (
-        <div className={cn('rounded-xl flex flex-col min-h-0', tone, closed ? 'flex-none w-72' : 'flex-1 min-w-[260px]')}>
-            <div className="px-3 pt-3 pb-2 flex justify-between items-center gap-2">
-                <span className={cn('font-semibold truncate', closed ? 'text-sm text-slate-500' : 'text-slate-700')}>{title}</span>
+        <div className={cn('rounded-xl flex flex-col min-h-0', tone, closed ? 'flex-none w-80' : 'flex-1 min-w-[280px] max-w-[420px]')}>
+            <div className="px-3 pt-2.5 pb-2 flex justify-between items-center gap-2">
+                <span className="min-w-0 truncate">
+                    <span className={cn('font-semibold', closed ? 'text-sm text-slate-500' : 'text-sm text-slate-700')}>{title}</span>
+                    {overdue > 0 && <span className="ml-1.5 text-xs font-semibold text-red-600">· {overdue} overdue</span>}
+                </span>
                 <span className="bg-white/70 px-2 py-0.5 rounded text-xs font-semibold text-slate-600 tabular-nums">{items.length}</span>
             </div>
-            <div className="px-2 pb-2 flex-1 overflow-y-auto space-y-2">
+            <div className="px-2 pb-2 flex-1 overflow-y-auto space-y-1.5">
                 {shown.map(r => (
                     <RequestCard
                         key={r.id}
@@ -755,7 +761,7 @@ const MobileGroup: React.FC<CardHandlers & {
                 <span className="bg-white/70 px-2.5 py-0.5 rounded-full text-xs font-bold text-slate-600 min-w-[24px] text-center">{items.length}</span>
             </button>
             {open && (
-                <div className="px-2 pb-2 space-y-2">
+                <div className="px-2 pb-2 space-y-1.5">
                     {items.length === 0 ? (
                         <div className="text-center py-4 text-xs text-slate-400">No requests</div>
                     ) : items.slice(0, limit).map(r => (

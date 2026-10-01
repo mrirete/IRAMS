@@ -105,7 +105,8 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
             alert('🔒 This template is locked (used on a completed Work Order). It cannot be deleted. Create a new version instead.');
             return;
         }
-        if (!confirm("Are you sure you want to delete this task template?")) return;
+        // useConfirm resolves a Promise — unawaited it was always truthy and the delete ran before the answer.
+        if (!(await confirm("Are you sure you want to delete this task template?"))) return;
         try {
             await db.deleteLibraryTask(id);
             setTasks(prev => prev.filter(t => t.id !== id));
@@ -135,7 +136,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     );
 
     return (
-        <div className="flex h-full flex-col bg-white">
+        <div className="ers-page-wide w-full flex h-full flex-col bg-white rounded-xl border border-slate-200 overflow-hidden">
             {/* Header / Filter Bar */}
             <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:justify-between md:items-center gap-3 bg-slate-50">
                 <div>

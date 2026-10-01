@@ -196,7 +196,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     };
 
     return (
-        <div className="flex h-full gap-6">
+        <div className="ers-page-wide w-full flex h-full gap-6">
             {/* List View */}
             <div className={`${selectedVendor ? 'hidden lg:flex lg:w-1/3' : 'w-full flex'} flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300`}>
                 <div className="p-4 border-b border-slate-100 bg-white flex flex-col gap-4">

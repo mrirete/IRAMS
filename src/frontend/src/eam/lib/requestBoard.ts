@@ -170,6 +170,8 @@ export function sortRequests(list: ServiceRequest[], sortBy: SortKey, typeOf: (r
                 // Open requests by time left; closed ones have no clock and sink.
                 const ca = isClosed(a), cb = isClosed(b);
                 if (ca !== cb) return ca ? 1 : -1;
+                // Closed requests have no clock — most recently closed first.
+                if (ca) return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
                 return (new Date(a.slaDeadline).getTime() - new Date(b.slaDeadline).getTime()) || newest(a, b);
             }
             case 'type':

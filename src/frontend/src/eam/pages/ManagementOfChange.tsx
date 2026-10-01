@@ -175,7 +175,7 @@ export const ManagementOfChange: React.FC = () => {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="ers-page-wide space-y-6">
             {/* Header */}
             <div className="flex justify-between items-end flex-wrap gap-3">
                 <div>

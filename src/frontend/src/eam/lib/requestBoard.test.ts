@@ -101,4 +101,11 @@ describe('sortRequests by time left', () => {
         ], 'sla', () => '');
         expect(out.map(r => r.id)).toEqual(['emerg', 'low', 'closed']);
     });
+    it('orders closed requests most recently closed first', () => {
+        const out = sortRequests([
+            req({ id: 'old', status: RequestStatus.CONVERTED, createdAt: hoursAgo(900), updatedAt: hoursAgo(800) }),
+            req({ id: 'recent', status: RequestStatus.REJECTED, createdAt: hoursAgo(950), updatedAt: hoursAgo(2) }),
+        ], 'sla', () => '');
+        expect(out.map(r => r.id)).toEqual(['recent', 'old']);
+    });
 });
