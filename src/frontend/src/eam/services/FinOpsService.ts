@@ -102,6 +102,12 @@ export interface DepreciationBook {
     currentHours?: number;  // Current usage to date
     /** last posted run (ISO); the projection continues from the month after it */
     lastDepreciationDate?: string | null;
+    /** joined from the financial record by getAllDepreciationBooks */
+    acquisitionCost?: number;
+    residualValue?: number;
+    usefulLifeMonths?: number;
+    assetTag?: string;
+    assetName?: string;
 }
 
 export interface DepreciationScheduleItem {
@@ -209,12 +215,19 @@ export interface InsuranceIncident {
     thirdPartyCost: number;
     totalCost: number;
     claimStatus: 'OPEN' | 'SUBMITTED' | 'SETTLED' | 'CLOSED';
+    claimReference?: string | null;
+    claimSubmittedDate?: string | null;
+    claimAmount?: number | null;
+    settlementAmount?: number | null;
+    settlementDate?: string | null;
 }
 
 export interface CostAllocation {
     id: string;
     workOrderId: string;
     assetId?: string;
+    /** invoice / PO / GRN reference — the only free text the ledger row keeps */
+    documentNumber?: string;
     costCenterId?: string;
     wbsElementId?: string;
     costType: 'LABOR' | 'MATERIAL' | 'SERVICE' | 'OVERHEAD';
@@ -341,17 +354,34 @@ class FinOpsServiceClass {
         const { count: warrantyCount } = await supabase.from('warranties').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE');
         const { count: claimsCount } = await supabase.from('warranty_claims').select('*', { count: 'exact', head: true }).eq('status', 'SUBMITTED');
 
-        // Calculate Budget Utilization
-        const { data: budgets } = await supabase.from('budgets').select('opex_budget, capex_budget, actual, committed');
+        // Calculate Budget Utilization — THIS fiscal year, rejected budgets
+        // excluded. The unfiltered version summed every year and every draft,
+        // so the tile disagreed with the Budget Overview panel beside it.
+        const fy = new Date().getFullYear();
+        const { data: budgets } = await supabase
+            .from('budgets')
+            .select('opex_budget, capex_budget, actual, committed, status')
+            .eq('fiscal_year', fy)
+            .neq('status', 'REJECTED');
         let totalBudget = 0;
         let totalUsed = 0;
         if (budgets) {
             budgets.forEach(b => {
-                totalBudget += (b.opex_budget || 0) + (b.capex_budget || 0);
-                totalUsed += (b.actual || 0) + (b.committed || 0);
+                totalBudget += (Number(b.opex_budget) || 0) + (Number(b.capex_budget) || 0);
+                totalUsed += (Number(b.actual) || 0) + (Number(b.committed) || 0);
             });
         }
         const budgetUtilization = totalBudget > 0 ? (totalUsed / totalBudget) * 100 : 0;
+
+        // Warranties ending in the next 30 days — the landing's "needs attention"
+        // line used to be the literal text "12 Warranties Expiring".
+        const in30 = new Date(); in30.setDate(in30.getDate() + 30);
+        const { count: expiringCount } = await supabase
+            .from('warranties')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'ACTIVE')
+            .gte('end_date', new Date().toISOString().split('T')[0])
+            .lte('end_date', in30.toISOString().split('T')[0]);
 
         // Calculate Insurance Coverage
         const { data: policies } = await supabase.from('asset_insurance').select('insured_value').eq('status', 'ACTIVE');
@@ -372,7 +402,7 @@ class FinOpsServiceClass {
             pendingClaims: claimsCount || 0,
             budgetUtilization: budgetUtilization,
             depreciationMTD: depreciationMTD,
-            invoiceVariance: 1.2, // Mock average variance
+            expiringWarranties30: expiringCount || 0,
             insuranceCoverage: insuranceCoverage
         };
     }
@@ -453,12 +483,12 @@ class FinOpsServiceClass {
     /**
      * Get all cost centers (hierarchical)
      */
-    async getCostCenters(): Promise<CostCenter[]> {
-        const { data, error } = await supabase
-            .from('cost_centers')
-            .select('*')
-            // .eq('active', true) // Show all for admin management, filter in UI if needed
-            .order('code');
+    async getCostCenters(includeInactive = false): Promise<CostCenter[]> {
+        // Delete is a soft delete (active=false); without this filter a
+        // deleted centre stayed in the grid and in every picker.
+        let q = supabase.from('cost_centers').select('*').order('code');
+        if (!includeInactive) q = q.eq('active', true);
+        const { data, error } = await q;
 
         if (error) throw error;
 
@@ -616,8 +646,14 @@ class FinOpsServiceClass {
             };
         }
 
-        const totalBudget = costType === 'OPEX' ? budget.opexBudget : budget.capexBudget;
-        const used = budget.committed + budget.actual;
+        // Like for like: budgets.actual and .committed are TOTALS (the ledger
+        // does not split OPEX from CAPEX), so they are measured against the
+        // total plan. Comparing them to the OPEX line alone made CAPEX spend
+        // eat OPEX headroom. costType is kept for callers; it no longer picks
+        // a single line.
+        void costType;
+        const totalBudget = (budget.opexBudget || 0) + (budget.capexBudget || 0);
+        const used = Math.max(0, (budget.committed || 0) + (budget.actual || 0));
         const available = totalBudget - used;
         const utilizationPct = totalBudget > 0 ? ((used + amount) / totalBudget) * 100 : 0;
 
@@ -682,6 +718,7 @@ class FinOpsServiceClass {
                 quantity: allocation.quantity,
                 unit: allocation.unit,
                 posting_date: allocation.postingDate || new Date().toISOString().split('T')[0],
+                document_number: allocation.documentNumber?.trim() || null,
                 // Hand-typed. Settlement nets only against its own postings, so
                 // this can never be mistaken for cost the ledger already has.
                 source: 'MANUAL'
@@ -691,9 +728,11 @@ class FinOpsServiceClass {
 
         if (error) throw error;
 
-        // Update budget actuals
+        // Update budget actuals for the year the posting lands in — a
+        // back-dated posting used to refresh only the current year.
         if (allocation.costCenterId) {
-            await this.updateBudgetActuals(allocation.costCenterId);
+            const fy = allocation.postingDate ? parseInt(allocation.postingDate.slice(0, 4)) : undefined;
+            await this.updateBudgetActuals(allocation.costCenterId, Number.isFinite(fy) ? fy : undefined);
         }
 
         return this.mapCostAllocation(data);
@@ -846,12 +885,22 @@ class FinOpsServiceClass {
      * Get all depreciation books for summary
      */
     async getAllDepreciationBooks(): Promise<DepreciationBook[]> {
+        // With the financial record, so the page can project a real month's
+        // expense (it used to show currentValue × 2 % and call it an estimate).
         const { data, error } = await supabase
             .from('depreciation_books')
-            .select('*');
+            .select('*, asset_financials(acquisition_cost, residual_value, useful_life_months, assets(tag, name))')
+            .range(0, 1999);
 
         if (error) throw error;
-        return (data || []).map(this.mapDepreciationBook);
+        return (data || []).map((row: any) => ({
+            ...this.mapDepreciationBook(row),
+            acquisitionCost: Number(row.asset_financials?.acquisition_cost) || 0,
+            residualValue: Number(row.asset_financials?.residual_value) || 0,
+            usefulLifeMonths: Number(row.asset_financials?.useful_life_months) || 0,
+            assetTag: row.asset_financials?.assets?.tag,
+            assetName: row.asset_financials?.assets?.name,
+        }));
     }
 
     /**
@@ -1397,23 +1446,29 @@ class FinOpsServiceClass {
 
         if (error) throw error;
 
-        // Aggregate in JS
+        // Aggregate in JS, keyed by cost-centre ID (the page looked the row up
+        // by id while this keyed by NAME, so the code line was always blank).
         const resultMap = new Map<string, any>();
 
         data.forEach((row: any) => {
-            const costCenter = row.depreciation_books?.asset_financials?.assets?.cost_centers?.name || 'Unassigned';
+            const assetRow = row.depreciation_books?.asset_financials?.assets;
+            const key = assetRow?.cost_center_id || 'unassigned';
+            const costCenter = assetRow?.cost_centers?.name || 'Unassigned';
+            const code = assetRow?.cost_centers?.code || '';
             const period = row.period;
             const amount = Number(row.depreciation_amount) || 0;
 
-            if (!resultMap.has(costCenter)) {
-                resultMap.set(costCenter, {
+            if (!resultMap.has(key)) {
+                resultMap.set(key, {
+                    costCenterId: key,
                     costCenter,
+                    code,
                     total: 0,
                     monthly: {}
                 });
             }
 
-            const entry = resultMap.get(costCenter);
+            const entry = resultMap.get(key);
             entry.monthly[period] = (entry.monthly[period] || 0) + amount;
             entry.total += amount;
         });
@@ -1442,6 +1497,7 @@ class FinOpsServiceClass {
             amount: parseFloat(row.depreciation_amount),
             openingValue: parseFloat(row.opening_value),
             closingValue: parseFloat(row.closing_value),
+            posted: row.posted === true,
             bookType: row.depreciation_books?.book_type
         }));
     }
@@ -1472,13 +1528,15 @@ class FinOpsServiceClass {
     async getAllClaims(): Promise<WarrantyClaim[]> {
         const { data, error } = await supabase
             .from('warranty_claims')
-            .select('*, work_orders(asset_id, asset:assets(name))')
-            .order('claim_date', { ascending: false });
+            .select('*, work_orders(asset_id, asset:assets(name)), warranties(assets(name))')
+            .order('claim_date', { ascending: false })
+            .range(0, 1999);
 
         if (error) throw error;
         return (data || []).map(row => ({
             ...this.mapWarrantyClaim(row),
-            assetName: row.work_orders?.asset?.name
+            // a manual claim has no WO — fall back through the warranty's asset
+            assetName: row.work_orders?.asset?.name || row.warranties?.assets?.name
         }));
     }
 
@@ -2279,7 +2337,10 @@ class FinOpsServiceClass {
             .from('purchase_orders')
             .select('*, vendors(name)')
             .order('date_created', { ascending: false })
-            .limit(20);
+            // 20 made the Supply Chain tiles a statement about the twenty newest
+            // POs presented as the match rate. 500 is still a window — the page
+            // says so — but it is the working set, not a sample.
+            .limit(500);
 
         if (error) throw error;
 
@@ -2378,35 +2439,69 @@ class FinOpsServiceClass {
      * Usually via line items, but for MVP we might link PO directly or search description
      */
     async getAssetPurchaseOrders(assetId: string): Promise<any[]> {
-        // Try with vendor join first, fall back to simple query if FK missing
-        let data: any[] | null = null;
-        try {
-            const result = await supabase
-                .from('purchase_orders')
-                .select('*, vendors(name)')
-                .order('date_created', { ascending: false })
-                .limit(5);
-            if (result.error) throw result.error;
-            data = result.data;
-        } catch {
-            // Fallback: query without join
-            const result = await supabase
-                .from('purchase_orders')
-                .select('*')
-                .order('date_created', { ascending: false })
-                .limit(5);
-            if (result.error) throw result.error;
-            data = result.data;
+        // Scoped to THIS asset through its work orders: PO line → work order →
+        // asset (0248). The previous version ignored assetId and returned the
+        // company's five newest POs on every asset, with an amount read from a
+        // column that does not exist.
+        const { data: wos, error: woErr } = await supabase
+            .from('work_orders')
+            .select('id, wo_number')
+            .eq('asset_id', assetId);
+        if (woErr) throw woErr;
+        const woIds = (wos || []).map((w: any) => w.id);
+        if (woIds.length === 0) return [];
+
+        const { data: lines, error: lineErr } = await supabase
+            .from('purchase_order_lines')
+            .select('po_id, work_order_id, line_total, qty_ordered, unit_cost')
+            .in('work_order_id', woIds);
+        if (lineErr) throw lineErr;
+        if (!lines || lines.length === 0) return [];
+
+        const perPo = new Map<string, { amount: number; woIds: Set<string> }>();
+        for (const l of lines as any[]) {
+            const amt = Number(l.line_total) || (Number(l.qty_ordered) || 0) * (Number(l.unit_cost) || 0);
+            const e = perPo.get(l.po_id) || { amount: 0, woIds: new Set<string>() };
+            e.amount += amt; e.woIds.add(l.work_order_id);
+            perPo.set(l.po_id, e);
         }
 
-        return (data || []).map(po => ({
+        const { data: pos, error: poErr } = await supabase
+            .from('purchase_orders')
+            .select('id, po_code, status, date_created, supplier_id')
+            .in('id', Array.from(perPo.keys()))
+            .order('date_created', { ascending: false });
+        if (poErr) throw poErr;
+
+        const supplierIds = Array.from(new Set((pos || []).map((p: any) => p.supplier_id).filter(Boolean)));
+        const vendorName = new Map<string, string>();
+        if (supplierIds.length) {
+            const { data: vendors } = await supabase.from('vendors').select('id, name').in('id', supplierIds);
+            (vendors || []).forEach((v: any) => vendorName.set(v.id, v.name));
+        }
+        const woNumber = new Map((wos || []).map((w: any) => [w.id, w.wo_number]));
+
+        return (pos || []).map((po: any) => ({
             id: po.id,
             poNumber: po.po_code,
-            vendor: po.vendors?.name || po.vendor_name || 'Unknown',
+            vendor: vendorName.get(po.supplier_id) || '—',
             date: po.date_created,
-            amount: po.total_amount,
-            status: po.status
+            /** this asset's lines only — a PO can serve several assets */
+            amount: Math.round((perPo.get(po.id)?.amount || 0) * 100) / 100,
+            status: po.status,
+            workOrders: Array.from(perPo.get(po.id)?.woIds || []).map(id => woNumber.get(id)).filter(Boolean),
         }));
+    }
+
+    /** Every insurance incident in the tenant, newest first, with its asset. */
+    async getAllInsuranceIncidents(): Promise<(InsuranceIncident & { assetName?: string; assetTag?: string })[]> {
+        const { data, error } = await supabase
+            .from('insurance_incidents')
+            .select('*, assets(name, tag)')
+            .order('incident_date', { ascending: false })
+            .range(0, 499);
+        if (error) throw error;
+        return (data || []).map((row: any) => ({ ...this.mapInsuranceIncident(row), assetName: row.assets?.name, assetTag: row.assets?.tag }));
     }
 
     /**
@@ -2864,6 +2959,7 @@ class FinOpsServiceClass {
             quantity: row.quantity == null ? undefined : parseFloat(row.quantity),
             unit: row.unit || undefined,
             postingDate: row.posting_date,
+            documentNumber: row.document_number || undefined,
             source: row.source || undefined
         };
     }
@@ -2899,9 +2995,14 @@ class FinOpsServiceClass {
             estimatedDamage: parseFloat(row.estimated_damage),
             laborCost: parseFloat(row.labor_cost),
             materialCost: parseFloat(row.material_cost),
-            thirdPartyCost: parseFloat(row.third_party_cost),
-            totalCost: parseFloat(row.total_cost),
-            claimStatus: row.claim_status
+            thirdPartyCost: parseFloat(row.third_party_cost) || 0,
+            totalCost: parseFloat(row.total_cost) || 0,
+            claimStatus: row.claim_status,
+            claimReference: row.claim_reference ?? null,
+            claimSubmittedDate: row.claim_submitted_date ?? null,
+            claimAmount: row.claim_amount != null ? parseFloat(row.claim_amount) : null,
+            settlementAmount: row.settlement_amount != null ? parseFloat(row.settlement_amount) : null,
+            settlementDate: row.settlement_date ?? null,
         };
     }
 

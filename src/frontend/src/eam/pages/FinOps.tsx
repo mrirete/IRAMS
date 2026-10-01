@@ -12,10 +12,12 @@ import {
     FileText, AlertCircle, ArrowUpRight, ArrowDownRight, RefreshCw,
     Plus, Search, Filter, Download, Settings, Eye, Edit, Trash2,
     Briefcase, Target, Zap, ShieldCheck, Receipt, Truck, Scale,
-    TrendingUp, Wrench
+    TrendingUp, Wrench, X
 } from 'lucide-react';
+import { useConfirm } from '../contexts/ConfirmContext';
+import { monthlyExpense } from '../../lib/depreciation';
 import {
-    FinOpsService, CostCenter, Budget, Warranty, WarrantyCheckResult,
+    FinOpsService, CostCenter, Budget, Warranty, WarrantyCheckResult, InsuranceIncident,
     WarrantyClaim, DepreciationBook, MaintenanceForecast, SupplyChainMatch
 } from '../services/FinOpsService';
 import { RenewalQueue } from '../components/finops/RenewalQueue';
@@ -151,7 +153,7 @@ const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, on
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                     <h3 className="font-semibold text-slate-800">Add New Warranty</h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-                        <Trash2 size={18} className="rotate-45" />
+                        <X size={18} />
                     </button>
                 </div>
 
@@ -331,6 +333,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
     const [loading, setLoading] = useState(false);
     const { showToast } = useToast();
     const [budgetWarning, setBudgetWarning] = useState<string | null>(null);
+    const [budgetBlocked, setBudgetBlocked] = useState(false);
 
     // Cross-module data
     const [people, setPeople] = useState<any[]>([]);
@@ -410,10 +413,13 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                 // reads matched nothing, so this banner never fired.
                 if (!result.allowed || result.overrideRequired) {
                     setBudgetWarning(`⛔ Budget exceeded — ${result.message}`);
+                    setBudgetBlocked(true); // the Post button honours this; the banner alone did not
                 } else if (result.blockType === 'SOFT' || result.blockType === 'WARN' || (result.utilizationPct ?? 0) >= 90) {
                     setBudgetWarning(`⚠️ ${result.message}`);
+                    setBudgetBlocked(false);
                 } else {
                     setBudgetWarning(null);
+                    setBudgetBlocked(false);
                 }
             } catch {
                 // Non-blocking
@@ -475,8 +481,12 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.amount || !formData.costType || !formData.description) {
-            showToast('Please fill required fields: Amount, Cost Type, and Description.', 'warning');
+        if (!formData.amount || !formData.costType || !formData.costCenterId) {
+            showToast('Amount, cost type and cost centre are required.', 'warning');
+            return;
+        }
+        if (budgetBlocked) {
+            showToast('This posting would breach a hard budget block — it needs a budget approver.', 'error');
             return;
         }
 
@@ -493,6 +503,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                 quantity: formData.quantity ? parseFloat(formData.quantity) : undefined,
                 unit: formData.unit || undefined,
                 postingDate: formData.postingDate,
+                documentNumber: formData.referenceNumber || undefined,
             });
 
             resetForm();
@@ -745,39 +756,19 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                                 required
                             />
                         </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">GL Account</label>
-                            <input
-                                type="text"
-                                value={formData.glAccount}
-                                onChange={e => setFormData({ ...formData, glAccount: e.target.value })}
-                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:outline-none"
-                                placeholder="e.g. 6200-001"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">Reference #</label>
+                        {/* GL account and a free-text description had no column: the form
+                            collected them and the ledger dropped them. The reference is
+                            kept — it IS stored (cost_allocations.document_number). */}
+                        <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">Reference (invoice / PO / GRN)</label>
                             <input
                                 type="text"
                                 value={formData.referenceNumber}
                                 onChange={e => setFormData({ ...formData, referenceNumber: e.target.value })}
                                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:outline-none"
-                                placeholder="INV / PO / GRN ref"
+                                placeholder="e.g. INV-2026-0142 — stored on the posting"
                             />
                         </div>
-                    </div>
-
-                    {/* Description */}
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Description *</label>
-                        <textarea
-                            value={formData.description}
-                            onChange={e => setFormData({ ...formData, description: e.target.value })}
-                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:outline-none resize-none"
-                            rows={2}
-                            placeholder="Describe the transaction purpose (e.g., 'Emergency pump seal replacement — ABB vendor invoice')"
-                            required
-                        />
                     </div>
 
                     {/* Summary bar */}
@@ -814,7 +805,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                         </button>
                         <button
                             type="submit"
-                            disabled={loading || !formData.amount || !formData.description}
+                            disabled={loading || !formData.amount || !formData.costCenterId || budgetBlocked}
                             className="px-5 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
                         >
                             {loading ? (
@@ -857,6 +848,8 @@ export const FinOps: React.FC = () => {
     const [claims, setClaims] = useState<WarrantyClaim[]>([]);
     const [supplyChainData, setSupplyChainData] = useState<SupplyChainMatch[]>([]);
     const [insurancePolicies, setInsurancePolicies] = useState<any[]>([]);
+    const [insuranceIncidents, setInsuranceIncidents] = useState<(InsuranceIncident & { assetName?: string; assetTag?: string })[]>([]);
+    const [loadErrors, setLoadErrors] = useState<string[]>([]);
     const [vendorKPIs, setVendorKPIs] = useState<any[]>([]);
     const [dashboardMetrics, setDashboardMetrics] = useState<any>({
         budgetUtilization: 0,
@@ -896,7 +889,8 @@ export const FinOps: React.FC = () => {
                 FinOpsService.getFleetDepreciationSummary(new Date().getFullYear()),
                 FinOpsService.getAssetsForPicker(),
                 FinOpsService.getVendorsForPicker(),
-                FinOpsService.getVendorWarrantyKPIs()
+                FinOpsService.getVendorWarrantyKPIs(),
+                FinOpsService.getAllInsuranceIncidents()
             ]);
 
             // Handle results independently
@@ -912,13 +906,18 @@ export const FinOps: React.FC = () => {
             if (results[9].status === 'fulfilled') setAssets(results[9].value);
             if (results[10].status === 'fulfilled') setVendors(results[10].value);
             if (results[11].status === 'fulfilled') setVendorKPIs(results[11].value);
+            if (results[12].status === 'fulfilled') setInsuranceIncidents(results[12].value);
 
-            // Log failures for debugging
+            // A failed query must not look like "no data": name what did not load.
+            const names = ['cost centres', 'depreciation books', 'warranties', 'claims', 'supply chain', 'insurance policies', 'dashboard figures', 'forecasts', 'fleet depreciation', 'assets', 'vendors', 'vendor intelligence', 'insurance incidents'];
+            const failed: string[] = [];
             results.forEach((res, i) => {
                 if (res.status === 'rejected') {
-                    console.error(`FinOps query at index ${i} failed:`, res.reason);
+                    console.error(`FinOps query "${names[i]}" failed:`, res.reason);
+                    failed.push(`${names[i]} (${(res.reason as any)?.message || 'error'})`);
                 }
             });
+            setLoadErrors(failed);
         } catch (err) {
             console.error('Fatal FinOps load error:', err);
         } finally {
@@ -926,9 +925,11 @@ export const FinOps: React.FC = () => {
         }
     };
 
+    const blockedInvoices = supplyChainData.filter(s => s.status === 'BLOCKED' || s.status === 'VARIANCE').length;
+
     const renderTabContent = () => {
         switch (activeTab) {
-            case 'dashboard': return <DashboardTab metrics={dashboardMetrics} transactions={[]} />; // TODO: Fetch transactions
+            case 'dashboard': return <DashboardTab metrics={dashboardMetrics} transactions={[]} blockedInvoices={blockedInvoices} onOpenTab={(t) => setActiveTab(t as TabId)} />;
             case 'cost_centers': return <CostCentersTab costCenters={costCenters} onRefresh={loadData} initialSelectedId={searchParams.get('id')} can={can} />;
             case 'forecast':
                 // RF-01: the repair-vs-replace screen leads the forecast view —
@@ -945,8 +946,8 @@ export const FinOps: React.FC = () => {
             case 'claims': return <ClaimsTab claims={claims} onRefresh={loadData} can={can} actorId={actorId} />;
             case 'vendor_intel': return <VendorIntelTab vendorKPIs={vendorKPIs} onRefresh={loadData} />;
             case 'supply_chain': return <SupplyChainTab data={supplyChainData} />;
-            case 'insurance': return <InsuranceTab policies={insurancePolicies} claims={claims} totalAssetCount={assets.length} />;
-            default: return <DashboardTab metrics={dashboardMetrics} transactions={[]} />;
+            case 'insurance': return <InsuranceTab policies={insurancePolicies} claims={claims} insuranceIncidents={insuranceIncidents} totalAssetCount={assets.length} />;
+            default: return <DashboardTab metrics={dashboardMetrics} transactions={[]} blockedInvoices={blockedInvoices} onOpenTab={(t) => setActiveTab(t as TabId)} />;
         }
     };
 
@@ -979,13 +980,6 @@ export const FinOps: React.FC = () => {
                                 contextSummary={`FinOps Overview: Active Tab: ${activeTab}. Financial Operations & Asset Lifecycle Cost analysis. Modules: Cost Centers, Budget Control, Forecasting, Depreciation, Warranties, Claims, Supply Chain, Insurance. Ask about cost optimization, ROI analysis, depreciation strategies, warranty coverage gaps, budget compliance, or financial KPIs.`}
                                 compact
                             />
-                            <button
-                                className="flex items-center justify-center gap-2 min-h-[40px] px-2.5 md:px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                                aria-label="Export"
-                            >
-                                <Download size={16} />
-                                <span className="hidden md:inline">Export</span>
-                            </button>
                             {can.create && (
                                 <button
                                     onClick={() => setIsNewTransactionOpen(true)}
@@ -1020,6 +1014,15 @@ export const FinOps: React.FC = () => {
 
             {/* Content — the only scroll region */}
             <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+                {!loading && loadErrors.length > 0 && (
+                    <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                        <div>
+                            <strong>Some figures did not load</strong> — what you see below is incomplete, not zero: {loadErrors.join('; ')}.
+                            <button type="button" onClick={loadData} className="ml-2 underline font-medium">Retry</button>
+                        </div>
+                    </div>
+                )}
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
                         <RefreshCw className="animate-spin text-emerald-500" size={32} />
@@ -1047,9 +1050,12 @@ export const FinOps: React.FC = () => {
 interface DashboardTabProps {
     metrics: any;
     transactions: any[];
+    /** POs whose invoice is blocked or carries a variance (from the supply-chain overview) */
+    blockedInvoices?: number;
+    onOpenTab?: (tab: string) => void;
 }
 
-const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) => {
+const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions, blockedInvoices = 0, onOpenTab = () => {} }) => {
     // We ignore the passed transactions prop for now as we want to fetch fresh ones, 
     // or we could use it if parent passed it. Let's fetch self-contained for now or better, 
     // update parent to fetch. But to keep it localized:
@@ -1075,28 +1081,30 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
         loadDashboardData();
     }, []);
 
+    // Every figure here is read from a table. The old tile "Invoice Variance
+    // 1.2%" was a literal in the service and is gone.
     const kpis = [
-        { label: 'Budget Utilization', value: `${metrics.budgetUtilization.toFixed(0)}%`, icon: Target, color: 'text-emerald-600', bg: 'bg-emerald-100', sub: 'Year to Date' },
-        { label: 'Depreciation MTD', value: `$${metrics.depreciationMTD.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', sub: ' posted' },
-        { label: 'Active Warranties', value: metrics.activeWarranties.toString(), icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'Assets Covered' },
-        { label: 'Pending Claims', value: metrics.pendingClaims.toString(), icon: FileText, color: 'text-amber-600', bg: 'bg-amber-100', sub: 'Review Needed' },
-        { label: 'Invoice Variance', value: `${metrics.invoiceVariance}%`, icon: Banknote, color: 'text-primary-600', bg: 'bg-primary-100', sub: 'Avg Variance' },
-        { label: 'Insurance Coverage', value: `$${(metrics.insuranceCoverage / 1000000).toFixed(1)}M`, icon: Shield, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'Total Value' },
+        { label: 'Budget Utilization', value: `${metrics.budgetUtilization.toFixed(0)}%`, icon: Target, color: 'text-emerald-600', bg: 'bg-emerald-100', sub: `FY ${new Date().getFullYear()}, actual + committed` },
+        { label: 'Depreciation MTD', value: `$${metrics.depreciationMTD.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'posted this period' },
+        { label: 'Active Warranties', value: metrics.activeWarranties.toString(), icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-100', sub: `${metrics.expiringWarranties30 ?? 0} end within 30 days` },
+        { label: 'Pending Claims', value: metrics.pendingClaims.toString(), icon: FileText, color: 'text-amber-600', bg: 'bg-amber-100', sub: 'submitted, awaiting a decision' },
+        { label: 'Invoices to resolve', value: String(blockedInvoices), icon: Receipt, color: 'text-primary-600', bg: 'bg-primary-100', sub: 'blocked or with variance' },
+        { label: 'Insurance Coverage', value: `$${(metrics.insuranceCoverage / 1000000).toFixed(1)}M`, icon: Shield, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'insured value, active policies' },
     ];
+
+    // Needs attention — rendered only when there is something to attend to.
+    const breachedBudgets = budgets.filter(b => {
+        const total = (b.opexBudget || 0) + (b.capexBudget || 0);
+        return total > 0 && ((b.actual || 0) + (b.committed || 0)) / total >= 0.9;
+    });
+    const attention: { icon: React.ReactNode; text: string; tab: string }[] = [];
+    if ((metrics.expiringWarranties30 ?? 0) > 0) attention.push({ icon: <Shield size={14} />, text: `${metrics.expiringWarranties30} warrant${metrics.expiringWarranties30 === 1 ? 'y ends' : 'ies end'} within 30 days`, tab: 'warranties' });
+    if (blockedInvoices > 0) attention.push({ icon: <Receipt size={14} />, text: `${blockedInvoices} invoice${blockedInvoices === 1 ? '' : 's'} blocked or with a variance`, tab: 'supply_chain' });
+    if (metrics.pendingClaims > 0) attention.push({ icon: <FileText size={14} />, text: `${metrics.pendingClaims} warranty claim${metrics.pendingClaims === 1 ? '' : 's'} awaiting a decision`, tab: 'claims' });
+    if (breachedBudgets.length > 0) attention.push({ icon: <Banknote size={14} />, text: `${breachedBudgets.length} budget${breachedBudgets.length === 1 ? '' : 's'} at 90 % or more`, tab: 'cost_centers' });
 
     return (
         <div className="space-y-6">
-            {/* Warranty Recovery (AI) — surfaces recoverable spend under active warranty */}
-            <AdvisoryAgentPanel
-                title="Warranty Recovery"
-                subtitle="AI finds completed work done under active warranty — money to claim back"
-                icon={<ReceiptText size={16} />}
-                accent="emerald"
-                runLabel="Find recoverable"
-                inputPlaceholder="Asset tag (optional)"
-                onRun={(tag) => runWarrantyRecovery(tag || undefined)}
-            />
-
             {/* KPI Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 {kpis.map((kpi, idx) => (
@@ -1119,11 +1127,6 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
                             <Banknote size={18} className="text-emerald-600" />
                             Budget Overview - FY {new Date().getFullYear()}
                         </h3>
-                        <select className="text-sm border-slate-200 rounded-lg text-slate-600">
-                            <option>All Cost Centers</option>
-                            <option>Maintenance</option>
-                            <option>Operations</option>
-                        </select>
                     </div>
 
                     <div className="space-y-6">
@@ -1211,36 +1214,45 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
                     </div>
                 </div>
             </div>
-            {/* Alerts Section */}
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-6 border border-amber-200">
-                <h3 className="font-semibold text-amber-800 flex items-center gap-2 mb-4">
-                    <AlertTriangle size={18} />
-                    Action Required
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-lg p-4 border border-amber-200">
-                        <div className="flex items-center gap-2 text-amber-700 font-medium mb-1">
-                            <Shield size={14} />
-                            12 Warranties Expiring
-                        </div>
-                        <p className="text-xs text-amber-600">Within next 30 days. Review and renew.</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-amber-200">
-                        <div className="flex items-center gap-2 text-amber-700 font-medium mb-1">
-                            <Receipt size={14} />
-                            5 Invoice Variances
-                        </div>
-                        <p className="text-xs text-amber-600">Pending three-way match review.</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-amber-200">
-                        <div className="flex items-center gap-2 text-amber-700 font-medium mb-1">
-                            <Calculator size={14} />
-                            Cost Anomaly Detected
-                        </div>
-                        <p className="text-xs text-amber-600">WO estimate 150% above historical average.</p>
-                    </div>
+            {/* Needs attention — from the data; nothing here when there is nothing to do.
+                (The previous block was three hard-coded sentences: "12 Warranties
+                Expiring", "5 Invoice Variances", "Cost Anomaly Detected".) */}
+            {attention.length > 0 && (
+                <div className="bg-amber-50/70 rounded-xl p-4 border border-amber-200">
+                    <h3 className="font-semibold text-amber-800 flex items-center gap-2 mb-2 text-sm">
+                        <AlertTriangle size={16} /> Needs attention
+                    </h3>
+                    <ul className="divide-y divide-amber-100">
+                        {attention.map((a, i) => (
+                            <li key={i}>
+                                <button type="button" onClick={() => onOpenTab(a.tab)} className="w-full flex items-center gap-2 py-2 text-sm text-amber-900 hover:text-amber-700 text-left">
+                                    <span className="text-amber-600">{a.icon}</span> {a.text}
+                                    <ChevronRight size={14} className="ml-auto text-amber-400" />
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
-            </div>
+            )}
+
+            {/* Warranty Recovery (AI) — a tool, so it is called up rather than always on */}
+            <details className="group bg-white rounded-xl border border-slate-100 shadow-sm">
+                <summary className="cursor-pointer select-none px-5 py-3 text-sm font-medium text-slate-700 flex items-center gap-2 list-none">
+                    <ReceiptText size={16} className="text-emerald-600" /> Warranty recovery — find completed work done under active warranty
+                    <ChevronDown size={14} className="ml-auto text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="px-5 pb-5">
+                    <AdvisoryAgentPanel
+                        title="Warranty Recovery"
+                        subtitle="AI finds completed work done under active warranty — money to claim back"
+                        icon={<ReceiptText size={16} />}
+                        accent="emerald"
+                        runLabel="Find recoverable"
+                        inputPlaceholder="Asset tag (optional)"
+                        onRun={(tag) => runWarrantyRecovery(tag || undefined)}
+                    />
+                </div>
+            </details>
         </div>
     );
 };
@@ -1258,6 +1270,7 @@ interface CostCentersTabProps {
 
 const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh, initialSelectedId, can = NO_CAN }) => {
     const { showToast } = useToast();
+    const confirmDialog = useConfirm();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [selectedCenter, setSelectedCenter] = useState<CostCenter | null>(null);
     const [showBudgetModal, setShowBudgetModal] = useState(false);
@@ -1434,13 +1447,15 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                             </div>
                             <div className="flex items-center gap-2">
                                 {can.delete && <button
-                                    onClick={(e) => {
+                                    onClick={async (e) => {
                                         e.stopPropagation();
-                                        if (confirm(`Delete cost center ${center.code}?`)) {
+                                        const ok = await confirmDialog({ title: `Delete cost centre ${center.code}?`, message: `${center.name} is deactivated, not erased: its postings and budgets stay on the ledger.`, variant: 'danger', confirmLabel: 'Delete' });
+                                        if (ok) {
                                             FinOpsService.deleteCostCenter(center.id).then(() => { showToast('Cost center deleted.', 'success'); onRefresh(); }).catch((e: any) => showToast('Failed to delete: ' + e.message, 'error'));
                                         }
                                     }}
-                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                                    title="Delete cost centre"
                                 >
                                     <Trash2 size={14} />
                                 </button>}
@@ -1469,7 +1484,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
             {/* Budget Modal */}
             {
                 showBudgetModal && selectedCenter && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-sm rounded-xl">
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
                         <div className="bg-white rounded-xl shadow-xl w-full max-w-md border border-slate-200 p-6 m-4 animate-in fade-in zoom-in duration-200">
                             <div className="flex justify-between items-center mb-6">
                                 <div>
@@ -1496,7 +1511,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                         ))}
                                     </select>
                                     <button onClick={() => setShowBudgetModal(false)} className="p-1 hover:bg-slate-100 rounded-full">
-                                        <Trash2 size={20} className="rotate-45 text-slate-400" />
+                                        <X size={20} className="text-slate-400" />
                                     </button>
                                 </div>
                             </div>
@@ -1704,12 +1719,12 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
             }
             {/* Add Cost Center Modal */}
             {showAddModal && (
-                <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-sm rounded-xl">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md border border-slate-200 p-6 m-4 animate-in fade-in zoom-in duration-200">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-bold text-slate-800">New Cost Center</h3>
                             <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-slate-100 rounded-full">
-                                <Trash2 size={20} className="rotate-45 text-slate-400" />
+                                <X size={20} className="text-slate-400" />
                             </button>
                         </div>
 
@@ -1791,6 +1806,7 @@ interface DepreciationTabProps {
 
 const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciation, costCenters, can = NO_CAN }) => {
     const { showToast } = useToast();
+    const confirmDialog = useConfirm();
     const [schedule, setSchedule] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -1819,7 +1835,12 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
         const period = now.getMonth() + 1;
         const bookTypes = Array.from(new Set((books || []).map(b => b.bookType).filter(Boolean)));
         if (bookTypes.length === 0) { showToast('No depreciation books on file — set up a book on an asset first.', 'info'); return; }
-        if (!confirm(`Run depreciation for ${fiscalYear} period ${period} across ${bookTypes.length} book type(s)? Books already posted for this period are skipped.`)) return;
+        const ok = await confirmDialog({
+            title: `Run depreciation for ${fiscalYear} / ${String(period).padStart(2, '0')}?`,
+            message: `${bookTypes.length} book type(s), every book on file. Books already posted for this period are skipped; posted rows are immutable afterwards.`,
+            confirmLabel: 'Post depreciation',
+        });
+        if (!ok) return;
         setRunning(true);
         try {
             let posted = 0, skipped = 0;
@@ -1842,14 +1863,14 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
 
         schedule.forEach(item => {
             if (!pivot.has(item.period)) {
-                pivot.set(item.period, { period: item.period, status: 'Scheduled' });
+                pivot.set(item.period, { period: item.period, status: 'Posted', books: 0 });
             }
             const row = pivot.get(item.period);
-            row[item.bookType] = item.amount;
-
-            // Heuristic for status: if we have data, it's likely posted or pending
-            // This logic can be refined based on 'posted_date' if available
-            row.status = 'Posted';
+            // SUM across assets — assigning overwrote, so each cell showed only
+            // the last asset's amount for that book.
+            row[item.bookType] = (row[item.bookType] || 0) + (item.amount || 0);
+            row.books += 1;
+            if (item.posted === false) row.status = 'Scheduled';
         });
 
         return Array.from(pivot.values()).sort((a, b) => a.period - b.period);
@@ -1880,10 +1901,19 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                             </div>
 
                             <div className="text-2xl font-bold text-slate-800 mb-1">
-                                {/* Assuming standard Straight Line roughly monthly for display if not calculated */}
-                                ${((book.currentValue || 0) * 0.02).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                {/* The engine's next-month expense for this book — was currentValue × 2 % */}
+                                ${(() => {
+                                    const life = book.usefulLifeMonths || 0;
+                                    if (!life) return '—';
+                                    const [sy, sm] = (book.startDate || '').slice(0, 10).split('-').map(Number);
+                                    const now = new Date();
+                                    const elapsed = sy && sm ? (now.getFullYear() - sy) * 12 + (now.getMonth() + 1 - sm) : 0;
+                                    const remaining = Math.max(0, life - Math.max(0, elapsed));
+                                    return monthlyExpense({ method: book.depreciationMethod, bookValue: book.currentValue || 0, salvage: book.residualValue || 0, lifeMonths: life, remainingMonths: remaining })
+                                        .toLocaleString(undefined, { maximumFractionDigits: 0 });
+                                })()}
                             </div>
-                            <div className="text-sm text-slate-500 mb-4">Est. Monthly Depreciation</div>
+                            <div className="text-sm text-slate-500 mb-4">Next month's depreciation{book.assetTag ? ` · ${book.assetTag}` : ''}</div>
 
                             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
                                 <div>
@@ -1965,11 +1995,6 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                         <Building2 size={18} className="text-emerald-600" />
                         Fleet Depreciation Report (By Cost Center)
                     </h3>
-                    <div className="flex gap-2">
-                        <button className="text-sm text-emerald-600 font-medium hover:underline">
-                            Export PDF
-                        </button>
-                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -2000,12 +2025,11 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                                     const q4 = (row.monthly[10] || 0) + (row.monthly[11] || 0) + (row.monthly[12] || 0);
 
                                     return (
-                                        <tr key={row.costCenter} className="hover:bg-slate-50">
+                                        <tr key={row.costCenterId || row.costCenter} className="hover:bg-slate-50">
                                             <td className="px-4 py-3 font-medium text-slate-800">
-                                                {/* Lookup Cost Center Name if ID */}
-                                                {costCenters.find(c => c.id === row.costCenter)?.name || row.costCenter}
+                                                {row.costCenter}
                                                 <div className="text-[10px] text-slate-400 font-normal">
-                                                    {costCenters.find(c => c.id === row.costCenter)?.code}
+                                                    {row.code || costCenters.find(c => c.id === row.costCenterId)?.code || ''}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-right text-slate-600">${q1.toLocaleString()}</td>
@@ -2055,9 +2079,6 @@ const ForecastTab: React.FC = () => {
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                     <div className="text-sm text-slate-500 mb-1">Projected Annual Maintenance Spend</div>
                     <div className="text-3xl font-bold text-slate-800">${totalAnnualSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                    <div className="text-xs text-emerald-600 flex items-center gap-1 mt-2">
-                        <TrendingUp size={14} /> +5.2% vs Last Year (Est)
-                    </div>
                 </div>
             </div>
 
@@ -2136,6 +2157,13 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
         amount: ''
     });
     const [filingClaim, setFilingClaim] = useState(false);
+    const [search, setSearch] = useState('');
+    const visibleWarranties = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return warranties;
+        return warranties.filter(w => [(w as any).assetTag, (w as any).assetName, w.providerName, w.warrantyNumber, w.warrantyType]
+            .some(v => (v || '').toString().toLowerCase().includes(q)));
+    }, [warranties, search]);
 
     const handleAddWarranty = async (warranty: any) => {
         // Through createWarranty so the same rules apply as on the asset tab
@@ -2191,8 +2219,10 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
                                 type="text"
-                                placeholder="Search warranties..."
-                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                placeholder="Search tag, asset, provider…"
+                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full sm:w-56"
                             />
                         </div>
                         {can.create && (
@@ -2214,8 +2244,8 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                             <p>No active warranties found</p>
                         </div>
                     ) : (
-                        warranties.map(warranty => {
-                            const daysLeft = warranty.endDate ? Math.ceil((new Date(warranty.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+                        visibleWarranties.map(warranty => {
+                            const daysLeft = warranty.endDate ? Math.ceil((new Date(warranty.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
                             const isClaimOpen = claimWarrantyId === warranty.id;
 
                             return (
@@ -2234,10 +2264,10 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                         <div className="flex items-center gap-6">
                                             {/* Time remaining */}
                                             <div className="text-right">
-                                                <div className={`text-sm font-medium ${daysLeft < 30 ? 'text-amber-600' : 'text-slate-700'}`}>
-                                                    {daysLeft} days left
+                                                <div className={`text-sm font-medium ${daysLeft !== null && daysLeft < 30 ? 'text-amber-600' : 'text-slate-700'}`}>
+                                                    {daysLeft === null ? (warranty.maxHours ? `${Math.round(warranty.currentHours || 0).toLocaleString()} / ${warranty.maxHours.toLocaleString()} h` : 'No end date') : daysLeft < 0 ? `${-daysLeft} days overdue` : `${daysLeft} days left`}
                                                 </div>
-                                                <div className="text-xs text-slate-400">Expires {warranty.endDate}</div>
+                                                <div className="text-xs text-slate-400">{warranty.endDate ? `Expires ${warranty.endDate}` : 'by hours'}</div>
                                             </div>
 
                                             {/* G5: Wired File Claim button */}
@@ -2427,7 +2457,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh, can = NO_CAN, 
             {/* Pipeline + KPIs */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                 <h3 className="font-semibold text-slate-800 mb-4">Claims Pipeline</h3>
-                <div className="grid grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
                     {['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Credited'].map((stage, idx) => (
                         <div key={stage} className="text-center">
                             <div className={`text-2xl font-bold ${idx === 3 ? 'text-emerald-600' : idx === 4 ? 'text-red-600' : 'text-slate-800'}`}>
@@ -3001,10 +3031,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
 interface InsuranceTabProps {
     policies: any[];
     claims: WarrantyClaim[];
+    insuranceIncidents: (InsuranceIncident & { assetName?: string; assetTag?: string })[];
     totalAssetCount: number;
 }
 
-const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAssetCount }) => {
+const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insuranceIncidents, totalAssetCount }) => {
     // Compute real stats from policies + claims. Column names are the table's
     // (insured_value / insurer_name / premium_annual / coverage_end) — the
     // previous names did not exist, so coverage read $0 and provider blank.
@@ -3012,29 +3043,22 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
     const uniqueAssetsInsured = new Set(policies.map(p => p.asset_id).filter(Boolean)).size;
     const coverageRate = totalAssetCount > 0 ? Math.round((uniqueAssetsInsured / totalAssetCount) * 100) : 0;
 
-    // Claims recovered YTD — approved/paid claims
+    // Insurance figures come from insurance_incidents — the previous version
+    // relabelled WARRANTY claims as "INC-xxxxxx" incidents and called approved
+    // ones "PAID".
     const currentYear = new Date().getFullYear();
-    const claimsRecoveredYTD = claims
-        .filter(c => {
-            const isApproved = c.status === 'APPROVED' || (c as any).status === 'PAID';
-            const claimDate = c.submittedAt ? new Date(c.submittedAt) : null;
-            const isYTD = claimDate ? claimDate.getFullYear() === currentYear : true;
-            return isApproved && isYTD;
-        })
-        .reduce((sum, c) => sum + (c.approvedAmount || c.totalClaimAmount || 0), 0);
-
-    // Derive insurance incidents from claims (insurance-type claims)
-    const incidents = claims
-        .filter(c => c.status === 'APPROVED' || (c as any).status === 'PAID' || c.status === 'SUBMITTED')
-        .map(c => ({
-            id: c.id,
-            number: `INC-${c.id?.substring(0, 6).toUpperCase()}`,
-            asset: (c as any).assetName || 'Unknown',
-            type: c.claimType || 'Warranty',
-            amount: c.totalClaimAmount || 0,
-            date: c.submittedAt || '',
-            status: (c as any).status === 'PAID' ? 'PAID' : c.status === 'APPROVED' ? 'PAID' : 'UNDER_REVIEW',
-        }));
+    const settledYTD = insuranceIncidents.filter(i => i.settlementAmount != null && i.settlementDate && i.settlementDate.slice(0, 4) === String(currentYear));
+    const claimsRecoveredYTD = settledYTD.reduce((sum, i) => sum + (i.settlementAmount || 0), 0);
+    const incidents = insuranceIncidents.map(i => ({
+        id: i.id,
+        number: i.incidentNumber,
+        asset: i.assetTag ? `${i.assetTag} · ${i.assetName || ''}` : (i.assetName || 'Unknown asset'),
+        type: (i.incidentType || '').replace(/_/g, ' '),
+        amount: i.settlementAmount ?? i.claimAmount ?? i.totalCost ?? i.estimatedDamage ?? 0,
+        date: (i.settlementDate || i.claimSubmittedDate || i.incidentDate || '').slice(0, 10),
+        status: i.claimStatus || 'OPEN',
+    }));
+    void claims;
 
     const formatCurrency = (val: number) => {
         if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
@@ -3063,7 +3087,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                     <div className="text-3xl font-bold text-slate-800">{formatCurrency(claimsRecoveredYTD)}</div>
                     <div className="text-sm text-slate-500">Claims Recovered YTD</div>
-                    <div className="text-xs text-slate-400 mt-1">{claims.filter(c => c.status === 'APPROVED' || (c as any).status === 'PAID').length} approved claims</div>
+                    <div className="text-xs text-slate-400 mt-1">{settledYTD.length} settled incident{settledYTD.length === 1 ? '' : 's'}</div>
                 </div>
             </div>
 
@@ -3148,8 +3172,8 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
                                         <div className="font-semibold text-slate-800">${incident.amount.toLocaleString()}</div>
                                         <div className="text-xs text-slate-400">{incident.date}</div>
                                     </div>
-                                    <span className={`px-3 py-1 text-xs rounded-full font-medium ${incident.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
-                                        incident.status === 'UNDER_REVIEW' ? 'bg-amber-100 text-amber-700' :
+                                    <span className={`px-3 py-1 text-xs rounded-full font-medium ${incident.status === 'SETTLED' || incident.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-700' :
+                                        incident.status === 'SUBMITTED' ? 'bg-amber-100 text-amber-700' :
                                             'bg-blue-100 text-blue-700'
                                         }`}>
                                         {incident.status.replace('_', ' ')}

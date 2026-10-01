@@ -1980,7 +1980,9 @@ export class DatabaseService {
         // FEDERATION: Inject Cost Centers from FinOps Service
         // Cost Centers are stored in 'cost_centers' table but viewed as 'COST_CENTRE' dictionary type in Admin
         try {
-            const costCenters = await FinOpsService.getCostCenters();
+            // Admin lists deactivated centres too (the `active` flag below is the
+            // point); every other caller is a picker and gets active ones only.
+            const costCenters = await FinOpsService.getCostCenters(true);
             const costCenterEntries: DictionaryRecord[] = costCenters.map(cc => ({
                 id: cc.id,
                 type: 'COST_CENTRE',

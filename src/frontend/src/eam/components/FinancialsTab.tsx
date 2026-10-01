@@ -3,6 +3,8 @@ import { DollarSign, Shield, FileCheck, BookOpen, CreditCard, LayoutDashboard } 
 import { Asset } from '../types';
 import { FinOpsService, AssetFinancial, DepreciationBook, Warranty, DepreciationScheduleItem, AssetInsurance, InsuranceIncident, RecapitalizationResult } from '../services/FinOpsService';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 /** What the signed-in role may do on this tab. The tab itself is shown on finops.view. */
 export interface FinancialsCan {
@@ -66,6 +68,8 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
     // hold view only and FINANCE cannot delete, and since 0394 the database
     // refuses the write — so the buttons follow the matrix instead of failing.
     const { permissions } = useAuth();
+    const { showToast } = useToast();
+    const confirmDialog = useConfirm();
     const can: FinancialsCan = {
         create: permissions?.finops?.create === true,
         edit: permissions?.finops?.edit === true,
@@ -153,7 +157,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             setIsEditingDowntime(false);
         } catch (err) {
             console.error('Error saving downtime cost:', err);
-            alert('Failed to save downtime cost.');
+            showToast(`Could not save the downtime rate: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }
@@ -183,7 +187,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             await loadFinancialData();
         } catch (err) {
             console.error('Error capitalizing asset:', err);
-            alert('Failed to capitalize asset. Please try again.');
+            showToast(`Could not capitalise the asset: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }
@@ -208,21 +212,22 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             const msg = err?.code === '23505'
                 ? `A ${bookType} book already exists for this asset.`
                 : 'Failed to add depreciation book.';
-            alert(msg);
+            showToast(msg, 'error');
         } finally {
             setSaving(false);
         }
     };
 
     const handleDeleteBook = async (bookId: string, bookType: string) => {
-        if (!confirm(`Delete the ${bookType} depreciation book and all its schedule data? This cannot be undone.`)) return;
+        const ok = await confirmDialog({ title: `Delete the ${bookType} book?`, message: 'Its projected schedule goes with it. A book with posted depreciation is refused by the database — reverse the postings first.', variant: 'danger', confirmLabel: 'Delete book' });
+        if (!ok) return;
         setSaving(true);
         try {
             await FinOpsService.deleteDepreciationBook(bookId);
             await loadFinancialData();
         } catch (err) {
             console.error('Error deleting depreciation book:', err);
-            alert('Failed to delete depreciation book.');
+            showToast(`Could not delete the book: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }
@@ -230,7 +235,8 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
 
     const handleResetFinancials = async () => {
         if (!financialRecord) return;
-        if (!confirm('⚠️ RESET CAPITALIZATION\n\nThis will delete the financial record and ALL depreciation books for this asset. This action cannot be undone.\n\nAre you sure?')) return;
+        const ok = await confirmDialog({ title: 'Reset capitalisation?', message: 'Deletes the financial record and every depreciation book on this asset. Refused by the database once depreciation has been posted — deactivate or dispose of the asset instead.', variant: 'danger', confirmLabel: 'Reset' });
+        if (!ok) return;
         setSaving(true);
         try {
             await FinOpsService.deleteAssetFinancial(financialRecord.id);
@@ -239,7 +245,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             await loadFinancialData();
         } catch (err) {
             console.error('Error resetting financials:', err);
-            alert('Failed to reset financial record.');
+            showToast(`Could not reset: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }
@@ -258,14 +264,15 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
     };
 
     const handleDeleteWarranty = async (warrantyId: string, warrantyType: string) => {
-        if (!confirm(`Delete this ${warrantyType} warranty? This cannot be undone.`)) return;
+        const ok = await confirmDialog({ title: `Delete this ${warrantyType} warranty?`, message: 'A warranty with claims is refused by the database; void it instead to keep the history.', variant: 'danger', confirmLabel: 'Delete' });
+        if (!ok) return;
         setSaving(true);
         try {
             await FinOpsService.deleteWarranty(warrantyId);
             await loadFinancialData();
         } catch (err) {
             console.error('Error deleting warranty:', err);
-            alert('Failed to delete warranty.');
+            showToast(`Could not delete the warranty: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }
@@ -278,7 +285,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             await loadFinancialData();
         } catch (err) {
             console.error('Error updating warranty:', err);
-            alert('Failed to update warranty.');
+            showToast(`Could not update the warranty: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }
@@ -295,14 +302,15 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
     };
 
     const handleDeleteInsurance = async (insuranceId: string, providerName: string) => {
-        if (!confirm(`Delete insurance policy from ${providerName}? This cannot be undone.`)) return;
+        const ok = await confirmDialog({ title: `Delete the ${providerName} policy?`, message: 'A policy with incidents is refused by the database; mark it cancelled instead.', variant: 'danger', confirmLabel: 'Delete' });
+        if (!ok) return;
         setSaving(true);
         try {
             await FinOpsService.deleteAssetInsurance(insuranceId);
             await loadFinancialData();
         } catch (err) {
             console.error('Error deleting insurance:', err);
-            alert('Failed to delete insurance policy.');
+            showToast(`Could not delete the policy: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }
@@ -315,7 +323,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             await loadFinancialData();
         } catch (err) {
             console.error('Error updating insurance:', err);
-            alert('Failed to update insurance policy.');
+            showToast(`Could not update the policy: ${(err as any)?.message || err}`, 'error');
         } finally {
             setSaving(false);
         }

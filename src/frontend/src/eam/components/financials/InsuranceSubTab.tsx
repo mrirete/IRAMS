@@ -42,6 +42,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
     const [claimType, setClaimType] = useState('EQUIPMENT_DAMAGE');
     const [claimDescription, setClaimDescription] = useState('');
     const [claimEstDamage, setClaimEstDamage] = useState(0);
+    const [claimError, setClaimError] = useState<string | null>(null);
 
     const startEdit = (p: AssetInsurance) => {
         setEditingId(p.id);
@@ -78,7 +79,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
             setClaimEstDamage(0);
         } catch (err) {
             console.error('Error filing claim:', err);
-            alert('Failed to file insurance claim.');
+            setClaimError((err as any)?.message || 'The claim could not be filed.');
         } finally {
             setSaving(false);
         }
@@ -202,7 +203,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                     </h3>
                     {can.create && insurancePolicies.length > 0 && (
                         <button
-                            onClick={() => setShowClaimForm(!showClaimForm)}
+                            onClick={() => { setClaimError(null); setShowClaimForm(!showClaimForm); }}
                             className="text-xs bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg flex items-center gap-1 font-medium transition"
                         >
                             <Plus size={12} /> File Claim
@@ -213,6 +214,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                 {/* Add Claim Inline Form */}
                 {showClaimForm && (
                     <div className="p-4 bg-blue-50 border-b border-blue-100 space-y-2">
+                        {claimError && <div className="p-2 rounded bg-red-50 border border-red-200 text-xs text-red-700">{claimError}</div>}
                         <div className="grid grid-cols-2 gap-2">
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase">Incident Type</label>
