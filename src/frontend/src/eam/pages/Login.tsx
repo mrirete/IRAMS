@@ -8,6 +8,7 @@ import {
     TrendingUp, Activity, Zap, CheckCircle2
 } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
+import { SUSPENDED_NOTICE_KEY } from '../contexts/AuthContext';
 
 // Quick Switch is DEVELOPMENT ONLY — stripped from production builds.
 // The shared test passwords were rotated out of the repo (a8a4313): the dev
@@ -55,6 +56,16 @@ export const Login: React.FC = () => {
     /** Email verification (0314): set when sign-in was refused with "Email not confirmed". */
     const [unverifiedEmail, setUnverifiedEmail] = useState('');
     const [resendNote, setResendNote] = useState('');
+
+    // Signed out by AuthContext because the login was suspended while open.
+    useEffect(() => {
+        try {
+            if (sessionStorage.getItem(SUSPENDED_NOTICE_KEY)) {
+                sessionStorage.removeItem(SUSPENDED_NOTICE_KEY);
+                setError('This account has been suspended. Contact your administrator.');
+            }
+        } catch { /* private mode: no notice */ }
+    }, []);
 
     // /login?email=… (from the verify-email page) prefills the identifier.
     useEffect(() => {

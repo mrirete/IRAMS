@@ -1684,12 +1684,33 @@ export class DatabaseService {
         throw new Error('The account was not deleted.');
     }
 
-    /** Enable/disable a login without deleting it (bans/unbans the auth user). */
+    /**
+     * Enable/disable a login without touching the person record. The RPC (0398)
+     * owns users.status ('active' | 'suspended'), the auth ban and, on disable,
+     * ends the user's sessions — the browser used to write status itself, as
+     * 'inactive', which the users CHECK refused and nobody noticed.
+     */
     public async setUserLoginActive(userId: string, active: boolean): Promise<void> {
         const { error } = await supabase.rpc('set_user_login_active', { p_user_id: userId, p_active: active });
         if (error) { console.error('DatabaseService.setUserLoginActive:', error); throw new Error(error.message); }
-        // Reflect it in the app profile status too.
-        await supabase.from('users').update({ status: active ? 'active' : 'inactive' }).eq('id', userId);
+    }
+
+    /**
+     * Deactivate / reactivate a directory entry — person record AND login
+     * together (0398 set_person_active). `id` is a contact id, or a users id for
+     * a login with no person record. Refusals come back as `ok:false` with a
+     * reason rather than an exception, so a bulk run can report per person.
+     */
+    public async setPersonActive(id: string, active: boolean): Promise<{ ok: boolean; reason?: string; name?: string; login?: boolean; sessionsEnded?: number }> {
+        const { data, error } = await supabase.rpc('set_person_active', { p_id: id, p_active: active });
+        if (error) {
+            if (error.code === 'PGRST202' || /set_person_active/.test(error.message || '')) {
+                throw new Error('Deactivation needs database migration 0398 — ask an administrator to apply it.');
+            }
+            throw new Error(error.message);
+        }
+        const res = (data || {}) as { ok?: boolean; reason?: string; name?: string; login?: boolean; sessions_ended?: number };
+        return { ok: !!res.ok, reason: res.reason, name: res.name, login: res.login, sessionsEnded: res.sessions_ended };
     }
 
 

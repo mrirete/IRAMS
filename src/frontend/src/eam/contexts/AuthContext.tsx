@@ -58,6 +58,8 @@ const tokenHasTenant = (accessToken: string | undefined | null): boolean => {
 // matches the current session — so it can speed up but never expose another
 // user's data or render against malformed data.
 const PROFILE_CACHE_KEY = 'ers_auth_profile_v1';
+/** Set when a suspended login is signed out; the login page reads it once to say why. */
+export const SUSPENDED_NOTICE_KEY = 'ers_signed_out_suspended';
 interface CachedAuth {
     userId: string;
     profile: User;
@@ -236,6 +238,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 console.warn(`[AuthContext] ⚠ No user profile row found — applying BASE_PACKAGE_DEFAULTS (fail-closed). Role: "${contactRole || 'USER'}"`);
                 setRole(contactRole || 'USER');
                 setLoading(false);
+                return;
+            }
+
+            // A suspended login (0398 set_person_active / set_user_login_active)
+            // is banned in auth and its sessions are revoked, but an access token
+            // already issued stays valid until it expires. Don't let that window
+            // render the app: the database refuses a suspended caller anyway.
+            if (userData.status === 'suspended') {
+                try { sessionStorage.setItem(SUSPENDED_NOTICE_KEY, '1'); } catch { /* private mode */ }
+                clearProfileCache();
+                await supabase.auth.signOut();
                 return;
             }
 

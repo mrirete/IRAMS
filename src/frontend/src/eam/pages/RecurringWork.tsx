@@ -3762,9 +3762,10 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
 
     // Filter contacts by role for assignment
     const getContactsForRole = (roleCode: string) => {
-        return contacts.filter(c =>
+        // Deactivated people are not offered for new assignments.
+        return contacts.filter(c => c.active !== false && (
             c.types?.includes(roleCode) || c.defaultType === roleCode || roleCode === ''
-        );
+        ));
     };
 
     const craftOptionEls = craftRoles.length > 0

@@ -6630,10 +6630,17 @@ const TaskEditor: React.FC<{
     // 2. Must match selected Team (if any selected)
     const filteredUsers = useMemo(() => {
         // Enrich users with Contact data — keep ALL users, even without a contact
-        const enrichedUsers = availableUsers.map(user => {
-            const contact = contacts.find(c => c.id === user.contactId);
-            return { user, contact };
-        });
+        // A deactivated person (contacts.is_active false, or login suspended —
+        // 0398) is not offered for new work; anyone already on the task stays
+        // listed so they can be seen and taken off.
+        const assigned = new Set(task.assignedUserIds || []);
+        const enrichedUsers = availableUsers
+            .map(user => {
+                const contact = contacts.find(c => c.id === user.contactId);
+                return { user, contact };
+            })
+            .filter(({ user, contact }) => assigned.has(user.id)
+                || (((user as any).status ?? 'active') === 'active' && contact?.active !== false));
 
         // If no Org Units selected, return all users
         if (!task.assignedOrgUnitIds || task.assignedOrgUnitIds.length === 0) {
@@ -6646,7 +6653,7 @@ const TaskEditor: React.FC<{
             const contactOrgIds = contact.organizationUnitIds || (contact.organizationUnitId ? [contact.organizationUnitId] : []);
             return contactOrgIds.some((id: string) => task.assignedOrgUnitIds!.includes(id));
         });
-    }, [availableUsers, contacts, task.assignedOrgUnitIds]);
+    }, [availableUsers, contacts, task.assignedOrgUnitIds, task.assignedUserIds]);
 
     // Sorting: Alphabetical by Name (Contact Name)
     const sortedUsers = useMemo(() => {

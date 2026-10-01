@@ -8,9 +8,8 @@ import {
     Trash2, Plus, Edit2, Search, Filter, MoreHorizontal, Mail, Phone, MapPin, User as UserIcon, Building2,
     Briefcase, FileText, Calendar, DollarSign, CheckSquare, Settings, Truck, Box, Users, X,
     Award, Clock, Save, Shield, Key, Factory, List, Network, Paperclip, Book, ShoppingCart, Sliders,
-    UserPlus, Upload, Lock, Unlock
+    UserPlus, Upload, Lock, Unlock, UserX, UserCheck
 } from 'lucide-react';
-import { MOCK_USERS, MOCK_WORK_ORDERS } from '../constants';
 import { Contact, Qualification, CustomField, WorkOrder, DictionaryEntry, User, OrganizationUnit } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
 import { emptyResult, tally, errMessage } from '../services/importTypes';
@@ -53,8 +52,18 @@ const NBSP = '\u00A0';
 /** The directory lists people; vendors and manufacturers have their own page. */
 const isPerson = (c: Contact) => !Array.isArray(c.types) || !c.types.some(t => ['VENDOR', 'MANUFACTURER', 'SUPPLIER'].includes(t));
 
+type PersonState = 'active' | 'login_disabled' | 'inactive';
+const PERSON_STATE_LABEL: Record<PersonState, string> = {
+    active: 'Active',
+    login_disabled: 'Login disabled',
+    inactive: 'Inactive',
+};
+
 export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
-    const { permissions } = useAuth();
+    const { permissions, role } = useAuth();
+    // Deactivation runs through admin-only RPCs (0398); offering it to anyone
+    // else only produces a refusal.
+    const isAdmin = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
     const { showToast } = useToast();
     const canCreate = permissions?.contacts?.create === true;
     const canEdit = permissions?.contacts?.edit === true;
@@ -74,6 +83,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('ALL'); // CONTACT_TYPE code, or ALL
     const [unitFilter, setUnitFilter] = useState<string>('ALL'); // org unit id, ALL, or NONE
+    const [statusFilter, setStatusFilter] = useState<'ALL' | PersonState>('ALL');
     const [filterSheetOpen, setFilterSheetOpen] = useState(false); // below lg the rail is a sheet
     // Logins with no person record ("SYS-USER / System Account") are noise in a
     // people directory — hidden by default, one toggle to show them, remembered.
@@ -92,6 +102,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     });
     const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
     const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
+    const [activationModal, setActivationModal] = useState<{ ids: string[]; active: boolean } | null>(null);
 
     // Generic Modal State (Alerts & Confirms)
     const [modalConfig, setModalConfig] = useState<{
@@ -190,7 +201,18 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
         const u: any = c.flags?.isVirtual
             ? (users as any[]).find(x => x.id === c.id)
             : (users as any[]).find(x => x.contactId === c.id || x.contact_id === c.id);
-        return { userId: u?.id as string | undefined, active: u ? (u.status !== 'inactive') : true, hasLogin: !!u };
+        // users.status is 'active' | 'suspended' (CHECK in 0000); NULL is the legacy default.
+        return { userId: u?.id as string | undefined, active: u ? ((u.status ?? 'active') === 'active') : true, hasLogin: !!u };
+    };
+
+    // One reading of "is this person active" for the table, the filter and the
+    // header. The person record (contacts.is_active) and the login
+    // (users.status) are separate switches; set_person_active moves both, but a
+    // login can still be disabled on its own.
+    const personState = (c: Contact): PersonState => {
+        if (!c.active) return 'inactive';
+        const li = loginInfo(c);
+        return li.hasLogin && !li.active ? 'login_disabled' : 'active';
     };
 
     const handleToggleLogin = async (userId: string, active: boolean) => {
@@ -200,24 +222,82 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             await loadData();
             showModal('Success', active
                 ? 'Login enabled — this user can sign in again.'
-                : 'Login disabled — this user can no longer sign in (profile kept).', 'success');
+                : 'Login disabled — this user can no longer sign in and any open session has ended (profile kept).', 'success');
         } catch (e: any) {
             showModal('Update Failed', e.message, 'danger');
         } finally { setLoading(false); }
     };
 
-    // Enable/Disable Login action (0 or 1 items) for entries that have a login.
-    const loginToggleAction = () => {
+    // Deactivate / Reactivate the open person (record + login together), and,
+    // when only the login is off, a way to turn just that back on.
+    const activationActions = () => {
         if (!selectedContact) return [] as any[];
+        const state = personState(selectedContact);
+        const tooltip = isAdmin ? undefined : 'Only an administrator can change this';
+        if (state === 'inactive') {
+            return [{
+                label: 'Reactivate', icon: <UserCheck size={14} />, variant: 'ghost' as const,
+                onClick: () => setActivationModal({ ids: [selectedContact.id], active: true }),
+                disabled: !isAdmin, tooltip,
+            }];
+        }
         const li = loginInfo(selectedContact);
-        if (!li.hasLogin || !li.userId) return [] as any[];
-        return [{
-            label: li.active ? 'Disable Login' : 'Enable Login',
-            icon: li.active ? <Lock size={14} /> : <Unlock size={14} />,
-            onClick: () => handleToggleLogin(li.userId!, !li.active),
-            variant: 'ghost' as const,
-            disabled: !canEdit,
-        }];
+        return [
+            ...(state === 'login_disabled' && li.userId ? [{
+                label: 'Enable Login', icon: <Unlock size={14} />, variant: 'ghost' as const,
+                onClick: () => handleToggleLogin(li.userId!, true),
+                disabled: !isAdmin, tooltip,
+            }] : []),
+            {
+                label: 'Deactivate', icon: <UserX size={14} />, variant: 'ghost' as const,
+                onClick: () => setActivationModal({ ids: [selectedContact.id], active: false }),
+                disabled: !isAdmin, tooltip,
+            },
+        ];
+    };
+
+    const ACTIVATION_REFUSALS: Record<string, string> = {
+        self: 'that is your own account — another administrator has to do it',
+        not_found: 'no longer exists',
+    };
+
+    const handleSetActive = async (ids: string[], active: boolean) => {
+        setActivationModal(null);
+        if (!isAdmin) {
+            showToast('Only an administrator can deactivate or reactivate people.', 'error');
+            return;
+        }
+        setLoading(true);
+        const db = DatabaseService.getInstance();
+        const nameOf = (id: string) => mergedContacts.find(c => c.id === id)?.name || id;
+        const done: string[] = [];
+        const refused: string[] = [];
+        let sessions = 0;
+        for (const id of ids) {
+            try {
+                const r = await db.setPersonActive(id, active);
+                if (r.ok) { done.push(r.name || nameOf(id)); sessions += r.sessionsEnded || 0; }
+                else refused.push(`${r.name || nameOf(id)}: ${ACTIVATION_REFUSALS[r.reason || ''] || r.reason || 'refused'}`);
+            } catch (e: any) {
+                refused.push(`${nameOf(id)}: ${e.message}`);
+                if (/migration 0398/.test(e.message)) break; // same answer for every row
+            }
+        }
+        setSelectedContactIds(new Set());
+        await loadData();
+        setLoading(false);
+        const verb = active ? 'Reactivated' : 'Deactivated';
+        const lines = [`${verb} ${done.length} of ${ids.length}.`];
+        if (done.length && !active) {
+            lines.push('They can no longer sign in' + (sessions ? ` (${sessions} open session${sessions > 1 ? 's' : ''} ended)` : '') + ' and drop out of assignment lists. Their history stays.');
+        }
+        if (done.length && active) lines.push('Anyone with a login can sign in again.');
+        if (ids.length > 1 && done.length) lines.push('', ...done.map(n => '• ' + n));
+        if (refused.length) lines.push('', 'Not changed:', ...refused.map(r => '• ' + r));
+        showModal(
+            refused.length ? `${verb} With Exceptions` : `${verb}`,
+            lines.join('\n'),
+            refused.length ? (done.length ? 'warning' : 'danger') : 'success');
     };
 
     const handleDuplicateContact = async (original: Contact) => {
@@ -495,12 +575,32 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                 c.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (Array.isArray(c.types) && c.types.some(t => t.toLowerCase().includes(searchTerm.toLowerCase())))) &&
             (typeFilter === 'ALL' || (Array.isArray(c.types) && c.types.includes(typeFilter))) &&
+            (statusFilter === 'ALL' || personState(c) === statusFilter) &&
             unitMatch(c)
         )
         .sort((a, b) => a.name.localeCompare(b.name));
 
-    const activeFilterCount = (typeFilter !== 'ALL' ? 1 : 0) + (unitFilter !== 'ALL' ? 1 : 0);
-    const clearFilters = () => { setTypeFilter('ALL'); setUnitFilter('ALL'); };
+    const stateCounts = people.reduce((acc, c) => { acc[personState(c)]++; return acc; },
+        { active: 0, login_disabled: 0, inactive: 0 } as Record<PersonState, number>);
+
+    // A selection is only meaningful for rows on screen. Kept across a search or
+    // filter change it lets "Delete Selected" act on people the user can no
+    // longer see.
+    useEffect(() => { setSelectedContactIds(new Set()); }, [searchTerm, typeFilter, unitFilter, statusFilter, showSystemAccounts]);
+
+    // The open record is a local copy. After a (de)activation the list reloads
+    // but this copy would keep the old `active` — and Save writes is_active
+    // from it, silently undoing the change. Carry the fresh value across.
+    useEffect(() => {
+        if (!selectedContact) return;
+        const fresh = mergedContacts.find(c => c.id === selectedContact.id);
+        if (fresh && fresh.active !== selectedContact.active) {
+            setSelectedContact(prev => prev && prev.id === fresh.id ? { ...prev, active: fresh.active } : prev);
+        }
+    }, [mergedContacts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const activeFilterCount = (typeFilter !== 'ALL' ? 1 : 0) + (unitFilter !== 'ALL' ? 1 : 0) + (statusFilter !== 'ALL' ? 1 : 0);
+    const clearFilters = () => { setTypeFilter('ALL'); setUnitFilter('ALL'); setStatusFilter('ALL'); };
 
     // One set of controls, rendered in the left rail (lg+) or a sheet (below lg).
     const railLabel = 'block mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400';
@@ -535,6 +635,15 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                 <select id="dir-type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className={railSelect} title={typeFilter === 'ALL' ? 'All types' : getContactTypeLabel(typeFilter)}>
                     <option value="ALL">All types ({people.length})</option>
                     {typeOptions.map(([t, n]) => <option key={t} value={t}>{getContactTypeLabel(t)} ({n})</option>)}
+                </select>
+            </div>
+            <div>
+                <label htmlFor="dir-status" className={railLabel}>Status</label>
+                <select id="dir-status" value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'ALL' | PersonState)} className={railSelect}>
+                    <option value="ALL">All ({people.length})</option>
+                    {(['active', 'login_disabled', 'inactive'] as PersonState[]).map(st => (
+                        <option key={st} value={st}>{PERSON_STATE_LABEL[st]} ({stateCounts[st]})</option>
+                    ))}
                 </select>
             </div>
             <label className="flex items-start gap-2 cursor-pointer select-none" title="Logins that have no person record yet (code SYS-USER)">
@@ -723,18 +832,49 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                         <div className="flex-1 overflow-auto table-responsive">
                             {/* Bulk Action Bar */}
                             {selectedContactIds.size > 0 && (
-                                <div className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 flex items-center justify-between gap-3 sticky top-0 z-20 animate-in slide-in-from-top duration-200">
+                                <div className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-20 animate-in slide-in-from-top duration-200">
                                     <div className="flex items-center gap-2">
                                         <CheckSquare size={16} className="text-white/80" />
                                         <span className="text-sm font-semibold text-white">{selectedContactIds.size} person{selectedContactIds.size > 1 ? 's' : ''} selected</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <button
                                             onClick={() => setSelectedContactIds(new Set())}
                                             className="px-3 py-1 text-xs font-medium text-white/90 bg-white/15 hover:bg-white/25 rounded-md transition"
                                         >
                                             Clear
                                         </button>
+                                        {(() => {
+                                            const sel = filteredContacts.filter(c => selectedContactIds.has(c.id));
+                                            const anyOn = sel.some(c => personState(c) !== 'inactive');
+                                            const anyOff = sel.some(c => personState(c) !== 'active');
+                                            const btn = `px-3 py-1 text-xs font-bold rounded-md flex items-center gap-1.5 transition ${!isAdmin ? 'bg-white/10 text-white/40 cursor-not-allowed' : 'bg-white/90 text-blue-800 hover:bg-white shadow-sm'}`;
+                                            const tip = isAdmin ? undefined : 'Only an administrator can change this';
+                                            return (
+                                                <>
+                                                    {anyOff && (
+                                                        <button
+                                                            onClick={() => setActivationModal({ ids: sel.filter(c => personState(c) !== 'active').map(c => c.id), active: true })}
+                                                            disabled={!isAdmin}
+                                                            className={btn}
+                                                            title={tip || 'Reactivate selected'}
+                                                        >
+                                                            <UserCheck size={13} /> Reactivate
+                                                        </button>
+                                                    )}
+                                                    {anyOn && (
+                                                        <button
+                                                            onClick={() => setActivationModal({ ids: sel.filter(c => personState(c) !== 'inactive').map(c => c.id), active: false })}
+                                                            disabled={!isAdmin}
+                                                            className={btn}
+                                                            title={tip || 'Deactivate selected'}
+                                                        >
+                                                            <UserX size={13} /> Deactivate
+                                                        </button>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                         <button
                                             onClick={() => setBulkDeleteModal(true)}
                                             disabled={!canDelete}
@@ -765,11 +905,11 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                             </div>
                                         </div>
                                         <div className="mobile-card-contact-badge">
-                                            {contact.active ? (
-                                                <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" title="Active"></span>
-                                            ) : (
-                                                <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" title="Inactive"></span>
-                                            )}
+                                            {(() => {
+                                                const st = personState(contact);
+                                                const dot = st === 'active' ? 'bg-green-500' : st === 'login_disabled' ? 'bg-amber-400' : 'bg-red-400';
+                                                return <span className={`w-2.5 h-2.5 rounded-full inline-block ${dot}`} title={PERSON_STATE_LABEL[st]} aria-label={PERSON_STATE_LABEL[st]}></span>;
+                                            })()}
                                         </div>
                                     </div>
                                 ))}
@@ -846,9 +986,15 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                             <td className="px-3 py-4 whitespace-nowrap text-center">
                                                                 {systemUser ? (
                                                                     <div className="flex flex-col items-center">
-                                                                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200 gap-1 items-center">
-                                                                            <UserIcon size={12} /> Yes
-                                                                        </span>
+                                                                        {((systemUser.status ?? 'active') === 'active') ? (
+                                                                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200 gap-1 items-center">
+                                                                                <UserIcon size={12} /> Yes
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-50 text-amber-800 border border-amber-200 gap-1 items-center" title="This login cannot sign in">
+                                                                                <Lock size={12} /> Disabled
+                                                                            </span>
+                                                                        )}
                                                                         <span className="text-[10px] text-slate-400 mt-1 font-mono truncate max-w-[90px]">@{systemUser.username}</span>
                                                                     </div>
                                                                 ) : (
@@ -858,11 +1004,13 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                                 )}
                                                             </td>
                                                             <td className="px-3 py-4 whitespace-nowrap text-center">
-                                                                {contact.active ? (
-                                                                    <span className="text-slate-500 text-xs">Active</span>
-                                                                ) : (
-                                                                    <span className="text-red-600 text-xs font-bold">Inactive</span>
-                                                                )}
+                                                                {(() => {
+                                                                    const st = personState(contact);
+                                                                    const cls = st === 'active' ? 'text-slate-500'
+                                                                        : st === 'login_disabled' ? 'text-amber-700 font-semibold'
+                                                                        : 'text-red-600 font-bold';
+                                                                    return <span className={`text-xs ${cls}`}>{PERSON_STATE_LABEL[st]}</span>;
+                                                                })()}
                                                             </td>
                                                         </>
                                                     )}
@@ -941,11 +1089,11 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                 actions={
                                     selectedContact.flags?.isVirtual ? [
                                         { label: 'Create Profile', icon: <UserPlus size={14} />, onClick: () => setIsAddModalOpen(true), variant: 'primary' as const, disabled: !canCreate },
-                                        ...loginToggleAction(),
+                                        ...activationActions(),
                                     ] : [
                                         { label: 'New', icon: <Plus size={14} />, onClick: () => setIsAddModalOpen(true), variant: 'ghost' as const, disabled: !canCreate },
                                         { label: 'Duplicate', icon: <Edit2 size={14} />, onClick: handleDuplicate, variant: 'ghost' as const, disabled: !canCreate },
-                                        ...loginToggleAction(),
+                                        ...activationActions(),
                                         { label: 'Delete', icon: <Trash2 size={14} />, onClick: () => handleDeleteClick(selectedContact), variant: 'danger' as const, disabled: !canDelete },
                                         {
                                             label: 'Save',
@@ -1042,6 +1190,20 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                 message={"Are you sure you want to delete \"" + deleteModal.contactName + "\"? This action cannot be undone and may be blocked if the contact has active work orders."}
                 type="danger"
                 confirmText="Delete Contact"
+            />
+            {/* Deactivate / Reactivate Confirmation */}
+            <ConfirmationModal
+                isOpen={!!activationModal}
+                onClose={() => setActivationModal(null)}
+                onConfirm={() => activationModal && handleSetActive(activationModal.ids, activationModal.active)}
+                title={activationModal?.active
+                    ? `Reactivate ${activationModal.ids.length === 1 ? (mergedContacts.find(c => c.id === activationModal.ids[0])?.name || 'this person') : `${activationModal.ids.length} people`}?`
+                    : `Deactivate ${activationModal && activationModal.ids.length === 1 ? (mergedContacts.find(c => c.id === activationModal.ids[0])?.name || 'this person') : `${activationModal?.ids.length ?? 0} people`}?`}
+                message={activationModal?.active
+                    ? 'They become active again, and anyone with a login can sign in.'
+                    : 'They can no longer sign in, any open session ends now, and they drop out of assignment lists. Their work history, labour and records stay. You can reactivate them at any time.'}
+                type={activationModal?.active ? 'info' : 'warning'}
+                confirmText={activationModal?.active ? 'Reactivate' : 'Deactivate'}
             />
             {/* Bulk Delete Confirmation */}
             <ConfirmationModal
