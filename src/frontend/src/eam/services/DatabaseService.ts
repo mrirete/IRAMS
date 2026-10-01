@@ -347,7 +347,7 @@ export class DatabaseService {
 
         // 2. Organisation units. Only when the caller carries the list: a Contact
         //    built without it used to wipe every membership. One RPC, one
-        //    transaction (0399), instead of delete-all-then-insert that left the
+        //    transaction (0399a), instead of delete-all-then-insert that left the
         //    person in no unit whenever the insert failed.
         if (Array.isArray(contact.organizationUnitIds)) {
             await this.setContactOrgUnits(contact.id, contact.organizationUnitIds);
@@ -477,13 +477,13 @@ export class DatabaseService {
             throw new Error('Invalid contact ID format. All records must be synced to Supabase.');
         }
 
-        // Person record + any login, all or nothing (0399 delete_directory_person).
+        // Person record + any login, all or nothing (0399a delete_directory_person).
         // Removing the login first from here and then failing on the person's
         // qualifications / memberships / reporting lines left a person with no
         // login and an error nobody could act on.
         const { data, error } = await supabase.rpc('delete_directory_person', { p_contact_id: contactId });
         if (error) {
-            if (error.code === 'PGRST202') throw new Error('Deleting people needs database migration 0399 — ask an administrator to apply it.');
+            if (error.code === 'PGRST202') throw new Error('Deleting people needs database migration 0399a — ask an administrator to apply it.');
             throw new Error(error.message);
         }
         const res = (data || {}) as { deleted?: boolean; reason?: string; refs?: { table: string; column: string; rows: number }[] };
@@ -1291,7 +1291,7 @@ export class DatabaseService {
     }
 
     /**
-     * Delete an organisation unit and its memberships (0399 delete_org_unit).
+     * Delete an organisation unit and its memberships (0399a delete_org_unit).
      * The members FK has no cascade, so the old browser-side delete failed for
      * any unit with people in it. Refuses while sub-units or work centres hang
      * off the unit, and says which.
@@ -1309,7 +1309,7 @@ export class DatabaseService {
 
     /**
      * Put people in a unit (or take them out of their unit, with null). Changes
-     * their PRIMARY unit only; secondary memberships stay (0399
+     * their PRIMARY unit only; secondary memberships stay (0399a
      * set_primary_org_unit — the old version deleted every membership).
      */
     public async assignContactsToUnit(contactIds: string[], unitId: string | null): Promise<void> {
@@ -1317,7 +1317,7 @@ export class DatabaseService {
         if (error) throw new Error(error.message);
     }
 
-    /** A person's full unit list, first = primary (0399 set_contact_org_units). */
+    /** A person's full unit list, first = primary (0399a set_contact_org_units). */
     public async setContactOrgUnits(contactId: string, unitIds: string[]): Promise<void> {
         const { error } = await supabase.rpc('set_contact_org_units', { p_contact_id: contactId, p_unit_ids: unitIds });
         if (error) throw new Error(`Organisation units not saved: ${error.message}`);

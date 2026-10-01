@@ -1,4 +1,4 @@
--- 0399 — People & Org: writes that lost data, and writes anyone could make.
+-- 0399a — People & Org: writes that lost data, and writes anyone could make.
 --
 -- From the 2026-10-01 People & Org audit. Each block is something a user could
 -- see go wrong:

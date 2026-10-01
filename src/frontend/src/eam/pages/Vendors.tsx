@@ -108,7 +108,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const { showToast } = useToast();
     // The page never consulted permissions, so every role saw Add / Delete /
-    // Save. The database decides since 0399 (caller_can('vendors', ...));
+    // Save. The database decides since 0399a (caller_can('vendors', ...));
     // these keep the page from offering what it will refuse.
     const { permissions } = useAuth();
     const canCreate = permissions?.vendors?.create === true;
@@ -301,7 +301,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         }
     };
 
-    // A supplier with purchase orders cannot be deleted (0399) — retiring it is
+    // A supplier with purchase orders cannot be deleted (0399a) — retiring it is
     // the everyday action: it drops out of the PO supplier picker, history stays.
     const handleSetActive = async (active: boolean) => {
         if (!selectedVendor || saving) return;

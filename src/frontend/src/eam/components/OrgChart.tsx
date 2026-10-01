@@ -47,7 +47,7 @@ const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string; b
 const getLevelColors = (color: string) => LEVEL_COLORS[color] || LEVEL_COLORS.gray;
 
 export const OrgChart: React.FC = () => {
-    // Restructuring the chart moves people between units; the database (0399)
+    // Restructuring the chart moves people between units; the database (0399a)
     // allows it to roles with contacts.edit. Everyone else can look.
     const { permissions } = useAuth();
     const { showToast } = useToast();
