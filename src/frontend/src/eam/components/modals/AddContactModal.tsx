@@ -4,6 +4,7 @@ import { X, Shield, Network, Loader2 } from 'lucide-react';
 import { Contact, DictionaryEntry, OrganizationUnit } from '../../types';
 import { DatabaseService } from '../../services/DatabaseService';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { ROLE_PERMISSION_TEMPLATES } from '../../constants/rolePermissions';
 
 /**
@@ -32,6 +33,12 @@ interface AddContactModalProps {
 
 export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSave, contactTypes, costCenters, initialType, existingUser }) => {
     const { showToast } = useToast();
+    // Logins are created by create_auth_user, which only an administrator may
+    // run. A planner or manager (contacts.create) used to get the person row
+    // written, the login refused, and a rollback delete that RLS also refused —
+    // an orphan whose code then blocked every retry.
+    const { role } = useAuth();
+    const canCreateLogin = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
     const [formData, setFormData] = useState({
         code: '', firstName: '', lastName: '', title: '', email: '', type: initialType || 'INTERNAL',
         role: DEFAULT_ROLE,
@@ -90,12 +97,12 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
     useEffect(() => {
         if (existingUser) return; // Don't override if handling existing user
         const selectedType = contactTypes.find(t => t.code === formData.type);
-        if (selectedType?.isManufacturer || selectedType?.code === 'VENDOR') {
+        if (selectedType?.isManufacturer || selectedType?.code === 'VENDOR' || !canCreateLogin) {
             setCreateUser(false);
         } else {
             setCreateUser(true); // Default to true for internal staff
         }
-    }, [formData.type, contactTypes, existingUser]);
+    }, [formData.type, contactTypes, existingUser, canCreateLogin]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -118,7 +125,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     types: ['MANUFACTURER'], defaultType: 'MANUFACTURER',
                     organizationUnitId: null,
                     costCenterId: undefined,
-                    hourlyRate: 0, currency: 'USD',
+                    hourlyRate: 0,
                     address: { street: '', city: '', state: '', zip: '', country: formData.country || '' },
                     flags: {
                         isLabour: false, hasQualifications: false, isVendor: true,
@@ -194,9 +201,10 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 // type, not a role — writing it here is what gave new
                 // technicians a view-only login.
                 types, defaultType: formData.role,
-                organizationUnitId: null,
+                organizationUnitId: formData.orgUnitId || null,
+                organizationUnitIds: formData.orgUnitId ? [formData.orgUnitId] : [],
                 costCenterId: undefined,
-                hourlyRate: rate, currency: 'USD',
+                hourlyRate: rate,
                 address: { street: '', city: '', state: '', zip: '', country: '' },
                 flags: {
                     isLabour,
@@ -210,8 +218,15 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
 
             // 3. Create User OR Link Existing
             if (existingUser) {
-                // Link existing user to this new contact
-                await db.updateUser(existingUser.id, { contact_id: contactId });
+                // Link existing user to this new contact. updateUser throws when
+                // the write matched no row; without the rollback the person would
+                // then appear twice — as this record and as the unlinked login.
+                try {
+                    await db.updateUser(existingUser.id, { contact_id: contactId });
+                } catch (linkErr) {
+                    try { await db.deleteContact(contactId); } catch { /* reported below */ }
+                    throw linkErr;
+                }
             } else if (createUser) {
                 // For users, we ideally want the Edge Function to generate the ID (Auth ID)
                 // But we pass a UUID as a placeholder or specific ID if allowed.
@@ -223,8 +238,6 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 // screen accepts directly. The old `<username>@cainergy.com`
                 // derivation minted addresses nobody owned.
                 const userEmail = email;
-
-                console.log('[AddContactModal] Creating user with:', { username: formData.code, email: userEmail });
 
                 try {
                     await db.createUser({
@@ -245,7 +258,11 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     // account-create leaves an orphaned person (the "duplicate/unlinked"
                     // records we had to clean up). Keep create atomic: person + login,
                     // or neither.
-                    try { await db.deleteContact(contactId); } catch (rbErr) { console.warn('[AddContactModal] contact rollback failed:', rbErr); }
+                    try {
+                        await db.deleteContact(contactId);
+                    } catch {
+                        throw new Error(`${(userErr as Error).message} — and the person record "${formData.code}" could not be removed again; delete it from the directory before retrying.`);
+                    }
                     throw userErr;
                 }
             }
@@ -395,18 +412,15 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                         <div>
                             <label className={L}>Hourly rate</label>
-                            <div className="relative">
-                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
-                                <input
-                                    type="number"
-                                    min={0}
-                                    step="0.01"
-                                    inputMode="decimal"
-                                    className={`${I} pl-6`}
-                                    value={hourlyRate}
-                                    onChange={e => { setRateTouched(true); setHourlyRate(e.target.value); }}
-                                />
-                            </div>
+                            <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                inputMode="decimal"
+                                className={I}
+                                value={hourlyRate}
+                                onChange={e => { setRateTouched(true); setHourlyRate(e.target.value); }}
+                            />
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer h-[38px] px-3 rounded-md border border-slate-200 bg-slate-50">
                             <input
@@ -419,18 +433,37 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         </label>
                     </div>
 
+                    {orgUnits.length > 0 && (
+                        <div>
+                            <label className={L}>Organisation unit</label>
+                            <select
+                                className={`${I} bg-white`}
+                                value={formData.orgUnitId}
+                                onChange={e => setFormData({ ...formData, orgUnitId: e.target.value })}
+                            >
+                                <option value="">Not in the chart yet</option>
+                                {[...orgUnits].sort((a, b) => a.name.localeCompare(b.name)).map(u => (
+                                    <option key={u.id} value={u.id}>{u.name}{u.type ? ` (${u.type})` : ''}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     {/* Login */}
                     {!existingUser && (
                         <div className="rounded-lg border border-slate-200 overflow-hidden">
-                            <label className="flex items-center gap-2 cursor-pointer px-3 py-2.5 bg-slate-50">
+                            <label className={`flex items-center gap-2 px-3 py-2.5 bg-slate-50 ${canCreateLogin ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                                 <input
                                     type="checkbox"
                                     className="rounded text-blue-600 focus:ring-primary-500"
                                     checked={createUser}
+                                    disabled={!canCreateLogin}
                                     onChange={e => setCreateUser(e.target.checked)}
                                 />
                                 <span className="text-sm font-medium text-slate-700">Create login</span>
-                                <span className="text-xs text-slate-400 ml-auto">{createUser ? 'signs in with the e-mail above' : 'record only'}</span>
+                                <span className="text-xs text-slate-400 ml-auto">
+                                    {!canCreateLogin ? 'an administrator gives logins' : createUser ? 'signs in with the e-mail above' : 'record only'}
+                                </span>
                             </label>
                             {createUser && (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 border-t border-slate-200">

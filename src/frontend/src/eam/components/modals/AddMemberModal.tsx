@@ -15,6 +15,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         loadPotentials();
@@ -45,9 +46,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
             await DatabaseService.getInstance().assignContactsToUnit(Array.from(selectedIds), unit.id);
             onSave();
             onClose();
-        } catch (e) {
-            console.error(e);
-            alert("Failed to assign members");
+        } catch (e: any) {
+            setError(e?.message || 'Failed to assign members.');
         } finally {
             setLoading(false);
         }
@@ -68,6 +68,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
                     </div>
                     <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                 </div>
+                {error && <div className="mx-4 mt-3 p-2.5 text-sm rounded border border-red-200 bg-red-50 text-red-700">{error}</div>}
 
                 <div className="p-4 border-b border-slate-100">
                     <div className="relative">

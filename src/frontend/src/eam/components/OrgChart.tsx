@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DatabaseService } from '../services/DatabaseService';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { OrganizationUnit } from '../types';
 import { OrgUnitModal } from './OrgUnitModal';
 import { AddMemberModal } from './modals/AddMemberModal';
@@ -45,6 +47,12 @@ const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string; b
 const getLevelColors = (color: string) => LEVEL_COLORS[color] || LEVEL_COLORS.gray;
 
 export const OrgChart: React.FC = () => {
+    // Restructuring the chart moves people between units; the database (0399)
+    // allows it to roles with contacts.edit. Everyone else can look.
+    const { permissions } = useAuth();
+    const { showToast } = useToast();
+    const canEdit = permissions?.contacts?.edit === true;
+    const denied = () => { showToast('Your role can view the organisation chart but not change it.', 'error'); };
     // All org units flat
     const [allUnits, setAllUnits] = useState<OrganizationUnit[]>([]);
     const [loading, setLoading] = useState(true);
@@ -204,27 +212,36 @@ export const OrgChart: React.FC = () => {
 
     // ═══ CRUD HANDLERS ═══
     const handleAddChild = (parent?: OrganizationUnit) => {
+        if (!canEdit) return denied();
         setSelectedUnit(undefined);
         setTargetParent(parent);
         setIsModalOpen(true);
     };
 
     const handleEdit = (unit: OrganizationUnit) => {
+        if (!canEdit) return denied();
         setSelectedUnit(unit);
         setTargetParent(undefined);
         setIsModalOpen(true);
     };
 
     const handleDelete = (id: string, name: string) => {
+        if (!canEdit) return denied();
         const childCount = getDirectChildCount(id);
         const mCount = memberCounts[id] || 0;
+        if (childCount > 0) {
+            // Sub-units are not removed with their parent (no cascade); the
+            // delete would be refused. Say so before asking.
+            showToast(`"${name}" still has ${childCount} sub-unit${childCount > 1 ? 's' : ''}. Move or delete ${childCount > 1 ? 'them' : 'it'} first.`, 'error');
+            return;
+        }
         let message = `Are you sure you want to delete "${name}"?`;
-        if (childCount > 0) message += `\n\n⚠ This will also remove ${childCount} child unit${childCount > 1 ? 's' : ''}.`;
-        if (mCount > 0) message += `\n${mCount} member${mCount > 1 ? 's' : ''} will be unassigned.`;
+        if (mCount > 0) message += `\n\n${mCount} member${mCount > 1 ? 's' : ''} will be taken out of it (they stay in the directory).`;
         setConfirmAction({ type: 'delete-unit', id, name, message });
     };
 
     const handleRemoveMember = (member: Contact, unit: OrganizationUnit) => {
+        if (!canEdit) return denied();
         setConfirmAction({
             type: 'remove-member',
             id: member.id,
@@ -254,13 +271,15 @@ export const OrgChart: React.FC = () => {
             setConfirmAction(null);
             loadData();
         } catch (e: any) {
-            alert(`Error: ${e.message}`);
+            showToast(e.message || 'That change was not saved.', 'error');
+            setConfirmAction(null);
         } finally {
             setIsConfirming(false);
         }
     };
 
     const handleAddMember = (unit: OrganizationUnit) => {
+        if (!canEdit) return denied();
         setTargetUnitForMember(unit);
         setIsAddMemberOpen(true);
     };
@@ -289,6 +308,7 @@ export const OrgChart: React.FC = () => {
         setDragOverId(null);
         const data = e.dataTransfer.getData('application/json');
         if (!data) return;
+        if (!canEdit) return denied();
 
         try {
             const { contactId, name, sourceUnitId } = JSON.parse(data);
@@ -332,15 +352,15 @@ export const OrgChart: React.FC = () => {
             setExpandedMembers(prev => ({ ...prev, [targetUnit.id]: true }));
             setUserListRefreshKey(k => k + 1);
             loadData();
-        } catch (err) {
-            console.error(err);
-            alert("Failed to assign user.");
+        } catch (err: any) {
+            showToast(`Not moved: ${err?.message || 'the change was refused.'}`, 'error');
         }
     };
 
     // Mobile assign
     const handleMobileAssign = async (targetUnit: OrganizationUnit) => {
         if (!selectedContactForAssign) return;
+        if (!canEdit) return denied();
         try {
             const db = DatabaseService.getInstance();
             await db.assignContactsToUnit([selectedContactForAssign.id], targetUnit.id);
@@ -348,9 +368,8 @@ export const OrgChart: React.FC = () => {
             setUserListRefreshKey(k => k + 1);
             setSelectedContactForAssign(null);
             loadData();
-        } catch (err) {
-            console.error(err);
-            alert('Failed to assign user.');
+        } catch (err: any) {
+            showToast(`Not assigned: ${err?.message || 'the change was refused.'}`, 'error');
         }
     };
 
@@ -470,7 +489,7 @@ export const OrgChart: React.FC = () => {
                         </button>
 
                         {/* New unit – at root always show; inside folder only if non-leaf */}
-                        {(!currentFolder || childLevelConfig) && (
+                        {canEdit && (!currentFolder || childLevelConfig) && (
                             <button
                                 onClick={() => handleAddChild(currentFolder || undefined)}
                                 className="flex items-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium shadow-sm transition-colors"
@@ -645,12 +664,12 @@ export const OrgChart: React.FC = () => {
                                         ? `Add a ${childLevelConfig?.description || 'sub-unit'} inside "${currentFolder.name}"`
                                         : `Create a ${orgLevels[0]?.description || 'Division'} to start building your organization`}
                                 </p>
-                                <button
+                                {canEdit && <button
                                     onClick={() => handleAddChild(currentFolder || undefined)}
                                     className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
                                 >
                                     <Plus size={14} /> Add First {addLabel}
-                                </button>
+                                </button>}
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -704,14 +723,14 @@ export const OrgChart: React.FC = () => {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-1 flex-shrink-0 ml-2" onClick={e => e.stopPropagation()}>
+                                                    {canEdit && <div className="flex items-center gap-1 flex-shrink-0 ml-2" onClick={e => e.stopPropagation()}>
                                                         <button onClick={() => handleEdit(unit)} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-white/60 rounded transition-colors" title="Edit">
                                                             <Edit2 size={13} />
                                                         </button>
                                                         <button onClick={() => handleDelete(unit.id, unit.name)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete">
                                                             <Trash2 size={13} />
                                                         </button>
-                                                    </div>
+                                                    </div>}
                                                 </div>
 
                                                 {/* Badges row */}

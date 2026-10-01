@@ -111,10 +111,11 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
         message: string;
         type: ConfirmationType;
         onConfirm?: () => void;
+        confirmText?: string;
     }>({ isOpen: false, title: '', message: '', type: 'info' });
 
-    const showModal = (title: string, message: string, type: ConfirmationType = 'info', onConfirm?: () => void) => {
-        setModalConfig({ isOpen: true, title, message, type, onConfirm });
+    const showModal = (title: string, message: string, type: ConfirmationType = 'info', onConfirm?: () => void, confirmText?: string) => {
+        setModalConfig({ isOpen: true, title, message, type, onConfirm, confirmText });
     };
 
     // Load Contacts & Users
@@ -183,17 +184,19 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             }
             showModal('Success', isRealContact ? 'Contact and any linked login removed.' : 'System user and login removed.', 'success');
         } catch (e: any) {
-            const msg = e?.code === 'HAS_HISTORY' ? `${deleteModal.contactName} ${e.message}` : e.message;
-            showModal('Delete Failed', msg, 'danger');
+            if (e?.code === 'HAS_HISTORY') {
+                // The honest alternative is one click away, not a dead end.
+                const id = deleteModal.contactId;
+                showModal('Cannot Delete', `${deleteModal.contactName} ${e.message}`, 'warning',
+                    isAdmin ? () => setActivationModal({ ids: [id], active: false }) : undefined,
+                    'Deactivate instead');
+            } else {
+                showModal('Delete Failed', e.message, 'danger');
+            }
         } finally {
             setLoading(false);
             setDeleteModal({ isOpen: false, contactId: null, contactName: '' });
         }
-    };
-
-    // Old function kept for reference or direct calls if needed, but UI uses new flow
-    const handleDeleteContact = async (id: string) => {
-        // ... Logic moved to handleConfirmDelete
     };
 
     // Resolve a directory entry to its login (auth) user, and whether that login is active.
@@ -300,38 +303,6 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             refused.length ? (done.length ? 'warning' : 'danger') : 'success');
     };
 
-    const handleDuplicateContact = async (original: Contact) => {
-        setLoading(true);
-        try {
-            const db = DatabaseService.getInstance();
-            // Create deep clone to avoid mutation
-            const newContact: Contact = JSON.parse(JSON.stringify(original));
-
-            newContact.id = crypto.randomUUID();
-            newContact.code = original.code + ' -COPY';
-            newContact.name = original.name + ' (Copy)';
-            newContact.email = ''; // Clear email to avoid unique constraint
-            newContact.organizationUnitIds = []; // Clear org units to start fresh
-
-            // Clear virtual flag on the copy (login/access is governed by the role system, not the contact)
-            if (newContact.flags) {
-                newContact.flags.isVirtual = false;
-            }
-
-            await db.addContact(newContact);
-            await loadData();
-
-            // Select the new contact
-            setSelectedContact(newContact);
-            showModal('Success', 'Contact duplicated. Please update details.', 'success');
-        } catch (e: any) {
-            console.error(e);
-            showModal('Error', 'Failed to duplicate contact: ' + e.message, 'danger');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     // Merge Real Contacts + Virtual User Contacts
     const mergedContacts = React.useMemo(() => {
         const list = Array.isArray(contacts) ? [...contacts] : [];
@@ -436,6 +407,22 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
         // currency, qualifications).
         const existingCodes = new Set(contacts.map(c => (c.code || '').toUpperCase()));
 
+        // orgUnit and costCenter arrive as names/codes; the person carries ids.
+        // They were set on fields addContact never wrote, so every row said
+        // "inserted" with its unit and cost centre gone. Resolve them, and say
+        // which values matched nothing instead of dropping them quietly.
+        const norm = (v: string) => v.trim().toLowerCase();
+        const unitByKey = new Map<string, string>();
+        orgUnits.forEach(u => { unitByKey.set(norm(u.name || ''), u.id); if (u.code) unitByKey.set(norm(u.code), u.id); });
+        const ccByKey = new Map<string, string>();
+        dictionaries.filter(d => d.type === 'COST_CENTRE').forEach(d => {
+            ccByKey.set(norm(d.code || ''), d.id);
+            if (d.description) ccByKey.set(norm(d.description), d.id);
+        });
+        const unknownUnits = new Map<string, number>();
+        const unknownCcs = new Map<string, number>();
+        const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) || 0) + 1);
+
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             const rowNo = Number(row.__row) || i + 2;
@@ -460,6 +447,12 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                         status: 'Pending' as const,
                         notes: 'Imported — confirm expiry date',
                     }));
+                const unitRaw = (row['orgunit'] || '').trim();
+                const unitId = unitRaw ? unitByKey.get(norm(unitRaw)) : undefined;
+                if (unitRaw && !unitId) bump(unknownUnits, unitRaw);
+                const ccRaw = (row['costcenter'] || '').trim();
+                const ccId = ccRaw ? ccByKey.get(norm(ccRaw)) : undefined;
+                if (ccRaw && !ccId) bump(unknownCcs, ccRaw);
                 const newContact: Contact = {
                     id: crypto.randomUUID(),
                     code,
@@ -471,11 +464,11 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                     mobile: row['mobile'] || '',
                     types: row['type'] ? [row['type'].toUpperCase()] : ['TECHNICIAN'],
                     roles: [],
-                    department: row['department'] || '',
-                    orgUnit: row['orgunit'] || '',
-                    costCenter: row['costcenter'] || '',
+                    department: row['department'] || undefined,
+                    organizationUnitIds: unitId ? [unitId] : [],
+                    costCenterId: ccId,
                     hourlyRate: parseFloat(row['hourlyrate'] || '0') || 0,
-                    currency: row['currency'] || '',
+                    currency: (row['currency'] || '').trim().toUpperCase() || undefined,
                     site: '',
                     reportingTo: '',
                     active: true,
@@ -491,6 +484,10 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             }
         }
 
+        const listUnknown = (m: Map<string, number>) =>
+            Array.from(m.entries()).slice(0, 8).map(([k, n]) => `"${k}" (${n} row${n > 1 ? 's' : ''})`).join(', ') + (m.size > 8 ? `, and ${m.size - 8} more` : '');
+        if (unknownUnits.size) res.notes!.push(`Organisation unit not found, people imported without one: ${listUnknown(unknownUnits)}. Build the unit on the Organization Chart tab, then assign them.`);
+        if (unknownCcs.size) res.notes!.push(`Cost centre not found, people imported without one: ${listUnknown(unknownCcs)}.`);
         if (res.inserted > 0) {
             res.notes!.push('Imported people can see nothing until they are invited — use Admin › Migration Center to send login invites in bulk.');
         }
@@ -685,9 +682,8 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     };
 
     const handleBulkDeleteContacts = async () => {
-        if (!canDelete) {
-            console.warn('[RBAC-AUDIT] BLOCKED: contacts.bulkDelete attempt by unauthorized user');
-            showToast('Access Denied: You do not have permission to delete contacts.', 'error');
+        if (!canDelete || !isAdmin) {
+            showToast('Only an administrator can delete people.', 'error');
             return;
         }
         const db = DatabaseService.getInstance();
@@ -706,13 +702,15 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                 }
                 deleted++;
             } catch (e: any) {
-                if (e?.code === 'HAS_HISTORY' && !isRealContact) {
-                    // A login with postings cannot be deleted (its labour and
+                if (e?.code === 'HAS_HISTORY') {
+                    // Someone with records cannot be deleted (their labour and
                     // records must stay attributable). The closest honest outcome
-                    // is to retire it: no sign-in, marked inactive, history kept.
+                    // is to deactivate them: no sign-in, out of the pickers,
+                    // history kept. The confirmation said so up front.
                     try {
-                        await db.setUserLoginActive(id, false);
-                        retired.push(`${nameOf(id)} ${e.message}`);
+                        const r = await db.setPersonActive(id, false);
+                        if (r.ok) retired.push(`${nameOf(id)} ${e.message.replace(/ Deactivate them instead.*$/, '')}`);
+                        else failed.push(`${nameOf(id)}: has records, and could not be deactivated (${r.reason})`);
                     } catch (e2: any) {
                         failed.push(`${nameOf(id)}: ${e2.message}`);
                     }
@@ -726,7 +724,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
         if (selectedContact && ids.includes(selectedContact.id)) setSelectedContact(null);
         await loadData();
         const lines = [`Deleted ${deleted} of ${ids.length}.`];
-        if (retired.length) lines.push('', 'Kept, login disabled:', ...retired.map(r => '• ' + r));
+        if (retired.length) lines.push('', 'Kept and deactivated:', ...retired.map(r => '• ' + r));
         if (failed.length) lines.push('', 'Not deleted:', ...failed.map(r => '• ' + r));
         showModal(
             deleted === ids.length ? 'Delete Complete' : 'Delete Finished With Exceptions',
@@ -877,9 +875,9 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                         })()}
                                         <button
                                             onClick={() => setBulkDeleteModal(true)}
-                                            disabled={!canDelete}
-                                            className={`px-3 py-1 text-xs font-bold rounded-md flex items-center gap-1.5 transition ${!canDelete ? 'bg-white/10 text-white/40 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600 shadow-sm'}`}
-                                            title={!canDelete ? 'Insufficient permissions' : 'Delete selected'}
+                                            disabled={!canDelete || !isAdmin}
+                                            className={`px-3 py-1 text-xs font-bold rounded-md flex items-center gap-1.5 transition ${!canDelete || !isAdmin ? 'bg-white/10 text-white/40 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600 shadow-sm'}`}
+                                            title={!canDelete || !isAdmin ? 'Only an administrator can delete people' : 'Delete selected'}
                                         >
                                             <Trash2 size={13} /> Delete Selected
                                         </button>
@@ -1058,6 +1056,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                             title={modalConfig.title}
                             message={modalConfig.message}
                             type={modalConfig.type}
+                            confirmText={modalConfig.confirmText}
                         />
                     </div>
 
@@ -1088,13 +1087,13 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                 }
                                 actions={
                                     selectedContact.flags?.isVirtual ? [
-                                        { label: 'Create Profile', icon: <UserPlus size={14} />, onClick: () => setIsAddModalOpen(true), variant: 'primary' as const, disabled: !canCreate },
+                                        { label: 'Create Profile', icon: <UserPlus size={14} />, onClick: () => setIsAddModalOpen(true), variant: 'primary' as const, disabled: !isAdmin, tooltip: isAdmin ? undefined : 'Linking a login to a person needs an administrator' },
                                         ...activationActions(),
                                     ] : [
                                         { label: 'New', icon: <Plus size={14} />, onClick: () => setIsAddModalOpen(true), variant: 'ghost' as const, disabled: !canCreate },
                                         { label: 'Duplicate', icon: <Edit2 size={14} />, onClick: handleDuplicate, variant: 'ghost' as const, disabled: !canCreate },
                                         ...activationActions(),
-                                        { label: 'Delete', icon: <Trash2 size={14} />, onClick: () => handleDeleteClick(selectedContact), variant: 'danger' as const, disabled: !canDelete },
+                                        { label: 'Delete', icon: <Trash2 size={14} />, onClick: () => handleDeleteClick(selectedContact), variant: 'danger' as const, disabled: !canDelete || !isAdmin, tooltip: isAdmin ? undefined : 'Only an administrator can delete people' },
                                         {
                                             label: 'Save',
                                             icon: <Save size={14} />,
@@ -1102,9 +1101,21 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                             onClick: async () => {
                                                 setLoading(true);
                                                 try {
-                                                    await DatabaseService.getInstance().updateContact(selectedContact);
+                                                    const db = DatabaseService.getInstance();
+                                                    await db.updateContact(selectedContact);
+                                                    // The role on this panel is also the login's access
+                                                    // (users.roles, what AuthContext reads). It used to
+                                                    // change only contacts.roles, so access never moved.
+                                                    const li = loginInfo(selectedContact);
+                                                    const login: any = li.userId ? users.find(u => u.id === li.userId) : undefined;
+                                                    const roles = selectedContact.types || [];
+                                                    let note = '';
+                                                    if (login && isAdmin && JSON.stringify(login.roles || []) !== JSON.stringify(roles)) {
+                                                        await db.updateUser(login.id, { roles } as any);
+                                                        note = ' Their sign-in access now follows the new role.';
+                                                    }
                                                     await loadData();
-                                                    showModal('Success', 'Contact saved.', 'success');
+                                                    showModal('Success', 'Saved.' + note, 'success');
                                                 } catch (e: any) {
                                                     showModal('Save Failed', e.message, 'danger');
                                                 } finally { setLoading(false); }
@@ -1143,8 +1154,8 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                             allContacts={mergedContacts || []}
                                             dictionaries={dictionaries || []}
                                             onChange={setSelectedContact}
-                                            onDelete={handleDeleteContact}
-                                            onDuplicate={handleDuplicateContact}
+                                            roleLocked={loginInfo(selectedContact).hasLogin && !isAdmin}
+                                            loginEmail={(users.find(u => u.id === loginInfo(selectedContact).userId) as any)?.email}
                                         />
                                     </div>
                                 )}
@@ -1211,7 +1222,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                 onClose={() => setBulkDeleteModal(false)}
                 onConfirm={handleBulkDeleteContacts}
                 title="Delete Selected People?"
-                message={`You are about to permanently delete ${selectedContactIds.size} contact(s). Linked system user accounts will be unlinked. This action cannot be undone.`}
+                message={`You are about to permanently delete ${selectedContactIds.size} ${selectedContactIds.size === 1 ? 'person' : 'people'} and their logins. Anyone with records (work orders, labour, qualifications…) cannot be deleted — they are deactivated instead, and their history stays. This cannot be undone.`}
                 type="danger"
                 confirmText={`Delete ${selectedContactIds.size} Person${selectedContactIds.size > 1 ? 's' : ''}`}
             />

@@ -106,11 +106,20 @@ export function describeUserHistory(refs: { table: string; column: string; rows:
         ers_vision_results: 'reviewed vision results',
         ers_criticality_assessments: 'criticality assessments',
         jsa_templates: 'JSA templates',
+        qualifications: 'qualification records',
+        audit_participants: 'assessment participations',
+        manufacturer_models: 'manufacturer models',
+        // keyed table.column where one table points at a person two ways
+        'work_orders.assigned_to': 'work orders assigned',
     };
-    const byTable = new Map<string, number>();
-    for (const r of refs) byTable.set(r.table, (byTable.get(r.table) || 0) + Number(r.rows || 0));
-    const parts = Array.from(byTable.entries()).map(([t, n]) => `${n} ${labels[t.replace(/^public./, '')] || t.replace(/_/g, ' ')}`);
-    return `has operational history (${parts.join(', ')}) and cannot be deleted. Disable the login instead — the history stays attributable.`;
+    const byLabel = new Map<string, number>();
+    for (const r of refs) {
+        const t = String(r.table || '').replace(/^public\./, '');
+        const label = labels[`${t}.${r.column}`] || labels[t] || t.replace(/_/g, ' ');
+        byLabel.set(label, (byLabel.get(label) || 0) + Number(r.rows || 0));
+    }
+    const parts = Array.from(byLabel.entries()).map(([label, n]) => `${n} ${label}`);
+    return `has records (${parts.join(', ')}) and cannot be deleted. Deactivate them instead — they stop signing in and drop out of assignment lists, and the history stays attributable.`;
 }
 
 /** 0365: the technician a generated PM order belongs to — the plan's lead labour line, else its first named person. */
@@ -200,8 +209,10 @@ export class DatabaseService {
             const mappedContacts: Contact[] = (data || []).map((row: any) => ({
                 id: row.id,
                 name: row.name,
-                firstName: row.name.split(' ')[0], // Simple heuristic
-                lastName: row.name.split(' ').slice(1).join(' '),
+                // The columns are written on every save; splitting `name` turned
+                // "Mary Ann | Smith" into "Mary | Ann Smith" on the next load.
+                firstName: row.first_name ?? (row.name || '').split(' ')[0],
+                lastName: row.last_name ?? (row.name || '').split(' ').slice(1).join(' '),
                 code: row.code,
                 title: row.title,
                 email: row.email,
@@ -211,7 +222,8 @@ export class DatabaseService {
                 types: row.roles || [], // 'roles' col in DB maps to 'types' in App
                 defaultType: (row.roles && row.roles.length > 0) ? row.roles[0] : 'GUEST',
                 hourlyRate: row.hourly_rate || 0,
-                currency: 'USD',
+                currency: row.currency || undefined,
+                department: row.department || undefined,
                 address: row.address || { street: '', city: '', state: '', zip: '' },
                 flags: {
                     // Attribute flags only — permissions are resolved from the role system.
@@ -276,6 +288,8 @@ export class DatabaseService {
             has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
+            ...(contact.currency ? { currency: contact.currency } : {}),
+            ...(contact.department ? { department: contact.department } : {}),
             address: contact.address,
             custom_fields: contact.customFields || [],
             labor_rules: contact.labourRules || {},
@@ -287,17 +301,10 @@ export class DatabaseService {
         const { data, error } = await supabase.from('contacts').insert(row).select().single();
         if (error) throw new Error(error.message);
 
-
-        // 2. Insert into M2M table
-        const contactId = data.id;
+        // 2. Organisation units — one transaction, and a failure is reported
+        //    (it used to be console.error'd while the caller said "created").
         if (contact.organizationUnitIds && contact.organizationUnitIds.length > 0) {
-            const m2mRows = contact.organizationUnitIds.map((uid, idx) => ({
-                contact_id: contactId,
-                organization_unit_id: uid,
-                is_primary: idx === 0 // Assume first is primary for now
-            }));
-            const { error: m2mError } = await supabase.from('organization_unit_members').insert(m2mRows);
-            if (m2mError) console.error("Error linking org units:", m2mError);
+            await this.setContactOrgUnits(data.id, contact.organizationUnitIds);
         }
 
         return { ...contact, id: data.id }; // Return with server ID
@@ -324,6 +331,8 @@ export class DatabaseService {
             has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
+            ...(contact.currency ? { currency: contact.currency } : {}),
+            ...(contact.department ? { department: contact.department } : {}),
             address: contact.address,
             custom_fields: contact.customFields || [],
             labor_rules: contact.labourRules || {},
@@ -332,39 +341,16 @@ export class DatabaseService {
             cost_center_id: contact.costCenterId
         };
 
-        console.log("Updating contact with row:", row);
-        const { data, error } = await supabase.from('contacts').update(row).eq('id', contact.id).select();
+        const { data, error } = await supabase.from('contacts').update(row).eq('id', contact.id).select('id');
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) throw new Error('Not saved: your role cannot edit people, or this person no longer exists.');
 
-        if (error) {
-            console.error("Supabase Update Error:", error);
-            alert(`DB Update Error: ${error.message}`);
-            throw new Error(error.message);
-        }
-        console.log("Supabase Update Success, Data:", data);
-
-        // TEMPORARY DEBUG: Prove to user what was saved
-        if (data && data.length > 0) {
-            const saved = data[0];
-            const debugMsg = `DB Confirmed Save:\nParent ID: ${saved.parent_id}\nEmail: ${saved.email}`;
-            // alert(debugMsg); // Uncomment if needed, but console is cleaner. 
-            // User wants "tell me its saved". relying on button text.
-        }
-
-        if (!data || data.length === 0) throw new Error("Update failed: Contact not found or no changes made.");
-
-
-        // 2. Update M2M table (Delete all, re-insert)
-        // A bit heavy but safe for full sync
-        await supabase.from('organization_unit_members').delete().eq('contact_id', contact.id);
-
-        if (contact.organizationUnitIds && contact.organizationUnitIds.length > 0) {
-            const m2mRows = contact.organizationUnitIds.map((uid, idx) => ({
-                contact_id: contact.id,
-                organization_unit_id: uid,
-                is_primary: idx === 0
-            }));
-            const { error: m2mError } = await supabase.from('organization_unit_members').insert(m2mRows);
-            if (m2mError) console.error("Error relinking org units:", m2mError);
+        // 2. Organisation units. Only when the caller carries the list: a Contact
+        //    built without it used to wipe every membership. One RPC, one
+        //    transaction (0399), instead of delete-all-then-insert that left the
+        //    person in no unit whenever the insert failed.
+        if (Array.isArray(contact.organizationUnitIds)) {
+            await this.setContactOrgUnits(contact.id, contact.organizationUnitIds);
         }
 
         return contact;
@@ -491,21 +477,23 @@ export class DatabaseService {
             throw new Error('Invalid contact ID format. All records must be synced to Supabase.');
         }
 
-        // 1. Remove any linked login (profile + auth) FIRST, and stop if that is
-        //    refused. Deleting the contact regardless is what produced orphan
-        //    "SYS-USER" rows that could never be removed from the directory.
-        const { data: linkedUsers } = await supabase.from('users').select('id').eq('contact_id', contactId);
-        for (const u of (linkedUsers || [])) {
-            await this.deleteUser(u.id); // throws with the reason (history / permission)
+        // Person record + any login, all or nothing (0399 delete_directory_person).
+        // Removing the login first from here and then failing on the person's
+        // qualifications / memberships / reporting lines left a person with no
+        // login and an error nobody could act on.
+        const { data, error } = await supabase.rpc('delete_directory_person', { p_contact_id: contactId });
+        if (error) {
+            if (error.code === 'PGRST202') throw new Error('Deleting people needs database migration 0399 — ask an administrator to apply it.');
+            throw new Error(error.message);
         }
-
-        // 2. The contact itself. return=minimal hides an RLS refusal as a 0-row
-        //    success, so ask for the deleted id back.
-        const { data: gone, error } = await supabase.from('contacts').delete().eq('id', contactId).select('id');
-        if (error) throw new Error(error.message);
-        if (!gone || gone.length === 0) {
-            throw new Error('The contact was not deleted — it may belong to another tenant or your role lacks contacts.delete.');
+        const res = (data || {}) as { deleted?: boolean; reason?: string; refs?: { table: string; column: string; rows: number }[] };
+        if (res.deleted || res.reason === 'not_found') return;
+        if (res.reason === 'has_history') {
+            const err: any = new Error(describeUserHistory(res.refs || []));
+            err.code = 'HAS_HISTORY';
+            throw err;
         }
+        throw new Error('The person was not deleted.');
     }
 
     // --- VENDORS ---
@@ -1302,47 +1290,37 @@ export class DatabaseService {
         return (woData || []) as any;
     }
 
+    /**
+     * Delete an organisation unit and its memberships (0399 delete_org_unit).
+     * The members FK has no cascade, so the old browser-side delete failed for
+     * any unit with people in it. Refuses while sub-units or work centres hang
+     * off the unit, and says which.
+     */
     public async deleteOrgUnit(id: string): Promise<void> {
-        // 1. Unassign members manually (Application-side Cascade)
-        // This is required because the DB constraint might be RESTRICT (default) instead of ON DELETE SET NULL
-        // and we might not have permissions to alter the schema from here.
-        const { error: unassignError } = await supabase.from('contacts')
-            .update({ organization_unit_id: null })
-            .eq('organization_unit_id', id);
+        const { data, error } = await supabase.rpc('delete_org_unit', { p_unit_id: id });
+        if (error) throw new Error(error.message);
+        const res = (data || {}) as { deleted?: boolean; children?: number; work_centers?: number };
+        if (res.deleted) return;
+        const parts: string[] = [];
+        if (res.children) parts.push(`${res.children} sub-unit${res.children > 1 ? 's' : ''}`);
+        if (res.work_centers) parts.push(`${res.work_centers} work centre${res.work_centers > 1 ? 's' : ''}`);
+        throw new Error(`This unit still has ${parts.join(' and ')}. Move or delete those first.`);
+    }
 
-        if (unassignError) {
-            console.error("Error unassigning contacts:", unassignError);
-            throw new Error("Failed to unassign members before deletion.");
-        }
-
-        // 2. Delete the unit
-        const { error } = await supabase.from('organization_units').delete().eq('id', id);
+    /**
+     * Put people in a unit (or take them out of their unit, with null). Changes
+     * their PRIMARY unit only; secondary memberships stay (0399
+     * set_primary_org_unit — the old version deleted every membership).
+     */
+    public async assignContactsToUnit(contactIds: string[], unitId: string | null): Promise<void> {
+        const { error } = await supabase.rpc('set_primary_org_unit', { p_contact_ids: contactIds, p_unit_id: unitId });
         if (error) throw new Error(error.message);
     }
 
-    public async assignContactsToUnit(contactIds: string[], unitId: string | null): Promise<void> {
-        // 1. Update the FK on contacts table
-        const { error } = await supabase.from('contacts')
-            .update({ organization_unit_id: unitId })
-            .in('id', contactIds);
-
-        if (error) throw new Error(error.message);
-
-        // 2. Sync M2M table (organization_unit_members) — ensures Admin OrgTreePicker sees the change
-        for (const cId of contactIds) {
-            // Remove old M2M entries for this contact
-            await supabase.from('organization_unit_members').delete().eq('contact_id', cId);
-
-            // Insert new M2M entry if assigning (not unassigning)
-            if (unitId) {
-                const { error: m2mError } = await supabase.from('organization_unit_members').insert({
-                    contact_id: cId,
-                    organization_unit_id: unitId,
-                    is_primary: true
-                });
-                if (m2mError) console.error('M2M sync error:', m2mError);
-            }
-        }
+    /** A person's full unit list, first = primary (0399 set_contact_org_units). */
+    public async setContactOrgUnits(contactId: string, unitIds: string[]): Promise<void> {
+        const { error } = await supabase.rpc('set_contact_org_units', { p_contact_id: contactId, p_unit_ids: unitIds });
+        if (error) throw new Error(`Organisation units not saved: ${error.message}`);
     }
 
 
@@ -1364,8 +1342,8 @@ export class DatabaseService {
         const mappedContacts = (data || []).map((row: any) => ({
             id: row.id,
             name: row.name,
-            firstName: row.name.split(' ')[0],
-            lastName: row.name.split(' ').slice(1).join(' '),
+            firstName: row.first_name ?? (row.name || '').split(' ')[0],
+            lastName: row.last_name ?? (row.name || '').split(' ').slice(1).join(' '),
             code: row.code,
             title: row.title,
             email: row.email,
@@ -1375,7 +1353,7 @@ export class DatabaseService {
             types: row.roles || [],
             defaultType: (row.roles && row.roles.length > 0) ? row.roles[0] : 'GUEST',
             hourlyRate: row.hourly_rate || 0,
-            currency: 'USD',
+            currency: row.currency || undefined,
             address: row.address || { street: '', city: '', state: '', zip: '' },
             flags: {
                 // Attribute flags only — permissions are resolved from the role system.
@@ -1533,7 +1511,6 @@ export class DatabaseService {
 
     public async getUsers(): Promise<UserRecord[]> {
         const { data, error } = await supabase.from('users').select('*');
-        console.log('[DatabaseService] getUsers Raw Data:', data);
         if (error) {
             console.error("Supabase Error (getUsers):", error);
             return [];
@@ -1589,7 +1566,6 @@ export class DatabaseService {
                     throw new Error(`Failed to create secure user: ${error.message}`);
                 }
 
-                console.log("✅ User created via secure RPC. ID:", data);
                 return { ...user, id: data || user.id };
 
             } catch (invokeErr: any) {
@@ -1641,13 +1617,13 @@ export class DatabaseService {
         // Add verified/updated_at?
         // rowUpdates.updated_at = new Date().toISOString();
 
-        console.log('[DatabaseService] updateUser: userId=', userId, 'rowUpdates=', rowUpdates);
-        const { data, error } = await supabase.from('users').update(rowUpdates).eq('id', userId).select();
-        if (error) {
-            console.error('[DatabaseService] updateUser ERROR:', error);
-            throw new Error(error.message);
+        const { data, error } = await supabase.from('users').update(rowUpdates).eq('id', userId).select('id');
+        if (error) throw new Error(error.message);
+        // RLS lets only administrators write users; a refusal is 0 rows, not an
+        // error. "Create Profile" used to report "Linked" on exactly that.
+        if (!data || data.length === 0) {
+            throw new Error('The login was not updated — only an administrator can change logins.');
         }
-        console.log('[DatabaseService] updateUser SUCCESS. Rows returned:', data?.length, data);
     }
 
     /**

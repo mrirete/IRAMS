@@ -234,9 +234,9 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
             showToast('Unit deleted successfully', 'success');
             onClose();
             window.location.reload();
-        } catch (e) {
-            console.error(e);
-            showToast('Failed to delete unit', 'error');
+        } catch (e: any) {
+            // e.g. "This unit still has 2 sub-units. Move or delete those first."
+            showToast(e?.message || 'Failed to delete unit', 'error');
         }
     };
 

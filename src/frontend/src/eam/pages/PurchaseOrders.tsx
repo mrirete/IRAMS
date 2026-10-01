@@ -641,18 +641,18 @@ export const PurchaseOrders: React.FC = () => {
 
 // --- Sub-Components ---
 
-const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, contacts: Contact[], locations: Store[], vendors: Vendor[], costCenters: CostCenter[], demand?: React.ReactNode }> = ({ po, onUpdate, contacts, locations, vendors, costCenters, demand }) => {
-    // Filter Vendors: Unified separate Vendors table and Contacts with Vendor flag
-    const supplierOptions = useMemo(() => {
-        const contactVendors = contacts.filter(c =>
-            c.flags?.isVendor ||
-            c.types.some(t => ['SUPPLIER', 'VENDOR'].includes(t.toUpperCase()))
-        ).map(c => ({ id: c.id, name: c.name }));
-
-        const dedicatedVendors = vendors.map(v => ({ id: v.id, name: v.name }));
-
-        return [...dedicatedVendors, ...contactVendors];
-    }, [contacts, vendors]);
+const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, contacts: Contact[], locations: Store[], vendors: Vendor[], costCenters: CostCenter[], demand?: React.ReactNode }> = ({ po, onUpdate, locations, vendors, costCenters, demand }) => {
+    // Suppliers come from the vendors table only: purchase_orders.supplier_id
+    // references vendors(id). Contacts flagged as vendors (every manufacturer
+    // made from Add Person) used to be merged in, and picking one failed the
+    // save on that foreign key. Inactive vendors are not offered for new
+    // orders; the one already on this PO stays visible. Currency rides along
+    // so the "vendor currency becomes PO currency" rule below can fire.
+    const supplierOptions = useMemo(() => vendors
+        .filter(v => v.active !== false || v.id === po.supplierId)
+        .map(v => ({ id: v.id, name: v.active === false ? `${v.name} (inactive)` : v.name, currency: v.currency }))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    [vendors, po.supplierId]);
 
     return (
         <div className="animate-in fade-in">

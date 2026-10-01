@@ -11,6 +11,7 @@ import { NotificationService } from '../services/NotificationService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { ResetPasswordModal } from '../components/modals/ResetPasswordModal';
 import { useAuth } from '../contexts/AuthContext';
+import { openStorageRef } from '../../lib/storageUrl';
 
 // --- DETAILS TAB ---
 export const DetailsTab: React.FC<{
@@ -18,9 +19,12 @@ export const DetailsTab: React.FC<{
     allContacts: Contact[];
     dictionaries: DictionaryEntry[];
     onChange: (c: Contact) => void;
-    onDelete?: (id: string) => void;
-    onDuplicate?: (contact: Contact) => void;
-}> = ({ contact, allContacts, dictionaries, onChange, onDelete, onDuplicate }) => {
+    /** The person has a login and the viewer is not an administrator: the
+     *  role IS their access (users.roles), which only an admin may change. */
+    roleLocked?: boolean;
+    /** The address their login signs in with, when they have one. */
+    loginEmail?: string;
+}> = ({ contact, allContacts, dictionaries, onChange, roleLocked = false, loginEmail }) => {
     const contactTypes = React.useMemo(() => {
         const raw = dictionaries.filter(d => d.type === 'CONTACT_TYPE');
         // Filter out banned roles and deduplicate
@@ -42,6 +46,23 @@ export const DetailsTab: React.FC<{
     useEffect(() => {
         DatabaseService.getInstance().getOrgUnits().then(setOrgUnits);
     }, []);
+
+    // A manager cannot report to someone who reports to them (A→B→A), and a
+    // login with no person record ("SYS-USER") is not a contact — its id would
+    // break contacts_parent_id_fkey on save.
+    const parentOptions = React.useMemo(() => {
+        const below = new Set<string>([contact.id]);
+        let grew = true;
+        while (grew) {
+            grew = false;
+            for (const c of allContacts) {
+                if (c.parentId && below.has(c.parentId) && !below.has(c.id)) { below.add(c.id); grew = true; }
+            }
+        }
+        return allContacts
+            .filter(c => !below.has(c.id) && !c.flags?.isVirtual)
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }, [allContacts, contact.id]);
 
     const handleTypeToggle = (typeCode: string) => {
         const currentTypes = new Set(contact.types || []);
@@ -110,7 +131,8 @@ export const DetailsTab: React.FC<{
                     <div className="col-span-2">
                         <label className="block text-xs font-medium text-slate-500 uppercase">Role <span className="text-slate-400 font-normal">(Primary)</span></label>
                         <select
-                            className="mt-1 w-full text-sm border border-slate-300 rounded-md bg-white p-2"
+                            disabled={roleLocked}
+                            className="mt-1 w-full text-sm border border-slate-300 rounded-md bg-white p-2 disabled:bg-slate-100 disabled:text-slate-500"
                             value={contact.defaultType || ''}
                             onChange={e => {
                                 const newRole = e.target.value;
@@ -125,7 +147,11 @@ export const DetailsTab: React.FC<{
                                 <option key={ct.id} value={ct.code}>{ct.description}</option>
                             ))}
                         </select>
-                        <p className="mt-1 text-[10px] text-slate-400">Synced with Admin → User Access</p>
+                        <p className="mt-1 text-[10px] text-slate-400">
+                            {roleLocked
+                                ? 'This is their sign-in access — only an administrator can change it.'
+                                : 'Also their sign-in access when they have a login; saved to both.'}
+                        </p>
                     </div>
 
                     {/* Additional Roles */}
@@ -142,6 +168,7 @@ export const DetailsTab: React.FC<{
                                             {entry?.description || roleCode}
                                             <button
                                                 type="button"
+                                                disabled={roleLocked}
                                                 onClick={() => {
                                                     const newTypes = (contact.types || []).filter(t => t !== roleCode);
                                                     onChange({ ...contact, types: newTypes });
@@ -160,7 +187,8 @@ export const DetailsTab: React.FC<{
                         </div>
                         {/* Dropdown to add a new role */}
                         <select
-                            className="w-full text-sm border border-slate-300 rounded-md bg-white p-2 text-slate-600"
+                            disabled={roleLocked}
+                            className="w-full text-sm border border-slate-300 rounded-md bg-white p-2 text-slate-600 disabled:bg-slate-100"
                             value=""
                             onChange={e => {
                                 const newRole = e.target.value;
@@ -233,7 +261,7 @@ export const DetailsTab: React.FC<{
                             <label className="block text-xs font-medium text-slate-500 uppercase">Parent Contact (Direct Report)</label>
                             <select className="mt-1 w-full text-sm border border-slate-300 rounded-md bg-white p-2" value={contact.parentId || ''} onChange={e => onChange({ ...contact, parentId: e.target.value || undefined })}>
                                 <option value="">(None) - Top Level</option>
-                                {allContacts.filter(c => c.id !== contact.id).map(c => (
+                                {parentOptions.map(c => (
                                     <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
                             </select>
@@ -247,6 +275,11 @@ export const DetailsTab: React.FC<{
                         <div>
                             <label className="block text-xs font-medium text-slate-500 uppercase">Email</label>
                             <input type="email" value={contact.email} onChange={e => onChange({ ...contact, email: e.target.value })} className="mt-1 w-full text-sm border border-slate-300 rounded-md p-2" />
+                            {loginEmail && loginEmail.toLowerCase() !== (contact.email || '').trim().toLowerCase() && (
+                                <p className="mt-1 text-[11px] text-amber-700">
+                                    Signs in as {loginEmail}. Changing this address does not change their login.
+                                </p>
+                            )}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -707,42 +740,86 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
 
 // --- FILES TAB ---
 export const FilesTab: React.FC<{ contact: Contact }> = ({ contact }) => {
+    // Real files in the tenant's private document store. The tab used to insert
+    // entity_files rows named Document_NN.pdf with url '#' and a random size,
+    // and its Download button did nothing.
+    const { profile } = useAuth();
     const [files, setFiles] = useState<EntityFile[]>([]);
+    const [busy, setBusy] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const inputRef = React.useRef<HTMLInputElement>(null);
+    const db = DatabaseService.getInstance();
 
-    useEffect(() => {
-        DatabaseService.getInstance().getEntityFiles(contact.id, 'CONTACT').then(setFiles);
-    }, [contact.id]);
+    const reload = () => db.getEntityFiles(contact.id, 'CONTACT').then(setFiles);
+    useEffect(() => { void reload(); }, [contact.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const handleUpload = async () => {
-        // Mock upload
-        await DatabaseService.getInstance().addEntityFile({
-            entityId: contact.id, entityType: 'CONTACT',
-            name: `Document_${Math.floor(Math.random() * 100)}.pdf`,
-            url: '#', sizeBytes: 1024 * Math.random() * 1000,
-            uploadedBy: 'system', createdAt: new Date().toISOString()
-        } as any);
-        DatabaseService.getInstance().getEntityFiles(contact.id, 'CONTACT').then(setFiles);
+    const handleFiles = async (list: FileList | null) => {
+        if (!list || list.length === 0) return;
+        setError(null);
+        const failed: string[] = [];
+        for (const file of Array.from(list)) {
+            setBusy(`Uploading ${file.name}`);
+            try {
+                const url = await db.uploadFile(file, 'work-order-docs', 'person_doc_');
+                await db.addEntityFile({
+                    entityId: contact.id, entityType: 'CONTACT', name: file.name, url,
+                    type: file.type || 'application/octet-stream', sizeBytes: file.size,
+                    uploadedBy: profile?.username || profile?.email || 'unknown',
+                });
+            } catch (e: any) {
+                failed.push(`${file.name}: ${e?.message || 'upload failed'}`);
+            }
+        }
+        setBusy(null);
+        if (inputRef.current) inputRef.current.value = '';
+        if (failed.length) setError(failed.join('\n'));
+        void reload();
+    };
+
+    const handleDelete = async (f: EntityFile) => {
+        setBusy(`Removing ${f.name}`);
+        try { await db.deleteEntityFile(f.id); } catch (e: any) { setError(e?.message || 'Not removed.'); }
+        setBusy(null);
+        void reload();
     };
 
     return (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-bold text-slate-700">Attachments</h3>
-                <button onClick={handleUpload} className="text-sm bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded flex items-center gap-2"><Plus size={16} /> Upload File</button>
+                <input ref={inputRef} type="file" multiple className="hidden" onChange={e => void handleFiles(e.target.files)} />
+                <button
+                    onClick={() => inputRef.current?.click()}
+                    disabled={!!busy}
+                    className="text-sm bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded flex items-center gap-2 disabled:opacity-60"
+                >
+                    <Plus size={16} /> Upload File
+                </button>
             </div>
-            <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-white"><tr><th className="px-6 py-3 text-left text-xs text-slate-500 uppercase">Name</th><th className="px-6 py-3 text-left text-xs text-slate-500 uppercase">Size</th><th className="px-6 py-3 text-right">Action</th></tr></thead>
-                <tbody className="divide-y divide-slate-200">
-                    {files.map(f => (
-                        <tr key={f.id}>
-                            <td className="px-6 py-4 text-sm font-medium text-slate-900 flex items-center gap-2"><FileText size={16} className="text-slate-400" /> {f.name}</td>
-                            <td className="px-6 py-4 text-sm text-slate-500">{(f.sizeBytes ? f.sizeBytes / 1024 : 0).toFixed(1)} KB</td>
-                            <td className="px-6 py-4 text-right"><button className="text-blue-600 hover:underline text-xs">Download</button></td>
-                        </tr>
-                    ))}
-                    {files.length === 0 && <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-400 italic">No files attached.</td></tr>}
-                </tbody>
-            </table>
+            {busy && <div className="px-4 py-2 text-xs text-slate-500 border-b border-slate-100">{busy}…</div>}
+            {error && <div className="px-4 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100 whitespace-pre-wrap">{error}</div>}
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-white"><tr><th className="px-4 sm:px-6 py-3 text-left text-xs text-slate-500 uppercase">Name</th><th className="px-4 sm:px-6 py-3 text-left text-xs text-slate-500 uppercase">Size</th><th className="px-4 sm:px-6 py-3 text-right"><span className="sr-only">Actions</span></th></tr></thead>
+                    <tbody className="divide-y divide-slate-200">
+                        {files.map(f => (
+                            <tr key={f.id}>
+                                <td className="px-4 sm:px-6 py-3 text-sm font-medium text-slate-900"><span className="flex items-center gap-2 min-w-0"><FileText size={16} className="text-slate-400 flex-shrink-0" /> <span className="truncate">{f.name}</span></span></td>
+                                <td className="px-4 sm:px-6 py-3 text-sm text-slate-500 whitespace-nowrap">{(f.sizeBytes ? f.sizeBytes / 1024 : 0).toFixed(1)} KB</td>
+                                <td className="px-4 sm:px-6 py-3 text-right whitespace-nowrap">
+                                    {f.url && f.url !== '#' ? (
+                                        <button onClick={() => void openStorageRef(f.url)} className="text-blue-600 hover:underline text-xs inline-flex items-center gap-1"><Download size={13} /> Open</button>
+                                    ) : (
+                                        <span className="text-xs text-slate-400" title="Placeholder row from the old Files tab — there is no file behind it">no file</span>
+                                    )}
+                                    <button onClick={() => void handleDelete(f)} className="ml-3 text-slate-400 hover:text-red-600" title="Remove" aria-label={`Remove ${f.name}`}><Trash2 size={14} /></button>
+                                </td>
+                            </tr>
+                        ))}
+                        {files.length === 0 && <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-400 italic">No files attached.</td></tr>}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };
