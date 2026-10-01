@@ -1,236 +1,330 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { StorageImage } from '../components/ui/StorageImage';
 import {
-    Plus, Search, Clock, CheckCircle,
-    X, User, Camera, Zap, Trash2, Save,
-    MoreHorizontal, QrCode, ChevronLeft, Bot, ShieldCheck, FileText, AlertOctagon, ChevronDown, ChevronRight, Mic, Package, MapPin, Edit3, Check
+    Plus, Search, X, SlidersHorizontal, LayoutGrid, List as ListIcon, ChevronDown, ChevronRight,
+    UserCheck, Clock, Siren, AlertOctagon, Copy, UserPen, Inbox,
 } from 'lucide-react';
-import { ServiceRequest, RequestStatus, Asset, JobFile, WorkOrderStatus, WorkOrderType } from '../types';
-
+import { RequestStatus, type Asset, type ServiceRequest } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
-import { ImageGallery } from '../components/ui/ImageGallery';
-import { ImageCapture } from '../components/ui/ImageCapture';
 import { DataMapper } from '../services/DataMapper';
-import { SearchableDropdown } from '../components/ui/SearchableDropdown';
-import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { NotificationService } from '../services/NotificationService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { AskRelanternButton } from '../components/AskRelanternButton';
-import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
-import { PriorityPill } from '../components/ui';
-import { ScanAssetModal } from '../components/modals/ScanAssetModal';
 import { ReportRequestForm } from '../components/ReportRequestForm';
-import { FunctionalFailureSelector } from '../components/FunctionalFailureSelector';
+import { DataList, Modal, PriorityPill, EmptyState, SkeletonRows, cn, type DataColumn } from '../components/ui';
+import { RequestCard, DueLabel, OutcomeLabel } from '../components/requests/RequestCard';
+import { RequestDetailDrawer, type RequestEdits } from '../components/requests/RequestDetailDrawer';
+import { RequestFiltersModal, type ClosedWindow } from '../components/requests/RequestFiltersModal';
+import { RPN_FOR_PRIORITY } from '../lib/requestPriority';
+import {
+    EMPTY_FILTERS, STATUS_LABEL, activeFilterCount, ageLabel, duplicateCounts, isClosed, matchesChip,
+    matchesFilters, plantOf, sortRequests,
+    type FilterContext, type QuickChip, type RaisedWithin, type RequestFilters, type SortKey,
+} from '../lib/requestBoard';
+
+type View = 'board' | 'list';
+
+const COLUMNS: { key: string; title: string; statuses: RequestStatus[]; tone: string; closed?: boolean }[] = [
+    { key: 'NEW', title: 'New', statuses: [RequestStatus.NEW], tone: 'bg-slate-100' },
+    { key: 'REVIEW', title: 'Under review', statuses: [RequestStatus.REVIEW], tone: 'bg-blue-50' },
+    { key: 'AUTHORIZED', title: 'Authorized', statuses: [RequestStatus.AUTHORIZED], tone: 'bg-blue-50' },
+    { key: 'CLOSED', title: 'Closed', statuses: [RequestStatus.APPROVED, RequestStatus.CONVERTED, RequestStatus.REJECTED], tone: 'bg-slate-50', closed: true },
+];
+
+const CHIPS: { key: QuickChip; label: string; icon: React.ReactNode; tone: string }[] = [
+    { key: 'MINE', label: 'Needs my action', icon: <UserCheck size={13} />, tone: 'primary' },
+    { key: 'OVERDUE', label: 'Overdue', icon: <Clock size={13} />, tone: 'red' },
+    { key: 'EMERGENCY', label: 'Emergency', icon: <Siren size={13} />, tone: 'red' },
+    { key: 'BREAKDOWN', label: 'Equipment stopped', icon: <AlertOctagon size={13} />, tone: 'red' },
+    { key: 'DUPES', label: 'Possible duplicates', icon: <Copy size={13} />, tone: 'amber' },
+    { key: 'RAISED_BY_ME', label: 'Raised by me', icon: <UserPen size={13} />, tone: 'slate' },
+];
+
+const SORT_LABEL: Record<SortKey, string> = { date: 'Newest', priority: 'Priority', sla: 'Time left', type: 'Equipment type' };
+const PAGE = 20;
+const LIST_PAGE = 100;
+const VIEW_KEY = 'ireams.requests.view';
+const REFRESH_MS = 60_000;
+
+const readView = (): View => {
+    try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'board'; } catch { return 'board'; }
+};
+const csv = (v: string | null) => (v ? v.split(',').filter(Boolean) : []);
 
 export const ServiceRequests: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
-    const { user } = useAuth();
+    const { user, profile, permissions } = useAuth();
     const { showToast } = useToast();
-    const [isCreating, setIsCreating] = useState(false);
-    const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-    const [requests, setRequests] = useState<ServiceRequest[]>([]);
+    const perms = permissions?.requests;
+    const canEdit = perms?.edit === true;
+
+    const [records, setRecords] = useState<ServiceRequest[]>([]);
+    const [pinned, setPinned] = useState<ServiceRequest[]>([]); // deep-linked requests outside the closed window
     const [assets, setAssets] = useState<Asset[]>([]);
-    const [users, setUsers] = useState<any[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [isCreating, setIsCreating] = useState(false);
+    const [filtersOpen, setFiltersOpen] = useState(false);
 
-    // Search / filter / sort state — seeded from the URL so views are
-    // shareable and survive back-nav / refresh.
-    const [query, setQuery] = useState(() => searchParams.get('q') || '');
-    const [plantFilter, setPlantFilter] = useState(() => searchParams.get('plant') || 'ALL');
-    const [typeFilter, setTypeFilter] = useState(() => searchParams.get('type') || 'ALL');
-    const [sortBy, setSortBy] = useState<'date' | 'priority' | 'sla' | 'type'>(
-        () => (searchParams.get('sort') as any) || 'date'
-    );
+    // Search / filter / sort / view — seeded from the URL so a view can be shared.
+    const [filters, setFilters] = useState<RequestFilters>(() => ({
+        q: searchParams.get('q') || '',
+        chip: (searchParams.get('chip') as QuickChip) || null,
+        priorities: csv(searchParams.get('pri')),
+        statuses: csv(searchParams.get('st')) as RequestStatus[],
+        plant: searchParams.get('plant') || 'ALL',
+        type: searchParams.get('type') || 'ALL',
+        requester: searchParams.get('by') || 'ALL',
+        raised: (searchParams.get('raised') as RaisedWithin) || 'ANY',
+    }));
+    const [sortBy, setSortBy] = useState<SortKey>(() => (searchParams.get('sort') as SortKey) || 'date');
+    const [view, setView] = useState<View>(() => (searchParams.get('view') as View) || readView());
+    const [closedWindow, setClosedWindow] = useState<ClosedWindow>(() => {
+        const c = searchParams.get('closed');
+        return c === 'all' ? null : c === '7' ? 7 : c === '90' ? 90 : 30;
+    });
 
-    // Code → human label for equipment type, resolved from the dictionaries.
-    // ASSET_CLASS wins over ASSET_TYPE over ASSET_CATEGORY on code collision.
+    // Drawer: the open request, and the queue it steps through (frozen when the
+    // drawer opens, so a request that leaves the filter after Review does not
+    // knock the reviewer out of their run).
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [queue, setQueue] = useState<string[]>([]);
+
+    // List-view bulk selection.
+    const [checked, setChecked] = useState<Set<string>>(new Set());
+    const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
+    const [bulkReason, setBulkReason] = useState('');
+    const [bulkBusy, setBulkBusy] = useState(false);
+    const [listLimit, setListLimit] = useState(LIST_PAGE);
+
+    // ── Data ────────────────────────────────────────────────────────────────
+    const lookups = useRef<{ assets: Asset[]; users: any[] }>({ assets: [], users: [] });
+    const toUI = useCallback((rec: any) => DataMapper.toUIRequest(rec, lookups.current.assets, lookups.current.users), []);
+
+    const loadRequests = useCallback(async () => {
+        const recs = await DatabaseService.getInstance().getRequestBoard(closedWindow);
+        setRecords(recs.map(toUI));
+    }, [closedWindow, toUI]);
+
+    // Assets / users / dictionaries once; requests on every refresh.
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const db = DatabaseService.getInstance();
+            try {
+                const [a, u, d] = await Promise.all([db.getAssets(), db.getUsers(), db.getDictionaries()]);
+                if (!alive) return;
+                lookups.current = { assets: a, users: u };
+                setAssets(a); setDictionaries(d);
+                await loadRequests();
+            } catch (e: any) {
+                showToast('Could not load requests: ' + (e?.message || e), 'error');
+            } finally {
+                if (alive) setLoading(false);
+            }
+        })();
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // The closed window is a fetch, not a filter.
+    const firstWindow = useRef(true);
+    useEffect(() => {
+        if (firstWindow.current) { firstWindow.current = false; return; }
+        loadRequests().catch(e => showToast('Could not load requests: ' + e.message, 'error'));
+    }, [closedWindow]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Keep two triagers in step: refresh every minute while visible, and on return to the tab.
+    useEffect(() => {
+        let last = Date.now();
+        const tick = () => {
+            if (document.visibilityState !== 'visible' || Date.now() - last < 10_000) return;
+            last = Date.now();
+            loadRequests().catch(() => { /* next tick retries */ });
+        };
+        const id = window.setInterval(tick, REFRESH_MS);
+        document.addEventListener('visibilitychange', tick);
+        window.addEventListener('focus', tick);
+        return () => {
+            window.clearInterval(id);
+            document.removeEventListener('visibilitychange', tick);
+            window.removeEventListener('focus', tick);
+        };
+    }, [loadRequests]);
+
+    const requests = useMemo(() => {
+        if (!pinned.length) return records;
+        const have = new Set(records.map(r => r.id));
+        return [...records, ...pinned.filter(p => !have.has(p.id))];
+    }, [records, pinned]);
+
+    // ── Lookups for filtering ───────────────────────────────────────────────
     const typeLabels = useMemo(() => {
         const m = new Map<string, string>();
         for (const t of ['ASSET_CLASS', 'ASSET_TYPE', 'ASSET_CATEGORY']) {
             for (const d of dictionaries) {
-                if (d.type === t && d.active !== false && !m.has(d.code)) {
-                    m.set(d.code, d.description || d.code);
-                }
+                if (d.type === t && d.active !== false && !m.has(d.code)) m.set(d.code, d.description || d.code);
             }
         }
         return m;
     }, [dictionaries]);
 
-    // Join once: assetId → equipmentType (label). O(1) lookup instead of
-    // re-scanning the assets array for every request on every keystroke.
     const assetMeta = useMemo(() => {
-        const map = new Map<string, { equipmentType: string }>();
+        const map = new Map<string, { equipmentType: string; classCode?: string }>();
         for (const a of assets) {
             const code = a.assetClass || a.assetType || a.category || '';
-            const equipmentType = (code && (typeLabels.get(code) || code)) || 'Uncategorized';
-            map.set(a.id, { equipmentType });
+            map.set(a.id, { equipmentType: (code && (typeLabels.get(code) || code)) || 'Uncategorized', classCode: a.assetClass });
         }
         return map;
     }, [assets, typeLabels]);
 
-    // Plant = first segment of the " > "-joined location path built by DataMapper.
-    const plantOf = (r: ServiceRequest) => (r.location || '').split(' > ')[0].trim() || 'Unassigned';
-    const typeOf = (r: ServiceRequest) =>
-        (r.assetId && assetMeta.get(r.assetId)?.equipmentType) || 'Uncategorized';
+    const typeOf = useCallback(
+        (r: ServiceRequest) => (r.assetId && assetMeta.get(r.assetId)?.equipmentType) || 'Uncategorized',
+        [assetMeta],
+    );
 
-    // Facet option lists, derived from the requests actually present.
+    const myIds = useMemo(
+        () => [user?.id, profile?.id, profile?.contactId].filter(Boolean) as string[],
+        [user?.id, profile?.id, profile?.contactId],
+    );
+    const dupes = useMemo(() => duplicateCounts(requests), [requests]);
+    const ctx: FilterContext = useMemo(() => ({ perms, userIds: myIds, dupes, typeOf }), [perms, myIds, dupes, typeOf]);
+
     const facets = useMemo(() => {
-        const plants = new Set<string>();
-        const types = new Set<string>();
-        for (const r of requests) { plants.add(plantOf(r)); types.add(typeOf(r)); }
+        const plants = new Set<string>(), types = new Set<string>(), people = new Map<string, string>();
+        for (const r of requests) {
+            plants.add(plantOf(r)); types.add(typeOf(r));
+            if (r.requesterId) people.set(r.requesterId, r.requesterName);
+        }
         return {
             plants: [...plants].sort(),
             types: [...types].sort(),
+            requesters: [...people].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
         };
-    }, [requests, assetMeta]);
+    }, [requests, typeOf]);
 
-    const PRIORITY_RANK: Record<string, number> = { EMERGENCY: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    const filtered = useMemo(() => requests.filter(r => matchesFilters(r, filters, ctx)), [requests, filters, ctx]);
+    const chipCounts = useMemo(() => {
+        const c = {} as Record<QuickChip, number>;
+        for (const chip of CHIPS) c[chip.key] = filtered.filter(r => matchesChip(r, chip.key, ctx)).length;
+        return c;
+    }, [filtered, ctx]);
+    const visible = useMemo(() => {
+        const list = filters.chip ? filtered.filter(r => matchesChip(r, filters.chip!, ctx)) : filtered;
+        return sortRequests(list, sortBy, typeOf);
+    }, [filtered, filters.chip, ctx, sortBy, typeOf]);
 
-    const visibleRequests = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        let list = requests.filter(r => {
-            if (plantFilter !== 'ALL' && plantOf(r) !== plantFilter) return false;
-            if (typeFilter !== 'ALL' && typeOf(r) !== typeFilter) return false;
-            if (q) {
-                const haystack = [
-                    r.requestNumber, r.title, r.description, r.assetName,
-                    r.location, r.requesterName, typeOf(r),
-                ].filter(Boolean).join(' ').toLowerCase();
-                if (!haystack.includes(q)) return false;
-            }
-            return true;
-        });
-        list = [...list].sort((a, b) => {
-            switch (sortBy) {
-                case 'priority':
-                    return (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9);
-                case 'sla':
-                    return new Date(a.slaDeadline).getTime() - new Date(b.slaDeadline).getTime();
-                case 'type':
-                    return typeOf(a).localeCompare(typeOf(b));
-                default:
-                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-            }
-        });
-        return list;
-    }, [requests, query, plantFilter, typeFilter, sortBy, assetMeta]);
+    const nFilters = activeFilterCount(filters);
+    const anyNarrowing = nFilters > 0 || !!filters.chip || filters.q.trim() !== '';
+    const clearAll = () => setFilters(EMPTY_FILTERS);
 
-    const isFiltered = query.trim() !== '' || plantFilter !== 'ALL' || typeFilter !== 'ALL';
-    const clearFilters = () => { setQuery(''); setPlantFilter('ALL'); setTypeFilter('ALL'); };
-
-    // Polling / Real-time updates simulation
-    const refreshData = async () => {
-        const db = DatabaseService.getInstance();
-        const dbRecords = await db.getRequests();
-        const assetsData = await db.getAssets();
-        const usersData = await db.getUsers();
-        const dictionariesData = await db.getDictionaries();
-
-        setAssets(assetsData);
-        setUsers(usersData);
-        setDictionaries(dictionariesData);
-
-        const uiRecords = dbRecords.map(r => DataMapper.toUIRequest(r, assetsData, usersData));
-        // Sort by date desc
-        setRequests(uiRecords.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    };
-
-
+    // ── URL sync ────────────────────────────────────────────────────────────
     useEffect(() => {
-        refreshData();
-    }, []);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            const put = (k: string, v: string, def = '') => (v && v !== def ? next.set(k, v) : next.delete(k));
+            put('q', filters.q.trim());
+            put('chip', filters.chip || '');
+            put('pri', filters.priorities.join(','));
+            put('st', filters.statuses.join(','));
+            put('plant', filters.plant, 'ALL');
+            put('type', filters.type, 'ALL');
+            put('by', filters.requester, 'ALL');
+            put('raised', filters.raised, 'ANY');
+            put('sort', sortBy, 'date');
+            put('view', view, 'board');
+            put('closed', closedWindow == null ? 'all' : String(closedWindow), '30');
+            return next;
+        }, { replace: true });
+    }, [filters, sortBy, view, closedWindow, setSearchParams]);
 
-    // Auto-open creation form when navigated with ?action=create (from Dashboard quick actions)
+    useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private window */ } }, [view]);
+    useEffect(() => { setListLimit(LIST_PAGE); setChecked(new Set()); }, [filters, sortBy, view]);
+
+    // ?action=create (Dashboard quick action)
     useEffect(() => {
-        if (searchParams.get('action') === 'create') {
-            setIsCreating(true);
-            // Strip only the action param — keep any active filter params intact.
-            setSearchParams(prev => {
-                const next = new URLSearchParams(prev);
-                next.delete('action');
-                return next;
-            }, { replace: true });
-        }
+        if (searchParams.get('action') !== 'create') return;
+        setIsCreating(true);
+        setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('action'); return n; }, { replace: true });
     }, [searchParams, setSearchParams]);
 
-    // Deep link from a notification: /requests?id=<request_id> (notificationNav).
-    // Without this the alert lands you on the board with the request it was
-    // about nowhere in sight — the link looks like it worked, so nobody reports it.
-    useEffect(() => {
-        const targetId = searchParams.get('id');
-        if (!targetId || selectedRequest || requests.length === 0) return;
-        const match = requests.find(r => r.id === targetId);
-        if (!match) return;
-        setSelectedRequest(match);
-        // Drop only the id so filter params survive, and back-navigation
-        // doesn't immediately reopen what the user just closed.
-        setSearchParams(prev => {
-            const next = new URLSearchParams(prev);
-            next.delete('id');
-            return next;
-        }, { replace: true });
-    }, [searchParams, requests, selectedRequest, setSearchParams]);
+    // ── Board order + drawer queue ──────────────────────────────────────────
+    const columns = useMemo(
+        () => COLUMNS.map(c => ({ ...c, items: visible.filter(r => c.statuses.includes(r.status)) })),
+        [visible],
+    );
+    const displayOrder = useCallback(
+        () => (view === 'board' ? columns.flatMap(c => c.items) : visible).map(r => r.id),
+        [view, columns, visible],
+    );
 
-    // Reflect search / filter / sort into the URL (replace, defaults omitted).
-    useEffect(() => {
-        setSearchParams(prev => {
-            const next = new URLSearchParams(prev);
-            const setOrDel = (k: string, v: string, def: string) =>
-                v && v !== def ? next.set(k, v) : next.delete(k);
-            setOrDel('q', query.trim(), '');
-            setOrDel('plant', plantFilter, 'ALL');
-            setOrDel('type', typeFilter, 'ALL');
-            setOrDel('sort', sortBy, 'date');
-            return next;
-        }, { replace: true });
-    }, [query, plantFilter, typeFilter, sortBy, setSearchParams]);
+    const openRequest = useCallback((r: ServiceRequest) => {
+        setQueue(displayOrder());
+        setSelectedId(r.id);
+    }, [displayOrder]);
 
-    const handleStatusChange = async (id: string, newStatus: RequestStatus) => {
+    // Deep link from a notification: /requests?id=<request_id>. A closed request
+    // older than the window is fetched on its own and pinned.
+    useEffect(() => {
+        const target = searchParams.get('id');
+        if (!target || loading) return;
+        setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('id'); return n; }, { replace: true });
+        const hit = requests.find(r => r.id === target);
+        if (hit) { openRequest(hit); return; }
+        DatabaseService.getInstance().getRequest(target).then(rec => {
+            if (!rec) { showToast('That request no longer exists or is not visible to you.', 'warning'); return; }
+            const ui = toUI(rec);
+            setPinned(p => [...p.filter(x => x.id !== ui.id), ui]);
+            setQueue([ui.id]);
+            setSelectedId(ui.id);
+        }).catch(e => showToast('Could not open the request: ' + e.message, 'error'));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, loading]);
+
+    const selected = useMemo(() => requests.find(r => r.id === selectedId) || null, [requests, selectedId]);
+    useEffect(() => { if (selectedId && !loading && !selected) setSelectedId(null); }, [selected, selectedId, loading]);
+
+    const liveQueue = useMemo(() => {
+        const have = new Set(requests.map(r => r.id));
+        return queue.filter(id => have.has(id));
+    }, [queue, requests]);
+    const position = selectedId && liveQueue.includes(selectedId)
+        ? { index: liveQueue.indexOf(selectedId), total: liveQueue.length }
+        : null;
+    const step = (delta: 1 | -1) => {
+        if (!position) return;
+        const next = liveQueue[position.index + delta];
+        if (next) setSelectedId(next);
+    };
+
+    // ── Writes ──────────────────────────────────────────────────────────────
+    const actor = user?.id || 'unknown';
+
+    /** Move one request on, then tell the requester. Returns the WO number on conversion. */
+    const transition = async (id: string, to: RequestStatus, extra: Record<string, unknown> = {}): Promise<string | undefined> => {
+        const db = DatabaseService.getInstance();
+        let woNumber: string | undefined;
+        if (to === RequestStatus.CONVERTED) {
+            const wo = await db.approveRequestAndConvert(id, actor);
+            woNumber = wo?.wo_number;
+        } else {
+            await db.updateRequest(id, { status: to, ...extra } as any, actor);
+        }
         try {
-            const db = DatabaseService.getInstance();
-            if (newStatus === RequestStatus.CONVERTED) {
-                // Convert once. The Approve button converts first and then
-                // reports CONVERTED here; a second conversion threw "Workflow
-                // Violation", which skipped the refresh and the requester's
-                // notice and left the panel stale (P1-6, 2026-09-08).
-                // The list in state is stale right after Approve, so ask the DB.
-                const fresh = (await db.getRequests()).find((r: any) => r.id === id);
-                if (!fresh || String(fresh.status).toUpperCase() !== 'CONVERTED') {
-                    await db.approveRequestAndConvert(id, user?.id || 'unknown');
-                }
-            } else {
-                // Standard Status Update
-                // Need to map UI Status to DB Status
-                // Since our mapper logic handles this 1:1, we can cast or map back
-                const dbStatus = DataMapper.toDBRequest({ status: newStatus } as any).status;
-                await db.updateRequest(id, { status: dbStatus }, user?.id || 'unknown');
-            }
-            await refreshData();
-
-            // Re-fetch the updated item — the rules engine must fire even when
-            // the detail view is closed (requester approve/reject notifications).
-            const all = await db.getRequests(); // Inefficient but safe for migration
-            const updated = all.find(r => r.id === id);
-            if (updated) {
-                const uiRequest = DataMapper.toUIRequest(updated, assets, users);
-                // Update selected view if open
-                if (selectedRequest && selectedRequest.id === id) {
-                    setSelectedRequest(uiRequest);
-                }
-                // Trigger Rules Engine
-                await NotificationService.checkRules('requests', 'SR_STATUS_CHANGE', uiRequest, { currentUserId: user?.id });
+            const fresh = await db.getRequest(id);
+            if (fresh) {
+                const ui = toUI(fresh);
+                await NotificationService.checkRules('requests', 'SR_STATUS_CHANGE', ui, { currentUserId: user?.id });
                 // No rule covers Review / Authorize — the requester heard nothing
                 // between raising and conversion. Tell them directly.
-                const requesterId = uiRequest.requesterId || (updated as any).requester_id;
-                if (requesterId && requesterId !== user?.id && (newStatus === RequestStatus.REVIEW || newStatus === RequestStatus.AUTHORIZED)) {
-                    const num = uiRequest.requestNumber || (updated as any).request_number || 'Your request';
+                if (ui.requesterId && ui.requesterId !== user?.id && (to === RequestStatus.REVIEW || to === RequestStatus.AUTHORIZED)) {
+                    const num = ui.requestNumber || 'Your request';
                     NotificationService.notify({
-                        recipientId: requesterId,
-                        title: newStatus === RequestStatus.REVIEW ? `${num} is being reviewed` : `${num} has been authorized`,
-                        message: newStatus === RequestStatus.REVIEW
+                        recipientId: ui.requesterId,
+                        title: to === RequestStatus.REVIEW ? `${num} is being reviewed` : `${num} has been authorized`,
+                        message: to === RequestStatus.REVIEW
                             ? 'A supervisor has picked up your request and is reviewing it.'
                             : 'Your request was authorized and is with planning to become a work order.',
                         severity: 'INFO',
@@ -245,1016 +339,557 @@ export const ServiceRequests: React.FC = () => {
                     }).catch(console.error);
                 }
             }
-        } catch (e: any) {
-            console.error('Action Failed:', e.message);
+        } catch (e) {
+            console.error('Request moved; notifying the requester failed:', e);
         }
+        return woNumber;
     };
 
-
-    const handleRequestUpdate = async (updatedRequest: ServiceRequest) => {
-        try {
-            // GAP-5 FIX: Persist ALL editable fields, not just functional_failure_id
-            const dbRecord = DataMapper.toDBRequest(updatedRequest);
-            await DatabaseService.getInstance().updateRequest(updatedRequest.id, {
-                functional_failure_id: dbRecord.functional_failure_id,
-                description: dbRecord.description,
-                is_breakdown: dbRecord.is_breakdown,
-                category: dbRecord.category,
-            }, user?.id || 'unknown');
-
-            await refreshData();
-            setSelectedRequest(updatedRequest); // Optimistic UI update for detail view
-        } catch (e: any) {
-            console.error('Update failed:', e.message);
-        }
+    const onTransition = async (id: string, to: RequestStatus, extra?: Record<string, unknown>) => {
+        const wo = await transition(id, to, extra);
+        await loadRequests();
+        return wo;
     };
 
-    const handleRequestDelete = async (id: string) => {
-        try {
-            await DatabaseService.getInstance().deleteRequest(id);
-            setSelectedRequest(null);
-            await refreshData();
-        } catch (e: any) {
-            console.error('Delete failed:', e.message);
-        }
+    const onSave = async (r: ServiceRequest, edits: RequestEdits) => {
+        await DatabaseService.getInstance().updateRequest(r.id, {
+            description: edits.description.trim(),
+            is_breakdown: edits.isBreakdown,
+            functional_failure_id: (edits.functionalFailureType || null) as any,
+            ...(edits.priority !== r.priority ? { risk_score: RPN_FOR_PRIORITY[edits.priority] } : {}),
+        }, actor);
+        await loadRequests();
     };
 
-    // Click handler: navigate to WO if converted, otherwise open detail
-    const handleRequestClick = (req: ServiceRequest) => {
-        if (req.status === RequestStatus.CONVERTED && req.linkedWOId) {
-            navigate(`/work-orders/${req.linkedWOId}`);
-        } else {
-            setIsCreating(false);
-            setSelectedRequest(req);
-        }
+    const onDelete = async (id: string) => {
+        await DatabaseService.getInstance().deleteRequest(id);
+        setSelectedId(null);
+        await loadRequests();
+        showToast('Request deleted.', 'success');
     };
 
+    const openWO = (woId: string) => navigate(`/work-orders/${woId}`);
+    const showDuplicates = (r: ServiceRequest) => {
+        setSelectedId(null);
+        setFilters({ ...EMPTY_FILTERS, q: r.assetName || '', statuses: [RequestStatus.NEW, RequestStatus.REVIEW, RequestStatus.AUTHORIZED] });
+    };
+
+    // Bulk (list view)
+    const checkedRows = visible.filter(r => checked.has(r.id));
+    const bulkReviewable = canEdit ? checkedRows.filter(r => r.status === RequestStatus.NEW) : [];
+    const bulkRejectable = canEdit ? checkedRows.filter(r => r.status === RequestStatus.REVIEW || r.status === RequestStatus.AUTHORIZED) : [];
+
+    const runBulk = async (rows: ServiceRequest[], to: RequestStatus, extra?: Record<string, unknown>) => {
+        setBulkBusy(true);
+        let ok = 0;
+        const failed: string[] = [];
+        for (const r of rows) {
+            try { await transition(r.id, to, extra); ok++; } catch { failed.push(r.requestNumber); }
+        }
+        await loadRequests().catch(() => { /* shown on next tick */ });
+        setChecked(new Set());
+        setBulkBusy(false);
+        const verb = to === RequestStatus.REVIEW ? 'moved to review' : 'rejected';
+        if (failed.length) showToast(`${ok} ${verb}; failed: ${failed.join(', ')}`, 'warning');
+        else showToast(`${ok} request${ok === 1 ? '' : 's'} ${verb}.`, 'success');
+    };
+
+    // ── Render ──────────────────────────────────────────────────────────────
+    const openCount = requests.filter(r => !isClosed(r) && r.status !== RequestStatus.APPROVED).length;
+    const statusCount = (s: RequestStatus) => requests.filter(r => r.status === s).length;
+    // Header totals are the whole queue, not the filtered view.
+    const all = (chip: QuickChip) => requests.filter(r => matchesChip(r, chip, ctx)).length;
+    const overdueAll = all('OVERDUE');
+    const hasPerms = !!(perms?.edit || perms?.authorize || perms?.approve);
+    const chips = CHIPS.filter(c => c.key !== 'MINE' || hasPerms);
+
+    const filterPills: { label: string; clear: () => void }[] = [];
+    if (filters.priorities.length) filterPills.push({ label: `Priority: ${filters.priorities.map(p => p.charAt(0) + p.slice(1).toLowerCase()).join(', ')}`, clear: () => setFilters({ ...filters, priorities: [] }) });
+    if (filters.statuses.length) filterPills.push({ label: `Status: ${filters.statuses.map(s => STATUS_LABEL[s]).join(', ')}`, clear: () => setFilters({ ...filters, statuses: [] }) });
+    if (filters.plant !== 'ALL') filterPills.push({ label: `Plant: ${filters.plant}`, clear: () => setFilters({ ...filters, plant: 'ALL' }) });
+    if (filters.type !== 'ALL') filterPills.push({ label: `Type: ${filters.type}`, clear: () => setFilters({ ...filters, type: 'ALL' }) });
+    if (filters.requester !== 'ALL') filterPills.push({ label: `Raised by: ${facets.requesters.find(p => p.id === filters.requester)?.name || 'someone'}`, clear: () => setFilters({ ...filters, requester: 'ALL' }) });
+    if (filters.raised !== 'ANY') filterPills.push({ label: `Raised within ${{ '24H': '24 h', '7D': '7 days', '30D': '30 days' }[filters.raised]}`, clear: () => setFilters({ ...filters, raised: 'ANY' }) });
+
+    const closedTitle = `Closed · ${closedWindow == null ? 'all' : `last ${closedWindow} days`}`;
 
     return (
-        <div className="flex h-[calc(100vh-6rem)] gap-6">
-            {/* Main Board / List View */}
-            <div className={`flex-1 flex flex-col transition-all duration-300 ${selectedRequest || isCreating ? 'hidden lg:flex lg:w-1/3 lg:flex-none' : 'w-full'}`}>
-                <div className="mb-3 sm:mb-6 flex flex-wrap justify-between items-center gap-3">
-                    <div className="hidden sm:block">
-                        <h1 className="text-lg md:text-2xl font-bold text-slate-900">Maintenance Requests</h1>
-                        <p className="text-xs sm:text-sm text-slate-500">Triage and convert issues to work orders.</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <AskRelanternButton
-                            contextType="serviceRequest"
-                            contextSummary={`Maintenance Request Triage: ${requests.length} total requests. Pending: ${requests.filter(r => (r.status as string) === 'PENDING').length}. In Progress: ${requests.filter(r => (r.status as string) === 'IN_PROGRESS').length}. Approved: ${requests.filter(r => r.status === 'APPROVED').length}. Ask about triage prioritization, auto-classification, risk-based escalation, or converting MRs to work orders.`}
-                            compact
-                        />
-                        <button
-                            onClick={() => setIsCreating(true)}
-                            className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
-                        >
-                            <Plus size={18} /> New Request
+        <div className="flex flex-col h-[calc(100vh-6rem)] min-h-0">
+            {/* Header */}
+            <div className="mb-3 flex flex-wrap justify-between items-center gap-3">
+                <div className="hidden sm:block">
+                    <h1 className="text-lg md:text-2xl font-bold text-slate-900">Maintenance Requests</h1>
+                    <p className="text-xs sm:text-sm text-slate-500">
+                        {loading ? 'Triage and convert issues to work orders.' : `${openCount} open · ${overdueAll} overdue`}
+                    </p>
+                </div>
+                <div className="flex items-center gap-2 ml-auto">
+                    <AskRelanternButton
+                        contextType="serviceRequest"
+                        contextSummary={`Maintenance request triage: ${openCount} open (${statusCount(RequestStatus.NEW)} new, ${statusCount(RequestStatus.REVIEW)} under review, ${statusCount(RequestStatus.AUTHORIZED)} authorized), ${overdueAll} overdue, ${all('EMERGENCY')} emergency, ${all('DUPES')} possible duplicates. Ask about triage prioritization, duplicates, or converting requests to work orders.`}
+                        compact
+                    />
+                    <button
+                        onClick={() => setIsCreating(true)}
+                        className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                    >
+                        <Plus size={18} /> New Request
+                    </button>
+                </div>
+            </div>
+
+            {/* Toolbar: search · filters · sort · view */}
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+                <div className="relative flex-1 min-w-[220px]">
+                    <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                    <input
+                        type="text"
+                        value={filters.q}
+                        onChange={e => setFilters({ ...filters, q: e.target.value })}
+                        placeholder="Search #, asset, plant, person or WO…"
+                        className="w-full pl-9 pr-8 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-1 focus:ring-primary-500 focus:outline-none"
+                    />
+                    {filters.q && (
+                        <button onClick={() => setFilters({ ...filters, q: '' })} className="absolute right-2 top-2 text-slate-400 hover:text-slate-600" aria-label="Clear search">
+                            <X size={16} />
                         </button>
-                    </div>
+                    )}
                 </div>
-
-                {/* Search + facet filters + sort — all in-memory, no re-fetch */}
-                <div className="mb-4 space-y-2">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search by request #, asset, plant/system, or requester…"
-                            className="w-full pl-9 pr-8 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
-                        />
-                        {query && (
-                            <button
-                                onClick={() => setQuery('')}
-                                className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
-                                aria-label="Clear search"
-                            >
-                                <X size={16} />
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                        {/* Plant / System */}
-                        <div className="relative">
-                            <MapPin size={13} className="absolute left-2 top-2.5 text-slate-400 pointer-events-none" />
-                            <select
-                                value={plantFilter}
-                                onChange={(e) => setPlantFilter(e.target.value)}
-                                className={`appearance-none pl-7 pr-7 py-1.5 border rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 focus:outline-none ${plantFilter !== 'ALL' ? 'border-primary-400 text-primary-700 font-medium' : 'border-slate-300 text-slate-600'}`}
-                            >
-                                <option value="ALL">All plants / systems</option>
-                                {facets.plants.map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                            <ChevronDown size={13} className="absolute right-2 top-2.5 text-slate-400 pointer-events-none" />
-                        </div>
-
-                        {/* Equipment Type */}
-                        <div className="relative">
-                            <Package size={13} className="absolute left-2 top-2.5 text-slate-400 pointer-events-none" />
-                            <select
-                                value={typeFilter}
-                                onChange={(e) => setTypeFilter(e.target.value)}
-                                className={`appearance-none pl-7 pr-7 py-1.5 border rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 focus:outline-none ${typeFilter !== 'ALL' ? 'border-primary-400 text-primary-700 font-medium' : 'border-slate-300 text-slate-600'}`}
-                            >
-                                <option value="ALL">All equipment types</option>
-                                {facets.types.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                            <ChevronDown size={13} className="absolute right-2 top-2.5 text-slate-400 pointer-events-none" />
-                        </div>
-
-                        {/* Sort */}
-                        <div className="relative">
-                            <select
-                                value={sortBy}
-                                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                                className="appearance-none pl-3 pr-7 py-1.5 border border-slate-300 rounded-lg text-xs bg-white text-slate-600 focus:ring-1 focus:ring-primary-500 focus:outline-none"
-                            >
-                                <option value="date">Sort: Newest</option>
-                                <option value="priority">Sort: Priority</option>
-                                <option value="sla">Sort: SLA due</option>
-                                <option value="type">Sort: Equipment type</option>
-                            </select>
-                            <ChevronDown size={13} className="absolute right-2 top-2.5 text-slate-400 pointer-events-none" />
-                        </div>
-
-                        {isFiltered && (
-                            <button
-                                onClick={clearFilters}
-                                className="flex items-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700"
-                            >
-                                <X size={13} /> Clear ({visibleRequests.length})
-                            </button>
-                        )}
-                    </div>
+                <button
+                    onClick={() => setFiltersOpen(true)}
+                    className={cn(
+                        'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm bg-white',
+                        nFilters ? 'border-primary-400 text-primary-700 font-medium' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                    )}
+                >
+                    <SlidersHorizontal size={15} /> Filters{nFilters ? ` (${nFilters})` : ''}
+                </button>
+                <div className="relative">
+                    <select
+                        value={sortBy}
+                        onChange={e => setSortBy(e.target.value as SortKey)}
+                        className="appearance-none pl-3 pr-8 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-600 focus:ring-1 focus:ring-primary-500 focus:outline-none"
+                        aria-label="Sort"
+                    >
+                        {(Object.keys(SORT_LABEL) as SortKey[]).map(k => <option key={k} value={k}>Sort: {SORT_LABEL[k]}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-2.5 top-3 text-slate-400 pointer-events-none" />
                 </div>
+                <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5" role="group" aria-label="View">
+                    {([['board', LayoutGrid, 'Board'], ['list', ListIcon, 'List']] as const).map(([v, Icon, label]) => (
+                        <button
+                            key={v}
+                            onClick={() => setView(v)}
+                            aria-pressed={view === v}
+                            title={`${label} view`}
+                            className={cn('px-2.5 py-1.5 rounded-md text-sm inline-flex items-center gap-1.5', view === v ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}
+                        >
+                            <Icon size={15} /> <span className="hidden md:inline">{label}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
 
-                {/* Board */}
-                <div className="flex-1 overflow-y-auto pb-4">
-                    {selectedRequest || isCreating ? (
-                        // Compact List View when Detail is open
-                        <div className="space-y-2">
-                            {visibleRequests.map(req => (
-                                <div
-                                    key={req.id}
-                                    onClick={() => handleRequestClick(req)}
-                                    className={`p-3 rounded-lg border cursor-pointer hover:bg-slate-50 transition ${selectedRequest?.id === req.id ? 'bg-blue-50 border-blue-500' : 'bg-white border-slate-200'}`}
-                                >
-                                    <div className="flex justify-between items-start mb-1">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="font-mono text-xs text-slate-500">{req.requestNumber}</span>
-                                            {req.isBreakdown && <AlertOctagon size={12} className="text-red-600" />}
-                                        </div>
-                                        <StatusBadge status={req.status} compact />
-                                    </div>
-                                    <h3 className="text-sm font-medium text-slate-900 truncate">{req.title}</h3>
-                                    <div className="flex items-center gap-2 mt-2 text-xs text-slate-500">
-                                        <Clock size={12} /> <span>{new Date(req.createdAt).toLocaleDateString()}</span>
-                                    </div>
-                                </div>
+            {/* Quick chips — one tap to the slice that matters */}
+            <div className="flex items-center gap-2 mb-2 overflow-x-auto pb-1 -mx-1 px-1">
+                {chips.map(c => {
+                    const on = filters.chip === c.key;
+                    const n = chipCounts[c.key] ?? 0;
+                    const hot = n > 0 && (c.tone === 'red' || c.tone === 'amber');
+                    return (
+                        <button
+                            key={c.key}
+                            onClick={() => setFilters({ ...filters, chip: on ? null : c.key })}
+                            aria-pressed={on}
+                            className={cn(
+                                'flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition whitespace-nowrap',
+                                on ? 'bg-slate-800 border-slate-800 text-white'
+                                    : n === 0 ? 'bg-white border-slate-200 text-slate-400'
+                                        : hot ? (c.tone === 'red' ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100')
+                                            : c.tone === 'primary' ? 'bg-primary-50 border-primary-200 text-primary-700 hover:bg-primary-100'
+                                                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                            )}
+                        >
+                            {c.icon} {c.label}
+                            <span className={cn('tabular-nums font-bold', on ? 'text-white' : '')}>{n}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            {(filterPills.length > 0 || anyNarrowing) && (
+                <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
+                    {filterPills.map(p => (
+                        <span key={p.label} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-primary-50 text-primary-800 border border-primary-200">
+                            {p.label}
+                            <button onClick={p.clear} className="p-0.5 rounded-full hover:bg-primary-100" aria-label={`Remove ${p.label}`}><X size={12} /></button>
+                        </span>
+                    ))}
+                    {anyNarrowing && (
+                        <button onClick={clearAll} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800">
+                            <X size={12} /> Clear all · {visible.length} shown
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Body */}
+            <div className="flex-1 min-h-0">
+                {loading ? (
+                    <SkeletonRows rows={8} />
+                ) : requests.length === 0 ? (
+                    <EmptyState
+                        title="No requests yet"
+                        description="Requests raised from the floor, the mobile Report button or condition alerts land here for triage."
+                    />
+                ) : view === 'list' ? (
+                    <ListView
+                        rows={visible.slice(0, listLimit)}
+                        total={visible.length}
+                        onMore={() => setListLimit(l => l + LIST_PAGE)}
+                        dupes={dupes}
+                        selectedId={selectedId}
+                        onOpen={openRequest}
+                        onOpenWO={openWO}
+                        onShowDuplicates={showDuplicates}
+                        sortBy={sortBy}
+                        onSort={setSortBy}
+                        checked={checked}
+                        setChecked={setChecked}
+                        bulk={canEdit ? {
+                            reviewable: bulkReviewable.length,
+                            rejectable: bulkRejectable.length,
+                            busy: bulkBusy,
+                            onReview: () => runBulk(bulkReviewable, RequestStatus.REVIEW),
+                            onReject: () => setBulkRejectOpen(true),
+                        } : null}
+                    />
+                ) : (
+                    <>
+                        {/* Phone: stacked groups */}
+                        <div className="sm:hidden h-full overflow-y-auto space-y-2 pb-4">
+                            {columns.map(c => (
+                                <MobileGroup
+                                    key={c.key}
+                                    title={c.closed ? closedTitle : c.title}
+                                    items={c.items}
+                                    tone={c.tone}
+                                    defaultOpen={!c.closed}
+                                    dupes={dupes}
+                                    onOpen={openRequest}
+                                    onOpenWO={openWO}
+                                    onShowDuplicates={showDuplicates}
+                                />
                             ))}
                         </div>
-                    ) : (
-                        <>
-                            {/* ═══ GAP-03: Mobile — Vertical Collapsible Groups ═══ */}
-                            <div className="block sm:hidden space-y-2">
-                                <MobileRequestGroup
-                                    title="New" statuses={[RequestStatus.NEW]} requests={visibleRequests}
-                                    onSelect={handleRequestClick} color="bg-slate-100" defaultOpen
+                        {/* Desktop: board */}
+                        <div className="hidden sm:flex h-full gap-3 overflow-x-auto pb-2">
+                            {columns.map(c => (
+                                <BoardColumn
+                                    key={c.key}
+                                    title={c.closed ? closedTitle : c.title}
+                                    items={c.items}
+                                    tone={c.tone}
+                                    closed={!!c.closed}
+                                    dupes={dupes}
+                                    selectedId={selectedId}
+                                    onOpen={openRequest}
+                                    onOpenWO={openWO}
+                                    onShowDuplicates={showDuplicates}
+                                    onSeeAll={c.closed ? () => { setView('list'); setFilters({ ...filters, statuses: [RequestStatus.CONVERTED, RequestStatus.REJECTED] }); } : undefined}
                                 />
-                                <MobileRequestGroup
-                                    title="Under Review" statuses={[RequestStatus.REVIEW]} requests={visibleRequests}
-                                    onSelect={handleRequestClick} color="bg-blue-50"
-                                />
-                                <MobileRequestGroup
-                                    title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={visibleRequests}
-                                    onSelect={handleRequestClick} color="bg-blue-50"
-                                />
-                                <MobileRequestGroup
-                                    title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={visibleRequests}
-                                    onSelect={handleRequestClick} color="bg-green-50"
-                                />
-                            </div>
-
-                            {/* Desktop: Full Kanban Board (horizontal columns) */}
-                            <div className="hidden sm:flex h-full gap-4 overflow-x-auto">
-                                <RequestColumn title="New" statuses={[RequestStatus.NEW]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-slate-100" />
-                                <RequestColumn title="Under Review" statuses={[RequestStatus.REVIEW]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-blue-50" />
-                                <RequestColumn title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-blue-50" />
-                                <RequestColumn title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-green-50" />
-                            </div>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            {/* Right Panel: Request Details */}
-            {selectedRequest && (
-                <div className="w-full lg:flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
-                    <RequestDetail
-                        request={selectedRequest}
-                        onClose={() => setSelectedRequest(null)}
-                        onStatusChange={handleStatusChange}
-                        onUpdate={handleRequestUpdate}
-                        onDelete={handleRequestDelete}
-                        dictionaries={dictionaries}
-                    />
-                </div>
-            )}
-
-            {/* Unified Report / New Request intake — shared with the mobile Report button */}
-            <ReportRequestForm
-                open={isCreating}
-                onClose={() => setIsCreating(false)}
-                onCreated={refreshData}
-            />
-        </div>
-    );
-};
-
-
-// --- Components ---
-
-const RequestColumn: React.FC<{
-    title: string;
-    statuses: RequestStatus[];
-    requests: ServiceRequest[];
-    onSelect: (r: ServiceRequest) => void;
-    color: string;
-}> = ({ title, statuses, requests, onSelect, color }) => {
-    const navigate = useNavigate();
-    const filtered = requests.filter(r => statuses.includes(r.status));
-
-    return (
-        <div className={`flex-1 min-w-[280px] rounded-xl flex flex-col ${color} border border-transparent`}>
-            <div className="p-3 font-semibold text-slate-700 flex justify-between items-center">
-                {title}
-                <span className="bg-white/50 px-2 py-0.5 rounded text-xs text-slate-600">{filtered.length}</span>
-            </div>
-            <div className="p-2 flex-1 overflow-y-auto space-y-2">
-                {filtered.map(req => (
-                    <div
-                        key={req.id}
-                        onClick={() => onSelect(req)}
-                        className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition cursor-pointer group"
-                    >
-                        <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <span className="font-mono text-[10px] text-slate-400 truncate" title="Request number">{req.requestNumber}</span>
-                                <PriorityPill priority={req.priority} />
-                            </div>
-                            <div className="flex items-center gap-1">
-                                {req.isBreakdown && (
-                                    <div className="text-[10px] flex items-center gap-1 text-red-700 bg-red-50 font-bold border border-red-100 px-1 py-0.5 rounded" title="Equipment Breakdown">
-                                        <AlertOctagon size={10} className="text-red-600" /> Breakdown
-                                    </div>
-                                )}
-                                {req.aiRiskScore && req.aiRiskScore > 80 && (
-                                    <div className="text-[10px] flex items-center gap-1 text-red-600 font-bold" title="High Risk Detected by AI">
-                                        <Zap size={10} fill="currentColor" /> AI Risk
-                                    </div>
-                                )}
-                            </div>
+                            ))}
                         </div>
-                        <h4 className="text-sm font-semibold text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">{req.title}</h4>
-                        <p className="text-xs text-slate-500 line-clamp-2 mb-3">{req.description}</p>
-
-                        <div className="border-t border-slate-100 pt-2 flex justify-between items-center text-xs text-slate-500">
-                            <div className="flex items-center gap-1">
-                                <User size={12} /> {req.requesterName.split(' ')[0]}
-                            </div>
-                            {req.linkedWOId ? (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        navigate(`/work-orders/${req.linkedWOId}`);
-                                    }}
-                                    className="flex items-center gap-1 text-blue-600 font-bold hover:underline"
-                                >
-                                    <FileText size={12} /> View WO #{req.linkedWONumber || '...'}
-                                </button>
-                            ) : (
-                                <SLAIndicator deadline={req.slaDeadline} />
-                            )}
-                        </div>
-                    </div>
-                ))}
+                    </>
+                )}
             </div>
-        </div>
-    );
-};
 
-// ═══ GAP-03: Mobile Vertical Collapsible Group ═══
-const MobileRequestGroup: React.FC<{
-    title: string;
-    statuses: RequestStatus[];
-    requests: ServiceRequest[];
-    onSelect: (r: ServiceRequest) => void;
-    color: string;
-    defaultOpen?: boolean;
-}> = ({ title, statuses, requests, onSelect, color, defaultOpen = false }) => {
-    const navigate = useNavigate();
-    const [isOpen, setIsOpen] = useState(defaultOpen);
-    const filtered = requests.filter(r => statuses.includes(r.status));
-
-    return (
-        <div className={`rounded-xl border border-transparent overflow-hidden ${color}`}>
-            {/* Accordion Header */}
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full p-3 flex items-center justify-between touch-target-mobile"
-            >
-                <div className="flex items-center gap-2">
-                    {isOpen ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-500" />}
-                    <span className="font-semibold text-sm text-slate-700">{title}</span>
-                </div>
-                <span className="bg-white/60 px-2.5 py-0.5 rounded-full text-xs font-bold text-slate-600 min-w-[24px] text-center">
-                    {filtered.length}
-                </span>
-            </button>
-
-            {/* Accordion Body */}
-            {isOpen && (
-                <div className="px-2 pb-2 space-y-2">
-                    {filtered.length === 0 ? (
-                        <div className="text-center py-4 text-xs text-slate-400">No requests</div>
-                    ) : (
-                        filtered.map(req => (
-                            <div
-                                key={req.id}
-                                onClick={() => onSelect(req)}
-                                className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 active:bg-slate-50 transition cursor-pointer"
-                            >
-                                <div className="flex justify-between items-start mb-1.5">
-                                    <PriorityPill priority={req.priority} />
-                                    <div className="flex items-center gap-1">
-                                        {req.isBreakdown && (
-                                            <span className="text-[10px] flex items-center gap-0.5 text-red-700 bg-red-50 font-bold border border-red-100 px-1 py-0.5 rounded">
-                                                <AlertOctagon size={10} /> BD
-                                            </span>
-                                        )}
-                                        {req.aiRiskScore && req.aiRiskScore > 80 && (
-                                            <span className="text-[10px] flex items-center gap-0.5 text-red-600 font-bold">
-                                                <Zap size={10} fill="currentColor" /> AI
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                                <h4 className="text-sm font-semibold text-slate-900 line-clamp-1 mb-1">{req.title}</h4>
-                                <div className="flex justify-between items-center text-xs text-slate-500">
-                                    <div className="flex items-center gap-1">
-                                        <User size={11} /> {req.requesterName.split(' ')[0]}
-                                    </div>
-                                    {req.linkedWOId ? (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); navigate(`/work-orders/${req.linkedWOId}`); }}
-                                            className="flex items-center gap-0.5 text-blue-600 font-bold text-[10px]"
-                                        >
-                                            <FileText size={10} /> WO #{req.linkedWONumber || '...'}
-                                        </button>
-                                    ) : (
-                                        <SLAIndicator deadline={req.slaDeadline} />
-                                    )}
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            )}
-        </div>
-    );
-};
-
-const SLAIndicator: React.FC<{ deadline: string }> = ({ deadline }) => {
-    const hoursLeft = (new Date(deadline).getTime() - Date.now()) / 3600000;
-
-    if (hoursLeft < 0) return <span className="text-red-600 font-bold flex items-center gap-1"><Clock size={12} /> Overdue</span>;
-    if (hoursLeft < 4) return <span className="text-amber-600 font-bold flex items-center gap-1"><Clock size={12} /> {Math.ceil(hoursLeft)}h left</span>;
-
-    return <span className="text-slate-400 flex items-center gap-1"><Clock size={12} /> {Math.ceil(hoursLeft / 24)}d left</span>;
-};
-
-const StatusBadge: React.FC<{ status: RequestStatus, compact?: boolean }> = ({ status, compact }) => {
-    const styles = {
-        [RequestStatus.NEW]: 'bg-blue-100 text-blue-700',
-        [RequestStatus.REVIEW]: 'bg-blue-100 text-blue-700',
-        [RequestStatus.AUTHORIZED]: 'bg-blue-100 text-blue-700',
-        [RequestStatus.APPROVED]: 'bg-green-100 text-green-700',
-        [RequestStatus.REJECTED]: 'bg-slate-100 text-slate-600',
-        [RequestStatus.CONVERTED]: 'bg-slate-800 text-slate-100',
-    };
-
-    return (
-        <span className={`rounded-full font-bold uppercase tracking-wider ${styles[status]} ${compact ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2.5 py-1'}`}>
-            {status}
-        </span>
-    );
-};
-
-// --- Creation Form ---
-
-
-
-
-// --- Request Detail / Triage View ---
-
-const RequestDetail: React.FC<{
-    request: ServiceRequest;
-    onClose: () => void;
-    onStatusChange: (id: string, s: RequestStatus) => void;
-    onUpdate: (r: ServiceRequest) => void;
-    onDelete: (id: string) => void;
-    dictionaries?: any[];
-}> = ({ request, onClose, onStatusChange, onUpdate, onDelete, dictionaries = [] }) => {
-
-    // Real Auth Context - use Effective Permission Matrix
-    const { user, profile, role, permissions } = useAuth();
-    const { showToast } = useToast();
-
-    const currentUser = {
-        id: user?.id || '',
-        name: profile?.username || user?.email || 'Unknown',
-        roles: role ? [role] : []
-    };
-
-    // Filter for Service Request statuses only
-
-    // Permission checks from Admin Effective Permission Matrix
-    const canEdit = permissions?.requests?.edit === true;
-    const canDelete = permissions?.requests?.delete === true;
-    const canAuthorize = permissions?.requests?.authorize === true;
-    const canApprove = permissions?.requests?.approve === true;
-
-    // Rejection modal state
-    const [showRejectModal, setShowRejectModal] = useState(false);
-    const [rejectionReason, setRejectionReason] = useState('');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-
-    // Logic: Editable if status is NEW or REVIEW. 
-    // Approved, Rejected, Converted are generally locked for historical integrity.
-    const isEditable = [RequestStatus.NEW, RequestStatus.REVIEW].includes(request.status) && canEdit;
-
-    const handleFailureChange = (newCode: string) => {
-        onUpdate({ ...request, functionalFailureType: newCode });
-    };
-
-    // Rejection handler with reason
-    const handleReject = async () => {
-        if (!rejectionReason.trim()) {
-            showToast('Please provide a reason for rejection.', 'warning');
-            return;
-        }
-        setIsProcessing(true);
-        try {
-            const db = DatabaseService.getInstance();
-            await db.updateRequest(request.id, {
-                status: 'REJECTED',
-                rejection_reason: rejectionReason
-            }, currentUser.id);
-            onStatusChange(request.id, RequestStatus.REJECTED);
-            setShowRejectModal(false);
-            setRejectionReason('');
-        } catch (e: any) {
-            showToast('Rejection failed: ' + e.message, 'error');
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    // Approve handler - auto-converts to Work Order
-    const handleApprove = async () => {
-        setIsProcessing(true);
-        try {
-            const db = DatabaseService.getInstance();
-            const wo = await db.approveRequestAndConvert(request.id, currentUser.id);
-            showToast(`Request approved! Work Order ${wo.wo_number} created.`, 'success');
-            // The parent's onStatusChange re-reads the request and raises
-            // SR_STATUS_CHANGE; the tenant rule "WR Converted to Work Order"
-            // (status = CONVERTED, dynamic recipient = requester) notifies the
-            // requester. No second, direct notification here.
-            onStatusChange(request.id, RequestStatus.CONVERTED);
-        } catch (e: any) {
-            showToast('Approval failed: ' + e.message, 'error');
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    // Delete handler
-    const handleDeleteClick = () => {
-        setIsDeleteModalOpen(true);
-    };
-
-    const handleConfirmDelete = async () => {
-        setIsProcessing(true);
-        try {
-            const db = DatabaseService.getInstance();
-            await db.deleteRequest(request.id);
-            onDelete(request.id);
-        } catch (e: any) {
-            showToast('Delete failed: ' + e.message, 'error');
-        } finally {
-            setIsProcessing(false);
-            setIsDeleteModalOpen(false);
-        }
-    };
-
-    // Save handler - persists current edits to DB
-    const handleSave = async () => {
-        setIsProcessing(true);
-        try {
-            const db = DatabaseService.getInstance();
-            await db.updateRequest(request.id, {
-                description: request.description,
-                functional_failure_id: request.functionalFailureType,
-                status: request.status as any,
-                is_breakdown: request.isBreakdown,
-                category: request.category, // GAP-6: Persist category from detail view
-            }, currentUser.id);
-            showToast('Request saved successfully.', 'success');
-        } catch (e: any) {
-            showToast('Save failed: ' + e.message, 'error');
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    return (
-        <div className="flex flex-col h-full">
-            {/* Header with Status Dropdown */}
-            <UnifiedDetailHeader
-                title={request.title}
-                subtitle={request.requestNumber}
-                icon={<FileText size={18} />}
-                onClose={onClose}
-                badges={
-                    <div className="flex items-center gap-2">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Status</label>
-                        <select
-                            value={request.status}
-                            onChange={(e) => onStatusChange(request.id, e.target.value as RequestStatus)}
-                            disabled={!isEditable}
-                            className={`text-xs border-slate-300 rounded-md bg-white px-2 py-1 ${!isEditable ? 'opacity-60 cursor-not-allowed' : ''}`}
-                        >
-                            {/* Canonical workflow labels — authoritative, so a misconfigured
-                                STATUS_CODE dictionary can't mislabel a NEW request as "Rejected" (UAT F-015). */}
-                            <option value="NEW">New / Draft</option>
-                            <option value="REVIEW">Under Review</option>
-                            <option value="AUTHORIZED">Authorized (Budget)</option>
-                            <option value="APPROVED">Approved (Technical)</option>
-                            <option value="REJECTED">Rejected</option>
-                            <option value="CONVERTED">Converted to Work Order</option>
-                        </select>
-                    </div>
-                }
+            <RequestDetailDrawer
+                request={selected}
+                dupCount={selected ? dupes.get(selected.id) || 0 : 0}
+                position={position}
+                assetClassCode={selected?.assetId ? assetMeta.get(selected.assetId)?.classCode : undefined}
+                onClose={() => setSelectedId(null)}
+                onStep={step}
+                onTransition={onTransition}
+                onSave={onSave}
+                onDelete={onDelete}
+                onOpenWO={openWO}
+                onShowDuplicates={showDuplicates}
             />
 
-            {/* Action Buttons — hidden on mobile, visible md+ */}
-            {request.status !== RequestStatus.CONVERTED && request.status !== RequestStatus.REJECTED && (
-                <div className="hidden md:flex flex-wrap gap-2 p-3 border-b border-slate-200 bg-white items-center">
-                    {/* Debug info */}
-                    <span className="text-xs text-slate-400">Status: {request.status}</span>
+            <RequestFiltersModal
+                open={filtersOpen}
+                onClose={() => setFiltersOpen(false)}
+                filters={filters}
+                onChange={setFilters}
+                plants={facets.plants}
+                types={facets.types}
+                requesters={facets.requesters}
+                closedWindow={closedWindow}
+                onClosedWindow={setClosedWindow}
+            />
 
-                    {/* Save Button - requires edit permission */}
-                    <button
-                        onClick={handleSave}
-                        disabled={isProcessing || !canEdit || !isEditable}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 ${canEdit && isEditable
-                            ? 'bg-primary-600 text-white hover:bg-primary-500'
-                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            } disabled:opacity-50`}
-                    >
-                        <Save size={14} />
-                        Save
-                    </button>
-
-
-                    {/* Delete Button - requires delete permission */}
-                    <button
-                        onClick={handleDeleteClick}
-                        disabled={isProcessing || !canDelete || (request.status as string) === RequestStatus.CONVERTED}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 border ${canDelete && (request.status as string) !== RequestStatus.CONVERTED
-                            ? 'border-red-300 text-red-700 hover:bg-red-50'
-                            : 'border-slate-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        <Trash2 size={14} />
-                        Delete
-                    </button>
-
-                    <span className="ml-auto"></span>
-
-                    {/* Start Review - requires edit permission, only for NEW */}
-                    <button
-                        onClick={() => onStatusChange(request.id, RequestStatus.REVIEW)}
-                        disabled={request.status !== RequestStatus.NEW || !canEdit}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg ${request.status === RequestStatus.NEW && canEdit
-                            ? 'bg-slate-600 text-white hover:bg-slate-700'
-                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        Review
-                    </button>
-
-                    {/* Reject - requires edit permission at REVIEW or AUTHORIZED */}
-                    <button
-                        onClick={() => setShowRejectModal(true)}
-                        disabled={![RequestStatus.REVIEW, RequestStatus.AUTHORIZED].includes(request.status as RequestStatus) || isProcessing || !canEdit}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg border ${[RequestStatus.REVIEW, RequestStatus.AUTHORIZED].includes(request.status as RequestStatus) && canEdit
-                            ? 'border-red-300 text-red-700 hover:bg-red-50'
-                            : 'border-slate-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        Reject
-                    </button>
-
-                    {/* Authorize - requires authorize permission at REVIEW status */}
-                    {/* GAP-7 FIX: Writes authorized_by and authorized_at stamps for governance evidence */}
-                    <button
-                        onClick={async () => {
-                            setIsProcessing(true);
-                            try {
-                                const db = DatabaseService.getInstance();
-                                await db.updateRequest(request.id, {
-                                    status: 'AUTHORIZED',
-                                    authorized_by: currentUser.id,
-                                    authorized_at: new Date().toISOString()
-                                }, currentUser.id);
-                                onStatusChange(request.id, RequestStatus.AUTHORIZED);
-                            } catch (e: any) {
-                                showToast('Authorization failed: ' + e.message, 'error');
-                            } finally {
-                                setIsProcessing(false);
-                            }
-                        }}
-                        disabled={request.status !== RequestStatus.REVIEW || isProcessing || !canAuthorize}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg ${request.status === RequestStatus.REVIEW && canAuthorize
-                            ? 'bg-blue-600 text-white hover:bg-primary-500'
-                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        Authorize
-                    </button>
-
-                    {/* Approve - requires approve permission at AUTHORIZED status */}
-                    <button
-                        onClick={handleApprove}
-                        disabled={request.status !== RequestStatus.AUTHORIZED || isProcessing || !canApprove}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg ${request.status === RequestStatus.AUTHORIZED && canApprove
-                            ? 'bg-green-600 text-white hover:bg-green-700'
-                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        {isProcessing ? 'Processing...' : 'Approve'}
-                    </button>
-                </div>
-            )}
-
-            {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
-            {request.status !== RequestStatus.CONVERTED && request.status !== RequestStatus.REJECTED && (
-                <div className="sm:hidden mobile-detail-footer">
-                    {canEdit && isEditable && (
-                        <button
-                            onClick={handleSave}
-                            disabled={isProcessing}
-                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
-                        >
-                            <Save size={16} />
-                            Save
-                        </button>
-                    )}
-                    {request.status === RequestStatus.AUTHORIZED && canApprove && (
-                        <button
-                            onClick={handleApprove}
-                            disabled={isProcessing}
-                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl text-sm font-semibold transition-colors"
-                        >
-                            {isProcessing ? 'Processing...' : 'Approve'}
-                        </button>
-                    )}
-                    {request.status === RequestStatus.REVIEW && canAuthorize && (
+            <Modal
+                open={bulkRejectOpen}
+                onClose={() => { setBulkRejectOpen(false); setBulkReason(''); }}
+                title={`Reject ${bulkRejectable.length} request${bulkRejectable.length === 1 ? '' : 's'}`}
+                footer={
+                    <>
+                        <button onClick={() => { setBulkRejectOpen(false); setBulkReason(''); }} className="px-4 py-2 text-sm border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50">Cancel</button>
                         <button
                             onClick={async () => {
-                                setIsProcessing(true);
-                                try {
-                                    const db = DatabaseService.getInstance();
-                                    await db.updateRequest(request.id, {
-                                        status: 'AUTHORIZED',
-                                        authorized_by: currentUser.id,
-                                        authorized_at: new Date().toISOString()
-                                    }, currentUser.id);
-                                    onStatusChange(request.id, RequestStatus.AUTHORIZED);
-                                } catch (e: any) {
-                                    showToast('Authorization failed: ' + e.message, 'error');
-                                } finally {
-                                    setIsProcessing(false);
-                                }
+                                const reason = bulkReason.trim();
+                                setBulkRejectOpen(false); setBulkReason('');
+                                await runBulk(bulkRejectable, RequestStatus.REJECTED, { rejection_reason: reason });
                             }}
-                            disabled={isProcessing}
-                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition-colors"
+                            disabled={!bulkReason.trim() || bulkBusy}
+                            className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                         >
-                            Authorize
+                            Reject
+                        </button>
+                    </>
+                }
+            >
+                <p className="text-sm text-slate-600 mb-3">One reason for all of them — each requester sees it.</p>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                    {bulkRejectable.slice(0, 12).map(r => <span key={r.id} className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{r.requestNumber}</span>)}
+                    {bulkRejectable.length > 12 && <span className="text-[11px] text-slate-500">+{bulkRejectable.length - 12} more</span>}
+                </div>
+                <textarea
+                    value={bulkReason}
+                    onChange={e => setBulkReason(e.target.value)}
+                    autoFocus
+                    rows={3}
+                    placeholder="e.g. Duplicate — handled under REQ-2026-459238"
+                    className="w-full p-3 border border-slate-300 rounded-lg text-sm resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500 focus:outline-none"
+                />
+            </Modal>
+
+            <ReportRequestForm open={isCreating} onClose={() => setIsCreating(false)} onCreated={() => { loadRequests(); }} />
+        </div>
+    );
+};
+
+// ── Board column ─────────────────────────────────────────────────────────────
+
+interface CardHandlers {
+    dupes: Map<string, number>;
+    onOpen: (r: ServiceRequest) => void;
+    onOpenWO: (woId: string) => void;
+    onShowDuplicates: (r: ServiceRequest) => void;
+}
+
+const BoardColumn: React.FC<CardHandlers & {
+    title: string;
+    items: ServiceRequest[];
+    tone: string;
+    closed: boolean;
+    selectedId: string | null;
+    onSeeAll?: () => void;
+}> = ({ title, items, tone, closed, selectedId, onSeeAll, dupes, onOpen, onOpenWO, onShowDuplicates }) => {
+    const [limit, setLimit] = useState(PAGE);
+
+    // An empty open column folds to a strip instead of holding a quarter of the screen.
+    if (!closed && items.length === 0) {
+        return (
+            <div className={cn('flex-none w-12 rounded-xl flex flex-col items-center py-3 gap-2', tone)} title={`${title}: none`}>
+                <span className="text-[11px] font-bold text-slate-400 tabular-nums">0</span>
+                <span className="text-xs font-semibold text-slate-500 [writing-mode:vertical-rl] rotate-180">{title}</span>
+            </div>
+        );
+    }
+
+    const shown = items.slice(0, limit);
+    return (
+        <div className={cn('rounded-xl flex flex-col min-h-0', tone, closed ? 'flex-none w-72' : 'flex-1 min-w-[260px]')}>
+            <div className="px-3 pt-3 pb-2 flex justify-between items-center gap-2">
+                <span className={cn('font-semibold truncate', closed ? 'text-sm text-slate-500' : 'text-slate-700')}>{title}</span>
+                <span className="bg-white/70 px-2 py-0.5 rounded text-xs font-semibold text-slate-600 tabular-nums">{items.length}</span>
+            </div>
+            <div className="px-2 pb-2 flex-1 overflow-y-auto space-y-2">
+                {shown.map(r => (
+                    <RequestCard
+                        key={r.id}
+                        request={r}
+                        dupCount={dupes.get(r.id)}
+                        selected={selectedId === r.id}
+                        onSelect={onOpen}
+                        onOpenWO={onOpenWO}
+                        onShowDuplicates={onShowDuplicates}
+                    />
+                ))}
+                {items.length === 0 && <div className="text-center py-6 text-xs text-slate-400">Nothing closed in this window</div>}
+                {items.length > limit && (
+                    <button onClick={() => setLimit(l => l + PAGE)} className="w-full py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white/60 rounded-lg">
+                        Show {Math.min(PAGE, items.length - limit)} more · {items.length - limit} left
+                    </button>
+                )}
+                {closed && onSeeAll && items.length > 0 && (
+                    <button onClick={onSeeAll} className="w-full py-2 text-xs font-medium text-primary-700 hover:underline">
+                        See closed requests in the list
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ── Phone group ──────────────────────────────────────────────────────────────
+
+const MobileGroup: React.FC<CardHandlers & {
+    title: string;
+    items: ServiceRequest[];
+    tone: string;
+    defaultOpen: boolean;
+}> = ({ title, items, tone, defaultOpen, dupes, onOpen, onOpenWO, onShowDuplicates }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    const [limit, setLimit] = useState(PAGE);
+    return (
+        <div className={cn('rounded-xl overflow-hidden', tone)}>
+            <button onClick={() => setOpen(!open)} className="w-full p-3 flex items-center justify-between touch-target-mobile">
+                <span className="flex items-center gap-2">
+                    {open ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-500" />}
+                    <span className="font-semibold text-sm text-slate-700">{title}</span>
+                </span>
+                <span className="bg-white/70 px-2.5 py-0.5 rounded-full text-xs font-bold text-slate-600 min-w-[24px] text-center">{items.length}</span>
+            </button>
+            {open && (
+                <div className="px-2 pb-2 space-y-2">
+                    {items.length === 0 ? (
+                        <div className="text-center py-4 text-xs text-slate-400">No requests</div>
+                    ) : items.slice(0, limit).map(r => (
+                        <RequestCard key={r.id} request={r} dupCount={dupes.get(r.id)} onSelect={onOpen} onOpenWO={onOpenWO} onShowDuplicates={onShowDuplicates} />
+                    ))}
+                    {items.length > limit && (
+                        <button onClick={() => setLimit(l => l + PAGE)} className="w-full py-2.5 text-xs font-medium text-slate-600">
+                            Show more · {items.length - limit} left
                         </button>
                     )}
                 </div>
             )}
+        </div>
+    );
+};
 
-            {/* Rejection Modal */}
-            {showRejectModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
-                        <h3 className="text-lg font-bold text-slate-900 mb-4">Reject Request</h3>
-                        <p className="text-sm text-slate-600 mb-4">
-                            Please provide a reason for rejecting this request. This will be recorded for audit purposes.
-                        </p>
-                        <textarea
-                            value={rejectionReason}
-                            onChange={(e) => setRejectionReason(e.target.value)}
-                            placeholder="Enter reason for rejection..."
-                            className="w-full p-3 border border-slate-300 rounded-lg text-sm resize-none h-32 focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                            autoFocus
-                        />
-                        <div className="flex justify-end gap-3 mt-4">
-                            <button
-                                onClick={() => { setShowRejectModal(false); setRejectionReason(''); }}
-                                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
-                            >
-                                Cancel
+// ── List view ────────────────────────────────────────────────────────────────
+
+const ListView: React.FC<CardHandlers & {
+    rows: ServiceRequest[];
+    total: number;
+    onMore: () => void;
+    selectedId: string | null;
+    sortBy: SortKey;
+    onSort: (s: SortKey) => void;
+    checked: Set<string>;
+    setChecked: (s: Set<string>) => void;
+    bulk: null | { reviewable: number; rejectable: number; busy: boolean; onReview: () => void; onReject: () => void };
+}> = ({ rows, total, onMore, selectedId, sortBy, onSort, checked, setChecked, bulk, dupes, onOpen, onOpenWO, onShowDuplicates }) => {
+    const allOn = rows.length > 0 && rows.every(r => checked.has(r.id));
+    const toggle = (id: string) => {
+        const n = new Set(checked);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        setChecked(n);
+    };
+    const sortHead = (label: string, key: SortKey) => (
+        <button onClick={() => onSort(key)} className={cn('uppercase tracking-wide inline-flex items-center gap-0.5', sortBy === key ? 'text-slate-900' : 'hover:text-slate-700')}>
+            {label}{sortBy === key && <ChevronDown size={11} />}
+        </button>
+    );
+
+    const columns: DataColumn<ServiceRequest>[] = [
+        ...(bulk ? [{
+            id: 'pick',
+            header: '',
+            headerCell: (
+                <input type="checkbox" checked={allOn} aria-label="Select all shown"
+                    onChange={() => setChecked(allOn ? new Set() : new Set(rows.map(r => r.id)))}
+                    className="w-4 h-4 rounded border-slate-300 text-primary-600" />
+            ),
+            render: (r: ServiceRequest) => (
+                <input type="checkbox" checked={checked.has(r.id)} aria-label={`Select ${r.requestNumber}`}
+                    onClick={e => e.stopPropagation()} onChange={() => toggle(r.id)}
+                    className="w-4 h-4 rounded border-slate-300 text-primary-600" />
+            ),
+            widthClass: 'w-10',
+            hideOnCard: true,
+        }] : []),
+        {
+            id: 'request',
+            header: 'Request',
+            headerCell: sortHead('Request', 'date'),
+            cardTitle: true,
+            render: r => (
+                <div className="min-w-0 py-1">
+                    <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[11px] text-slate-500">{r.requestNumber}</span>
+                        {r.isBreakdown && !isClosed(r) && <AlertOctagon size={12} className="text-red-600" aria-label="Equipment stopped" />}
+                        {(dupes.get(r.id) || 0) > 0 && !isClosed(r) && (
+                            <button onClick={e => { e.stopPropagation(); onShowDuplicates(r); }} className="text-[10px] font-semibold text-amber-700 hover:underline">
+                                +{dupes.get(r.id)} on asset
                             </button>
-                            <button
-                                onClick={handleReject}
-                                disabled={isProcessing || !rejectionReason.trim()}
-                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isProcessing ? 'Rejecting...' : 'Confirm Rejection'}
-                            </button>
-                        </div>
+                        )}
                     </div>
+                    <div className="text-sm text-slate-900 truncate">{r.description}</div>
+                </div>
+            ),
+        },
+        { id: 'priority', header: 'Priority', headerCell: sortHead('Priority', 'priority'), widthClass: 'w-32', render: r => (isClosed(r) ? <span className="text-xs text-slate-400">—</span> : <PriorityPill priority={r.priority} />) },
+        { id: 'status', header: 'Status', widthClass: 'w-28', render: r => <span className="text-xs text-slate-600">{STATUS_LABEL[r.status]}</span> },
+        {
+            id: 'asset', header: 'Asset', headerCell: sortHead('Asset', 'type'), hideBelow: 'lg', widthClass: 'w-48',
+            render: r => (
+                <div className="min-w-0 text-xs">
+                    <div className="font-medium text-slate-700 truncate">{r.assetName || '—'}</div>
+                    <div className="text-slate-400 truncate">{plantOf(r)}</div>
+                </div>
+            ),
+        },
+        { id: 'by', header: 'Raised by', hideBelow: 'xl', widthClass: 'w-32', render: r => <span className="text-xs text-slate-600 truncate">{r.requesterName}</span> },
+        { id: 'age', header: 'Age', widthClass: 'w-16', render: r => <span className="text-xs text-slate-500 tabular-nums" title={new Date(r.createdAt).toLocaleString()}>{ageLabel(r.createdAt)}</span> },
+        {
+            id: 'due', header: 'Due / outcome', headerCell: sortHead('Due / outcome', 'sla'), widthClass: 'w-60',
+            render: r => <span className="text-xs">{isClosed(r) || r.status === RequestStatus.APPROVED ? <OutcomeLabel request={r} onOpenWO={onOpenWO} /> : <DueLabel request={r} />}</span>,
+        },
+    ];
+
+    const nChecked = rows.filter(r => checked.has(r.id)).length;
+
+    return (
+        <div className="h-full flex flex-col min-h-0 bg-white rounded-xl border border-slate-200 overflow-hidden">
+            {bulk && nChecked > 0 && (
+                <div className="hidden md:flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-slate-50 text-sm">
+                    <span className="font-medium text-slate-700">{nChecked} selected</span>
+                    <span className="flex-1" />
+                    <button onClick={bulk.onReview} disabled={!bulk.reviewable || bulk.busy}
+                        className="px-3 py-1.5 rounded-lg bg-slate-700 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-40"
+                        title="Moves the selected New requests to Under review">
+                        Start review{bulk.reviewable ? ` (${bulk.reviewable})` : ''}
+                    </button>
+                    <button onClick={bulk.onReject} disabled={!bulk.rejectable || bulk.busy}
+                        className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 text-xs font-semibold hover:bg-red-50 disabled:opacity-40"
+                        title="Rejects the selected requests that are under review or authorized">
+                        Reject{bulk.rejectable ? ` (${bulk.rejectable})` : ''}
+                    </button>
+                    <button onClick={() => setChecked(new Set())} className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800">Clear</button>
                 </div>
             )}
-
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-                {/* JOB RAISED Badge for Converted Requests */}
-                {request.status === RequestStatus.CONVERTED && (
-                    <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
-                        <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                            <Check size={20} className="text-green-600" />
-                        </div>
-                        <div>
-                            <div className="text-sm font-bold text-green-800">JOB RAISED</div>
-                            <div className="text-xs text-green-600">
-                                Work Order {request.linkedWONumber || 'created'} generated from this request
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left Main Form */}
-                    <div className="lg:col-span-2 space-y-6">
-                        {/* Request Form Card */}
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Request Code */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Request Code</label>
-                                    <input
-                                        type="text"
-                                        value={request.requestNumber}
-                                        readOnly
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 font-mono text-sm"
-                                    />
-                                </div>
-
-                                {/* Asset */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Asset</label>
-                                    <input
-                                        type="text"
-                                        value={request.assetName || ''}
-                                        readOnly={!isEditable}
-                                        className={`w-full px-3 py-2 border rounded-lg text-sm ${isEditable ? 'border-slate-300 bg-white' : 'border-slate-200 bg-slate-50'}`}
-                                    />
-                                </div>
-
-                                {/* Current Path (Location) */}
-                                <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Current Path</label>
-                                    <input
-                                        type="text"
-                                        value={request.location || 'Location not specified'}
-                                        readOnly
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 text-sm"
-                                    />
-                                </div>
-
-                                {/* Fault Type (Functional Failure) */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Fault Type</label>
-                                    <FunctionalFailureSelector
-                                        value={request.functionalFailureType}
-                                        onChange={handleFailureChange}
-                                        readOnly={!isEditable}
-                                    />
-                                    {/* Breakdown Toggle */}
-                                    <div className="mt-3 flex items-center gap-2">
-                                        <input 
-                                            type="checkbox" 
-                                            id={`breakdown-${request.id}`}
-                                            checked={request.isBreakdown || false}
-                                            disabled={!isEditable}
-                                            onChange={(e) => onUpdate({ ...request, isBreakdown: e.target.checked })}
-                                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-primary-500 disabled:opacity-50"
-                                        />
-                                        <label htmlFor={`breakdown-${request.id}`} className={`text-sm font-medium ${!isEditable ? 'text-slate-400' : 'text-slate-700 cursor-pointer'}`}>
-                                            Breakdown (Equipment stopped)
-                                        </label>
-                                    </div>
-                                </div>
-
-                                {/* Priority */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Priority</label>
-                                    <div className={`inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold
-                                        ${request.priority === 'HIGH' ? 'bg-red-100 text-red-700 border border-red-200' :
-                                            request.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                                                'bg-slate-100 text-slate-700 border border-slate-200'}
-                                    `}>
-                                        {request.priority}
-                                    </div>
-                                </div>
-
-                                {/* Description */}
-                                <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Description</label>
-                                    <textarea
-                                        value={request.description}
-                                        readOnly={!isEditable}
-                                        rows={4}
-                                        className={`w-full px-3 py-2 border rounded-lg text-sm resize-none ${isEditable ? 'border-slate-300 bg-white' : 'border-slate-200 bg-slate-50'}`}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Requester Info Card */}
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                            <h3 className="font-bold text-slate-900 mb-4 text-sm uppercase tracking-wide">Requester Information</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Contact</label>
-                                    <input
-                                        type="text"
-                                        value={request.requesterName}
-                                        readOnly
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Department</label>
-                                    <input
-                                        type="text"
-                                        value={request.requesterDepartment || 'Operations'}
-                                        readOnly
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Phone</label>
-                                    <input
-                                        type="text"
-                                        value={request.requesterPhone || 'Not provided'}
-                                        readOnly
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Email</label>
-                                    <input
-                                        type="text"
-                                        value={request.requesterEmail || 'Not provided'}
-                                        readOnly
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 text-sm"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* AI Triage Card - Only show if aiRiskScore exists */}
-                        {request.aiRiskScore !== undefined && request.aiRiskScore > 0 && (
-                            <div className="bg-white border border-blue-100 rounded-xl shadow-sm overflow-hidden">
-                                <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center gap-2">
-                                    <Zap size={18} className="text-blue-600" fill="currentColor" />
-                                    <h3 className="font-bold text-blue-900 text-sm">Nexus AI Triage Assessment</h3>
-                                    <span className="ml-auto text-xs text-blue-600 font-medium">Confidence: {request.aiRiskScore}%</span>
-                                </div>
-                                <div className="p-4 space-y-3">
-                                    <div className="flex items-start gap-3">
-                                        <div className="mt-1"><ShieldCheck size={16} className="text-slate-400" /></div>
-                                        <div>
-                                            <span className="text-xs font-bold text-slate-500 uppercase">Risk Analysis (ISO 31000)</span>
-                                            <p className="text-sm text-slate-700 mt-1">
-                                                Risk Priority Number calculated based on asset criticality and failure severity.
-                                                Score: <strong className={request.aiRiskScore > 70 ? 'text-red-600' : request.aiRiskScore > 40 ? 'text-orange-600' : 'text-green-600'}>{request.aiRiskScore}/100</strong>
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Evidence Photos */}
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                            <ImageGallery
-                                entityId={request.id}
-                                entityType="SERVICE_REQUEST"
-                                bucket="assets"
-                                prefix="sr_"
-                                readonly={request.status === RequestStatus.CONVERTED || request.status === RequestStatus.REJECTED}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Right Sidebar - Audit Trail */}
-                    <div className="space-y-6">
-                        {/* Audit Info Card */}
-                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                            <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wide">Audit Trail</h3>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Created By</label>
-                                <div className="flex items-center gap-2">
-                                    <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold">
-                                        {request.requesterName.charAt(0)}
-                                    </div>
-                                    <span className="text-sm text-slate-700">{request.requesterName}</span>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Created</label>
-                                <div className="text-sm text-slate-700 flex items-center gap-2">
-                                    <Clock size={14} className="text-slate-400" />
-                                    {new Date(request.createdAt).toLocaleDateString()} {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                            </div>
-
-                            {request.authorizedBy && (
-                                <>
-                                    <hr className="border-slate-100" />
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Authorized By</label>
-                                        <div className="text-sm text-slate-700">{request.authorizedByName || request.authorizedBy}</div>
-                                    </div>
-                                    {request.authorizedAt && (
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Authorized</label>
-                                            <div className="text-sm text-slate-700 flex items-center gap-2">
-                                                <Clock size={14} className="text-slate-400" />
-                                                {new Date(request.authorizedAt).toLocaleDateString()}
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-
-                            <hr className="border-slate-100" />
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">SLA Deadline</label>
-                                <div className="text-sm text-slate-700 flex items-center gap-2">
-                                    <Clock size={14} className="text-slate-400" />
-                                    {new Date(request.slaDeadline).toLocaleDateString()}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Media Grid */}
-                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                            <h3 className="font-bold text-slate-900 mb-4 text-sm uppercase tracking-wide">Attachments</h3>
-                            {request.files && request.files.length > 0 ? (
-                                <div className="grid grid-cols-2 gap-2">
-                                    {request.files.map(f => (
-                                        <div key={f.id} className="aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200 relative group cursor-pointer">
-                                            <StorageImage value={f.url} alt={f.name} className="w-full h-full object-cover" />
-                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold">
-                                                View
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="p-4 border border-dashed border-slate-200 rounded-lg text-center text-slate-400 text-xs">
-                                    No media attached.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+            <div className="flex-1 min-h-0 flex flex-col">
+                <DataList
+                    columns={columns}
+                    data={rows}
+                    getRowId={r => r.id}
+                    onRowClick={onOpen}
+                    selectedId={selectedId}
+                    renderCard={r => <RequestCard request={r} dupCount={dupes.get(r.id)} onOpenWO={onOpenWO} onShowDuplicates={onShowDuplicates} bare />}
+                    empty={<EmptyState icon={<Inbox size={28} />} title="Nothing matches" description="Try clearing a filter or the quick chip." />}
+                />
             </div>
+            {total > rows.length && (
+                <button onClick={onMore} className="py-2.5 text-xs font-medium text-slate-600 border-t border-slate-200 hover:bg-slate-50">
+                    Show more · {total - rows.length} left
+                </button>
+            )}
         </div>
     );
 };

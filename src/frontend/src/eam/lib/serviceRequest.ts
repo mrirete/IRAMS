@@ -21,7 +21,7 @@ export interface PriorityResult {
 
 // Criticality scores per ISO 14224 / RPN convention (default 3 if unknown).
 const CRIT_SCORES: Record<string, number> = { A: 10, B: 5, C: 2 };
-import { priorityFromRpn } from './requestPriority';
+import { priorityFromRpn, requestDueAt } from './requestPriority';
 export { priorityFromRpn };
 
 /**
@@ -89,8 +89,7 @@ export function buildServiceRequest(input: BuildRequestInput): ServiceRequest {
         requesterId: input.requesterId,
         requesterName: input.requesterName,
         createdAt: new Date().toISOString(),
-        // EMERGENCY = 4h SLA, otherwise 24h
-        slaDeadline: new Date(Date.now() + (priority === 'EMERGENCY' ? 14400000 : 86400000)).toISOString(),
+        slaDeadline: requestDueAt(priority, Date.now()),
         aiRiskScore: rpn,
         functionalFailureType: input.functionalFailureType || undefined,
         workCenterId: input.workCenterId || undefined,

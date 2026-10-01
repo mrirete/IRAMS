@@ -1349,6 +1349,8 @@ export interface ServiceRequest {
   files?: JobFile[];
   linkedWOId?: string; // WO created from this request
   linkedWONumber?: string;
+  linkedWOStatus?: string; // status of that WO — what a requester asks once it is converted
+  updatedAt?: string;
   authorizedBy?: string;
   authorizedByName?: string; // resolved for display; authorizedBy stays the users.id
   authorizedAt?: string;

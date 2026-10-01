@@ -1,4 +1,4 @@
-import { priorityFromRpn } from '../lib/requestPriority';
+import { priorityFromRpn, requestDueAt } from '../lib/requestPriority';
 import {
     ServiceRequestRecord,
     WorkOrderRecord,
@@ -68,7 +68,8 @@ export class DataMapper {
             requesterId: record.requester_id,
             requesterName: foundRequester ? (foundRequester.username || foundRequester.name || foundRequester.email) : 'User ' + record.requester_id.substring(0, 8) + '...',
             createdAt: record.created_at,
-            slaDeadline: new Date(new Date(record.created_at).getTime() + 86400000).toISOString(),
+            slaDeadline: requestDueAt(priorityFromRpn(record.risk_score), record.created_at),
+            updatedAt: record.updated_at,
             aiRiskScore: record.risk_score,
             functionalFailureType: record.functional_failure_id,
             workCenterId: record.work_center_id || undefined,
@@ -78,7 +79,9 @@ export class DataMapper {
             authorizedByName: (() => { const u = users?.find(x => x.id === record.authorized_by || x.contact_id === record.authorized_by); return u ? (u.fullName || u.full_name || u.username || u.name || u.email) : undefined; })(),
             authorizedAt: record.authorized_at,
             linkedWOId: (record as any).work_orders?.[0]?.id,
-            linkedWONumber: (record as any).work_orders?.[0]?.wo_number
+            linkedWONumber: (record as any).work_orders?.[0]?.wo_number,
+            linkedWOStatus: (record as any).work_orders?.[0]?.status,
+            requesterEmail: foundRequester?.email || undefined,
         };
     }
 

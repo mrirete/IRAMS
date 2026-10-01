@@ -91,6 +91,8 @@ export interface DrawerProps {
     subtitle?: React.ReactNode;
     /** Sticky footer (e.g. mobile execution actions) */
     footer?: React.ReactNode;
+    /** Controls beside the close button (e.g. previous / next record) */
+    headerActions?: React.ReactNode;
     /** Desktop width */
     width?: 'md' | 'lg' | 'xl';
     children: React.ReactNode;
@@ -98,7 +100,7 @@ export interface DrawerProps {
 
 const DRAWER_WIDTH = { md: 'md:max-w-md', lg: 'md:max-w-lg', xl: 'md:max-w-2xl' };
 
-export const Drawer: React.FC<DrawerProps> = ({ open, onClose, title, subtitle, footer, width = 'lg', children }) => {
+export const Drawer: React.FC<DrawerProps> = ({ open, onClose, title, subtitle, footer, headerActions, width = 'lg', children }) => {
     useOverlayBehavior(open, onClose);
     if (!open) return null;
     return createPortal(
@@ -119,9 +121,12 @@ export const Drawer: React.FC<DrawerProps> = ({ open, onClose, title, subtitle, 
                             {title && <h2 className="text-base font-bold text-slate-800 truncate">{title}</h2>}
                             {subtitle && <p className="text-xs text-slate-500 truncate">{subtitle}</p>}
                         </div>
-                        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 -mr-1 flex-shrink-0" aria-label="Close">
-                            <X size={20} />
-                        </button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                            {headerActions}
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 -mr-1" aria-label="Close">
+                                <X size={20} />
+                            </button>
+                        </div>
                     </div>
                 )}
                 <div className="flex-1 overflow-y-auto overflow-x-hidden">{children}</div>

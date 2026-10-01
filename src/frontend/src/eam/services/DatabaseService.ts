@@ -3444,6 +3444,50 @@ export class DatabaseService {
         return data || [];
     }
 
+    /**
+     * The Requests board: every OPEN request (no cap — getRequests' 500 newest
+     * dropped the oldest open ones first once converted history filled the
+     * page), plus CLOSED ones (converted / rejected) changed in the last
+     * `closedSinceDays` days; null = all history.
+     */
+    public async getRequestBoard(closedSinceDays: number | null): Promise<ServiceRequestRecord[]> {
+        const select = '*, work_orders(id, wo_number, status)';
+        const CLOSED = '("CONVERTED","REJECTED")';
+        const pageAll = async (build: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>) => {
+            const out: ServiceRequestRecord[] = [];
+            const size = 1000;
+            for (let from = 0; ; from += size) {
+                const { data, error } = await build(from, from + size - 1);
+                if (error) throw error;
+                out.push(...(data || []));
+                if (!data || data.length < size) return out;
+            }
+        };
+        const [open, closed] = await Promise.all([
+            pageAll((from, to) => supabase.from('service_requests').select(select)
+                .not('status', 'in', CLOSED)
+                .order('created_at', { ascending: false }).range(from, to)),
+            pageAll((from, to) => {
+                let q = supabase.from('service_requests').select(select).in('status', ['CONVERTED', 'REJECTED']);
+                if (closedSinceDays != null) {
+                    q = q.gte('updated_at', new Date(Date.now() - closedSinceDays * 86400000).toISOString());
+                }
+                return q.order('updated_at', { ascending: false }).range(from, to);
+            }),
+        ]);
+        return [...open, ...closed];
+    }
+
+    public async getRequest(id: string): Promise<ServiceRequestRecord | null> {
+        const { data, error } = await supabase
+            .from('service_requests')
+            .select('*, work_orders(id, wo_number, status)')
+            .eq('id', id)
+            .maybeSingle();
+        if (error) throw error;
+        return data;
+    }
+
     public async createRequest(req: ServiceRequestRecord, actor: string): Promise<ServiceRequestRecord> {
         // GAP-3 FIX: Enforce Functional Failure for Criticality A assets (ISO 14224)
         if (!req.functional_failure_id && req.asset_id) {
