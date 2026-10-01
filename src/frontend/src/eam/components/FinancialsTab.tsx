@@ -5,6 +5,7 @@ import { FinOpsService, AssetFinancial, DepreciationBook, Warranty, Depreciation
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useSettings } from '../../contexts/SettingsContext';
 
 /** What the signed-in role may do on this tab. The tab itself is shown on finops.view. */
 export interface FinancialsCan {
@@ -68,6 +69,7 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
     // hold view only and FINANCE cannot delete, and since 0394 the database
     // refuses the write — so the buttons follow the matrix instead of failing.
     const { permissions } = useAuth();
+    useSettings(); // re-render on currency / fiscal-year change (lib/fiscal)
     const { showToast } = useToast();
     const confirmDialog = useConfirm();
     const can: FinancialsCan = {

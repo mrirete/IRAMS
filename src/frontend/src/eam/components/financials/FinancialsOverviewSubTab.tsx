@@ -1,5 +1,6 @@
 import React from 'react';
 import { DollarSign, Shield, Edit3 } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { AssetFinancial, DepreciationBook, Warranty } from '../../services/FinOpsService';
 import { formatDateOnly, parseDateOnly, todayDateOnly } from '../../../lib/dateOnly';
 
@@ -54,7 +55,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                         Acquisition Cost
                     </div>
                     <div className="text-2xl font-bold text-slate-900">
-                        ${(financialRecord?.acquisitionCost ?? 0).toLocaleString()}
+                        {currencySym()}{(financialRecord?.acquisitionCost ?? 0).toLocaleString()}
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                         {financialRecord?.acquisitionDate
@@ -66,7 +67,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                 {/* Book Value */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm">
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Book Value (Corp)</div>
-                    <div className="text-2xl font-bold text-slate-900">${(primaryBook?.currentValue ?? 0).toLocaleString()}</div>
+                    <div className="text-2xl font-bold text-slate-900">{currencySym()}{(primaryBook?.currentValue ?? 0).toLocaleString()}</div>
                     <div className="text-xs text-emerald-600 font-medium mt-1">
                         {financialRecord && primaryBook
                             ? `${(((primaryBook.currentValue ?? 0) / (financialRecord.acquisitionCost || 1)) * 100).toFixed(1)}% Remaining`
@@ -148,7 +149,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                             </div>
                         </div>
                     ) : (
-                        <div className="text-2xl font-bold text-slate-700">${editedDowntimeCost}/hr</div>
+                        <div className="text-2xl font-bold text-slate-700">{currencySym()}{editedDowntimeCost}/hr</div>
                     )}
                 </div>
             </div>
@@ -168,7 +169,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Residual Value</div>
-                        <div className="text-xl font-bold text-slate-700">${(financialRecord.residualValue ?? 0).toLocaleString()}</div>
+                        <div className="text-xl font-bold text-slate-700">{currencySym()}{(financialRecord.residualValue ?? 0).toLocaleString()}</div>
                     </div>
                     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Capitalization Date</div>
@@ -178,7 +179,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                     </div>
                     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Replacement Value</div>
-                        <div className="text-xl font-bold text-slate-700">${(financialRecord.replacementValue ?? 0).toLocaleString()}</div>
+                        <div className="text-xl font-bold text-slate-700">{currencySym()}{(financialRecord.replacementValue ?? 0).toLocaleString()}</div>
                     </div>
                 </div>
             )}

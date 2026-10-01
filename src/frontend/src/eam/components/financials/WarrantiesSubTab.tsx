@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FileCheck, Plus, Edit3, Trash2, X, Save } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { Warranty } from '../../services/FinOpsService';
 import { AddWarrantyModal } from '../modals/AddWarrantyModal';
 import type { FinancialsCan } from '../FinancialsTab';
@@ -167,7 +168,7 @@ export const WarrantiesSubTab: React.FC<WarrantiesProps> = ({
                                                 <span>Start: {formatDateOnly(w.startDate, 'N/A')}</span>
                                                 <span>Expires: {formatDateOnly(w.endDate, w.maxHours ? 'by hours' : 'open')}</span>
                                                 {w.maxHours ? <span className="tabular-nums">{Math.round(w.currentHours || 0).toLocaleString()} / {w.maxHours.toLocaleString()} h</span> : null}
-                                                {w.deductible ? <span>Deductible ${w.deductible.toLocaleString()}</span> : null}
+                                                {w.deductible ? <span>Deductible {currencySym()}{w.deductible.toLocaleString()}</span> : null}
                                                 {w.vendorName && w.warrantyType === 'OEM' && <span>Claims via {w.vendorName}</span>}
                                             </div>
                                         </div>

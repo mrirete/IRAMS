@@ -50,6 +50,14 @@ describe('depreciation engine', () => {
         expect(rows[rows.length - 1].accumulatedDepreciation).toBe(120000);
     });
 
+    it('groups by the tenant fiscal year (April start)', () => {
+        // In service October 2026, April year: FY2026 holds Oct–Mar = 6 months
+        const rows = projectAnnual({ method: 'STRAIGHT_LINE', cost: 120000, salvage: 0, lifeMonths: 24, startDate: '2026-10-01', fiscalStart: 4 });
+        expect(rows.map(r => [r.fiscalYear, r.months])).toEqual([[2026, 6], [2027, 12], [2028, 6]]);
+        expect(rows[0].depreciationExpense).toBe(30000);
+        expect(rows[rows.length - 1].closingBookValue).toBe(0);
+    });
+
     it('never depreciates below salvage in a single month', () => {
         expect(monthlyExpense({ method: 'DECLINING_BALANCE', bookValue: 10500, salvage: 10000, lifeMonths: 12, remainingMonths: 1 })).toBe(500);
         expect(monthlyExpense({ method: 'STRAIGHT_LINE', bookValue: 10000, salvage: 10000, lifeMonths: 12, remainingMonths: 6 })).toBe(0);

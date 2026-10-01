@@ -1805,7 +1805,7 @@ const AuthoriseTab: React.FC<{
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                     <h4 className="font-bold text-slate-800 text-sm">Budget check by cost centre</h4>
-                    <span className="text-[11px] text-slate-400">actual + other open orders + this order, against the OPEX budget</span>
+                    <span className="text-[11px] text-slate-400">actual + other open orders + this order, against the cost centre's total budget (opex + capex) for the fiscal year</span>
                 </div>
                 {loading ? (
                     <div className="p-6 text-sm text-slate-500">Checking budgets...</div>
@@ -1829,7 +1829,7 @@ const AuthoriseTab: React.FC<{
                                 {check.lines.map((l, i) => (
                                     <tr key={l.cost_center_id || i}>
                                         <td className="px-4 py-2 font-medium text-slate-800">{l.code ? `${l.code} - ${l.name}` : <span className="text-slate-400 italic">unassigned</span>}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums">{l.opex_budget > 0 ? money(l.opex_budget, l.currency) : '-'}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{(l.budget ?? l.opex_budget) > 0 ? money(l.budget ?? l.opex_budget, l.currency) : '-'}</td>
                                         <td className="px-4 py-2 text-right tabular-nums">{money(l.actual, l.currency)}</td>
                                         <td className="px-4 py-2 text-right tabular-nums">{money(l.committed_other, l.currency)}</td>
                                         <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(l.this_po, l.currency)}</td>

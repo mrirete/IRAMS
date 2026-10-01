@@ -1265,6 +1265,8 @@ export interface PoBudgetCheckLine {
   fiscal_year: number;
   currency: string | null;
   opex_budget: number;
+  /** opex + capex — what the check measures against since 0396 (actual is not split) */
+  budget?: number;
   actual: number;
   committed_other: number;
   this_po: number;

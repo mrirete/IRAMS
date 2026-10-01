@@ -1,5 +1,6 @@
 import React from 'react';
 import { CreditCard } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { Asset } from '../../types';
 
 interface ProcurementProps {
@@ -49,7 +50,7 @@ export const ProcurementSubTab: React.FC<ProcurementProps> = ({ asset, purchaseO
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-xs font-bold text-slate-900">${(po.amount ?? po.total_amount ?? 0).toLocaleString()}</div>
+                                        <div className="text-xs font-bold text-slate-900">{currencySym()}{(po.amount ?? po.total_amount ?? 0).toLocaleString()}</div>
                                         <div className={`text-[10px] font-bold ${po.status === 'CLOSED' ? 'text-emerald-600' : 'text-amber-600'}`}>
                                             {po.status || '—'}
                                         </div>

@@ -9,6 +9,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { X, AlertCircle } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { FinOpsService, Warranty } from '../../services/FinOpsService';
 import { todayDateOnly } from '../../../lib/dateOnly';
 
@@ -205,11 +206,11 @@ export const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onCl
                             <input type="number" min={0} step={1} value={form.reminderDays} onChange={e => set('reminderDays', e.target.value)} className={inputCls} />
                         </div>
                         <div>
-                            <label className={labelCls}>Deductible ($)</label>
+                            <label className={labelCls}>Deductible ({currencySym()})</label>
                             <input type="number" min={0} step="0.01" value={form.deductible} onChange={e => set('deductible', e.target.value)} className={inputCls} placeholder="0" />
                         </div>
                         <div>
-                            <label className={labelCls}>Warranty value ($)</label>
+                            <label className={labelCls}>Warranty value ({currencySym()})</label>
                             <input type="number" min={0} step="0.01" value={form.warrantyValue} onChange={e => set('warrantyValue', e.target.value)} className={inputCls} placeholder="optional cap" />
                         </div>
                         <div className="sm:col-span-2">

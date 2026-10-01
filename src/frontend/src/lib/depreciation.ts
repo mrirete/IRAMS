@@ -66,8 +66,10 @@ export interface ProjectionInput {
   lifeMonths: number;
   /** YYYY-MM-DD the book started (in-service date) */
   startDate: string;
-  /** already posted: carrying value and accumulated so far, and the last posted period */
+  /** already posted: carrying value and accumulated so far, and the CALENDAR year/month of the last posting */
   posted?: { bookValue: number; accumulated: number; lastFiscalYear: number; lastPeriod: number } | null;
+  /** fiscal-year start month (1-12); rows are grouped by fiscal year. Default January. */
+  fiscalStart?: number;
 }
 
 export interface YearRow {
@@ -111,6 +113,11 @@ export function projectAnnual(p: ProjectionInput): YearRow[] {
   let remaining = p.lifeMonths - elapsed;
   if (remaining <= 0) return [];
 
+  // Group months by FISCAL year (labelled by the calendar year it starts in,
+  // the same rule as 0396 ers_fiscal_year_for).
+  const fs = p.fiscalStart && p.fiscalStart >= 1 && p.fiscalStart <= 12 ? p.fiscalStart : 1;
+  const fyOf = (y: number, m: number) => (m >= fs ? y : y - 1);
+
   const rows: YearRow[] = [];
   let periodIdx = 0;
   let guard = 0;
@@ -118,8 +125,8 @@ export function projectAnnual(p: ProjectionInput): YearRow[] {
     const opening = value;
     let expense = 0;
     let months = 0;
-    const fy = year;
-    while (year === fy && remaining > 0 && value - p.salvage > 0.005) {
+    const fy = fyOf(year, month);
+    while (fyOf(year, month) === fy && remaining > 0 && value - p.salvage > 0.005) {
       const e = monthlyExpense({ method: p.method, bookValue: value, salvage: p.salvage, lifeMonths: p.lifeMonths, remainingMonths: remaining });
       value = round2(value - e);
       accumulated = round2(accumulated + e);
@@ -131,7 +138,7 @@ export function projectAnnual(p: ProjectionInput): YearRow[] {
     }
     periodIdx += 1;
     rows.push({ period: periodIdx, fiscalYear: fy, months, openingBookValue: round2(opening), depreciationExpense: expense, accumulatedDepreciation: accumulated, closingBookValue: value });
-    if (year === fy) break; // life ended mid-year
+    if (fyOf(year, month) === fy) break; // life ended mid-year
   }
   return rows;
 }

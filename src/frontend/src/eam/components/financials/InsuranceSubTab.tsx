@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, AlertCircle, Plus, Edit3, Trash2, X, Save } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { FinOpsService, AssetInsurance, InsuranceIncident } from '../../services/FinOpsService';
 import { AddInsuranceModal } from '../modals/AddInsuranceModal';
 import type { FinancialsCan } from '../FinancialsTab';
@@ -138,15 +139,15 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                         </div>
                                         <div className="grid grid-cols-3 gap-2">
                                             <div>
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Premium ($)</label>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Premium ({currencySym()})</label>
                                                 <input type="number" value={editPremium} onChange={e => setEditPremium(parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border border-blue-300 rounded text-xs bg-white" />
                                             </div>
                                             <div>
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Deductible ($)</label>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Deductible ({currencySym()})</label>
                                                 <input type="number" value={editDeductible} onChange={e => setEditDeductible(parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border border-blue-300 rounded text-xs bg-white" />
                                             </div>
                                             <div>
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Insured Val ($)</label>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Insured Val ({currencySym()})</label>
                                                 <input type="number" value={editInsuredValue} onChange={e => setEditInsuredValue(parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border border-blue-300 rounded text-xs bg-white" />
                                             </div>
                                         </div>
@@ -183,8 +184,8 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                             </div>
                                         </div>
                                         <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 mt-2 text-xs text-slate-500">
-                                            <span>{p.coverageType?.replace('_', ' ') || 'Cover'} · insured ${(p.insuredValue ?? 0).toLocaleString()} · deductible ${(p.deductible ?? 0).toLocaleString()}</span>
-                                            <span>Premium ${(p.premiumAmount ?? 0).toLocaleString()}/yr · {formatDateOnly(p.startDate, '?')} – {formatDateOnly(p.endDate, 'N/A')}</span>
+                                            <span>{p.coverageType?.replace('_', ' ') || 'Cover'} · insured {currencySym()}{(p.insuredValue ?? 0).toLocaleString()} · deductible {currencySym()}{(p.deductible ?? 0).toLocaleString()}</span>
+                                            <span>Premium {currencySym()}{(p.premiumAmount ?? 0).toLocaleString()}/yr · {formatDateOnly(p.startDate, '?')} – {formatDateOnly(p.endDate, 'N/A')}</span>
                                         </div>
                                     </>
                                 )}
@@ -230,7 +231,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                 </select>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase">Est. Damage ($)</label>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Est. Damage ({currencySym()})</label>
                                 <input type="number" value={claimEstDamage} onChange={e => setClaimEstDamage(parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border border-blue-300 rounded text-xs bg-white" />
                             </div>
                         </div>
@@ -268,7 +269,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                 <div className="text-xs text-slate-600 mb-1">{inc.incidentType}</div>
                                 <div className="flex justify-between text-xs text-slate-400">
                                     <span>{new Date(inc.incidentDate).toLocaleDateString()}</span>
-                                    <span className="font-mono text-slate-600">${(inc.totalCost ?? 0).toLocaleString()}</span>
+                                    <span className="font-mono text-slate-600">{currencySym()}{(inc.totalCost ?? 0).toLocaleString()}</span>
                                 </div>
                             </div>
                         ))}

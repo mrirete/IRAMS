@@ -6,6 +6,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { X, AlertCircle } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { AssetInsurance } from '../../services/FinOpsService';
 import { todayDateOnly } from '../../../lib/dateOnly';
 
@@ -135,15 +136,15 @@ export const AddInsuranceModal: React.FC<AddInsuranceModalProps> = ({ isOpen, on
                             <input type="date" value={form.endDate} min={form.startDate || undefined} onChange={e => set('endDate', e.target.value)} className={inputCls} />
                         </div>
                         <div>
-                            <label className={labelCls}>Annual premium ($)</label>
+                            <label className={labelCls}>Annual premium ({currencySym()})</label>
                             <input type="number" min={0} step="0.01" value={form.premium} onChange={e => set('premium', e.target.value)} className={inputCls} placeholder="0" />
                         </div>
                         <div>
-                            <label className={labelCls}>Deductible ($)</label>
+                            <label className={labelCls}>Deductible ({currencySym()})</label>
                             <input type="number" min={0} step="0.01" value={form.deductible} onChange={e => set('deductible', e.target.value)} className={inputCls} placeholder="0" />
                         </div>
                         <div>
-                            <label className={labelCls}>Insured value ($)</label>
+                            <label className={labelCls}>Insured value ({currencySym()})</label>
                             <input type="number" min={0} step="0.01" value={form.insuredValue} onChange={e => set('insuredValue', e.target.value)} className={inputCls} placeholder="0" />
                         </div>
                         <div>

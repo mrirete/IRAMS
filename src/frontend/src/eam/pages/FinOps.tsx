@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { monthlyExpense } from '../../lib/depreciation';
+import { currentFiscalYear, currentFiscalPeriod, fiscalYearLabel, fiscalYearOf, fiscalYearStart, fiscalPeriodMonthName, money, moneyCompact, currencySym } from '../../lib/fiscal';
+import { useSettings } from '../../contexts/SettingsContext';
 import {
     FinOpsService, CostCenter, Budget, Warranty, WarrantyCheckResult, InsuranceIncident,
     WarrantyClaim, DepreciationBook, MaintenanceForecast, SupplyChainMatch
@@ -602,14 +604,14 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                                 <option value="">— Select Technician —</option>
                                 {people.map(p => (
                                     <option key={p.id} value={p.id}>
-                                        {p.name} — {p.title || 'Technician'} • ${p.hourlyRate || 0}/hr
+                                        {p.name} — {p.title || 'Technician'} • {currencySym()}{p.hourlyRate || 0}/hr
                                     </option>
                                 ))}
                             </select>
                             {selectedPerson && (
                                 <div className="flex items-center gap-3 text-xs text-blue-600">
                                     <span>👤 {selectedPerson.name}</span>
-                                    <span>💰 ${selectedPerson.hourlyRate}/hr</span>
+                                    <span>💰 {currencySym()}{selectedPerson.hourlyRate}/hr</span>
                                     {selectedPerson.costCenterId && <span>🏢 Linked CC</span>}
                                 </div>
                             )}
@@ -631,14 +633,14 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                                 <option value="">— Select Part / Material —</option>
                                 {inventory.map(item => (
                                     <option key={item.id} value={item.id}>
-                                        {item.code} — {item.description} • ${item.itemCost || 0}/{item.uom || 'EA'}
+                                        {item.code} — {item.description} • {currencySym()}{item.itemCost || 0}/{item.uom || 'EA'}
                                     </option>
                                 ))}
                             </select>
                             {selectedItem && (
                                 <div className="flex items-center gap-3 text-xs text-amber-700">
                                     <span>📦 {selectedItem.code}</span>
-                                    <span>💲 ${selectedItem.itemCost}/{selectedItem.uom}</span>
+                                    <span>💲 {currencySym()}{selectedItem.itemCost}/{selectedItem.uom}</span>
                                     <span>📋 {selectedItem.description}</span>
                                 </div>
                             )}
@@ -702,7 +704,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                     {/* Amount / Quantity / Unit row */}
                     <div className="grid grid-cols-3 gap-3">
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">Amount ($) *</label>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">Amount ({currencySym()}) *</label>
                             <input
                                 type="number"
                                 step="0.01"
@@ -789,7 +791,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                             <span className={`text-lg font-bold font-mono ${
                                 formData.transactionType === 'CREDIT' ? 'text-emerald-700' : 'text-red-700'
                             }`}>
-                                {formData.transactionType === 'CREDIT' ? '-' : '+'}${parseFloat(formData.amount || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                {formData.transactionType === 'CREDIT' ? '-' : '+'}{currencySym()}{parseFloat(formData.amount || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </span>
                         </div>
                     )}
@@ -862,6 +864,9 @@ export const FinOps: React.FC = () => {
     const [maintenanceForecasts, setMaintenanceForecasts] = useState<MaintenanceForecast[]>([]);
     const [isNewTransactionOpen, setIsNewTransactionOpen] = useState(false);
     const { permissions, profile } = useAuth();
+    // Subscribes the page to Admin › Settings: a currency or fiscal-year change
+    // re-renders every figure (lib/fiscal holds the values, this triggers the paint).
+    useSettings();
     const can = useMemo<FinOpsCan>(() => ({
         create: permissions?.finops?.create === true,
         edit: permissions?.finops?.edit === true,
@@ -886,7 +891,7 @@ export const FinOps: React.FC = () => {
                 FinOpsService.getAllInsurancePolicies(),
                 FinOpsService.getDashboardMetrics(),
                 FinOpsService.getMaintenanceForecasts(),
-                FinOpsService.getFleetDepreciationSummary(new Date().getFullYear()),
+                FinOpsService.getFleetDepreciationSummary(currentFiscalYear()),
                 FinOpsService.getAssetsForPicker(),
                 FinOpsService.getVendorsForPicker(),
                 FinOpsService.getVendorWarrantyKPIs(),
@@ -1068,7 +1073,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions, bloc
             try {
                 const [txs, allBudgets] = await Promise.all([
                     FinOpsService.getRecentTransactions(5),
-                    FinOpsService.getAllBudgets(new Date().getFullYear())
+                    FinOpsService.getAllBudgets(currentFiscalYear())
                 ]);
                 setRecentTransactions(txs);
                 setBudgets(allBudgets);
@@ -1084,12 +1089,12 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions, bloc
     // Every figure here is read from a table. The old tile "Invoice Variance
     // 1.2%" was a literal in the service and is gone.
     const kpis = [
-        { label: 'Budget Utilization', value: `${metrics.budgetUtilization.toFixed(0)}%`, icon: Target, color: 'text-emerald-600', bg: 'bg-emerald-100', sub: `FY ${new Date().getFullYear()}, actual + committed` },
-        { label: 'Depreciation MTD', value: `$${metrics.depreciationMTD.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'posted this period' },
+        { label: 'Budget Utilization', value: `${metrics.budgetUtilization.toFixed(0)}%`, icon: Target, color: 'text-emerald-600', bg: 'bg-emerald-100', sub: `${fiscalYearLabel(currentFiscalYear())}, actual + committed` },
+        { label: 'Depreciation MTD', value: `${currencySym()}${metrics.depreciationMTD.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'posted this period' },
         { label: 'Active Warranties', value: metrics.activeWarranties.toString(), icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-100', sub: `${metrics.expiringWarranties30 ?? 0} end within 30 days` },
         { label: 'Pending Claims', value: metrics.pendingClaims.toString(), icon: FileText, color: 'text-amber-600', bg: 'bg-amber-100', sub: 'submitted, awaiting a decision' },
         { label: 'Invoices to resolve', value: String(blockedInvoices), icon: Receipt, color: 'text-primary-600', bg: 'bg-primary-100', sub: 'blocked or with variance' },
-        { label: 'Insurance Coverage', value: `$${(metrics.insuranceCoverage / 1000000).toFixed(1)}M`, icon: Shield, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'insured value, active policies' },
+        { label: 'Insurance Coverage', value: `${currencySym()}${(metrics.insuranceCoverage / 1000000).toFixed(1)}M`, icon: Shield, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'insured value, active policies' },
     ];
 
     // Needs attention — rendered only when there is something to attend to.
@@ -1125,7 +1130,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions, bloc
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                             <Banknote size={18} className="text-emerald-600" />
-                            Budget Overview - FY {new Date().getFullYear()}
+                            Budget Overview — {fiscalYearLabel(currentFiscalYear())}
                         </h3>
                     </div>
 
@@ -1152,7 +1157,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions, bloc
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-sm font-semibold text-slate-800">
-                                                    ${used.toLocaleString()} <span className="text-slate-400">/ ${total.toLocaleString()}</span>
+                                                    {currencySym()}{used.toLocaleString()} <span className="text-slate-400">/ {currencySym()}{total.toLocaleString()}</span>
                                                 </div>
                                                 <div className={`text-xs ${percent > 90 ? 'text-red-500' : 'text-emerald-600'}`}>
                                                     {percent.toFixed(1)}% utilized
@@ -1206,7 +1211,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions, bloc
                                         </div>
                                     </div>
                                     <div className="font-medium text-slate-800">
-                                        ${tx.amount.toLocaleString()}
+                                        {currencySym()}{tx.amount.toLocaleString()}
                                     </div>
                                 </div>
                             ))
@@ -1276,7 +1281,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
     const [showBudgetModal, setShowBudgetModal] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
     const [currentBudget, setCurrentBudget] = useState<Budget | null>(null);
-    const [budgetYear, setBudgetYear] = useState(new Date().getFullYear());
+    const [budgetYear, setBudgetYear] = useState(currentFiscalYear());
     const [opexInput, setOpexInput] = useState('');
     const [capexInput, setCapexInput] = useState('');
     const [loadingBudget, setLoadingBudget] = useState(false);
@@ -1506,8 +1511,8 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                         onChange={(e) => setBudgetYear(parseInt(e.target.value))}
                                         className="p-1 px-2 border border-slate-300 rounded-lg text-sm font-medium bg-slate-50"
                                     >
-                                        {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 1 + i).map(year => (
-                                            <option key={year} value={year}>{year}</option>
+                                        {Array.from({ length: 5 }, (_, i) => currentFiscalYear() - 1 + i).map(year => (
+                                            <option key={year} value={year}>{fiscalYearLabel(year)}</option>
                                         ))}
                                     </select>
                                     <button onClick={() => setShowBudgetModal(false)} className="p-1 hover:bg-slate-100 rounded-full">
@@ -1638,7 +1643,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                         )}
                                         {distMode === 'EVEN' && (
                                             <div className="text-center py-2 text-xs text-slate-400 italic">
-                                                ~${((parseFloat(opexInput) || 0) / 12).toFixed(0)} Opex / ${((parseFloat(capexInput) || 0) / 12).toFixed(0)} Capex per month
+                                                ~{currencySym()}{((parseFloat(opexInput) || 0) / 12).toFixed(0)} Opex / {currencySym()}{((parseFloat(capexInput) || 0) / 12).toFixed(0)} Capex per month
                                             </div>
                                         )}
                                     </div>
@@ -1647,11 +1652,11 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                         <div className="text-xs font-medium text-slate-500 uppercase mb-2">Current Utilization</div>
                                         <div className="flex justify-between text-sm mb-1">
                                             <span>Actual Spent</span>
-                                            <span className="font-semibold">${(currentBudget?.actual || 0).toLocaleString()}</span>
+                                            <span className="font-semibold">{currencySym()}{(currentBudget?.actual || 0).toLocaleString()}</span>
                                         </div>
                                         <div className="flex justify-between text-sm">
                                             <span>Committed</span>
-                                            <span className="font-semibold text-slate-600">${(currentBudget?.committed || 0).toLocaleString()}</span>
+                                            <span className="font-semibold text-slate-600">{currencySym()}{(currentBudget?.committed || 0).toLocaleString()}</span>
                                         </div>
                                     </div>
 
@@ -1813,7 +1818,7 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
     const loadSchedule = async () => {
         setLoading(true);
         try {
-            const data = await FinOpsService.getDepreciationSchedule(new Date().getFullYear());
+            const data = await FinOpsService.getDepreciationSchedule(currentFiscalYear());
             setSchedule(data);
         } catch (err) {
             console.error('Failed to load depreciation schedule', err);
@@ -1827,16 +1832,20 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
     }, []);
 
     const [running, setRunning] = useState(false);
+    // The period to post. Defaults to the current FISCAL period (0396); a
+    // missed month can be posted after the fact. Future periods are not offered.
+    const [runFy, setRunFy] = useState(currentFiscalYear());
+    const [runPeriod, setRunPeriod] = useState(currentFiscalPeriod());
+    const runPeriodOptions = Array.from({ length: runFy < currentFiscalYear() ? 12 : currentFiscalPeriod() }, (_, i) => i + 1);
     const handleRunDepreciation = async () => {
-        // Real run (launch review B5): the current fiscal period, every book
+        // Real run (launch review B5): the chosen fiscal period, every book
         // type on file, idempotent per book/period inside the service.
-        const now = new Date();
-        const fiscalYear = now.getFullYear();
-        const period = now.getMonth() + 1;
+        const fiscalYear = runFy;
+        const period = Math.min(runPeriod, runPeriodOptions.length);
         const bookTypes = Array.from(new Set((books || []).map(b => b.bookType).filter(Boolean)));
         if (bookTypes.length === 0) { showToast('No depreciation books on file — set up a book on an asset first.', 'info'); return; }
         const ok = await confirmDialog({
-            title: `Run depreciation for ${fiscalYear} / ${String(period).padStart(2, '0')}?`,
+            title: `Run depreciation for ${fiscalPeriodMonthName(period)}, ${fiscalYearLabel(fiscalYear)}?`,
             message: `${bookTypes.length} book type(s), every book on file. Books already posted for this period are skipped; posted rows are immutable afterwards.`,
             confirmLabel: 'Post depreciation',
         });
@@ -1902,7 +1911,7 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
 
                             <div className="text-2xl font-bold text-slate-800 mb-1">
                                 {/* The engine's next-month expense for this book — was currentValue × 2 % */}
-                                ${(() => {
+                                {currencySym()}{(() => {
                                     const life = book.usefulLifeMonths || 0;
                                     if (!life) return '—';
                                     const [sy, sm] = (book.startDate || '').slice(0, 10).split('-').map(Number);
@@ -1922,7 +1931,7 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                                 </div>
                                 <div>
                                     <div className="text-xs text-slate-400">Value</div>
-                                    <div className="text-sm font-medium text-slate-700">${book.currentValue?.toLocaleString()}</div>
+                                    <div className="text-sm font-medium text-slate-700">{currencySym()}{book.currentValue?.toLocaleString()}</div>
                                 </div>
                             </div>
                         </div>
@@ -1935,17 +1944,35 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                 <div className="flex items-center justify-between p-4 border-b border-slate-100">
                     <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                         <Calendar size={18} className="text-blue-600" />
-                        Depreciation Schedule - {new Date().getFullYear()}
+                        Depreciation Schedule — {fiscalYearLabel(currentFiscalYear())}
                     </h3>
                     {can.edit && (
-                        <button
-                            onClick={handleRunDepreciation}
-                            disabled={running}
-                            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-500 transition-colors disabled:opacity-50"
-                        >
-                            <Zap size={14} className={running ? 'animate-pulse' : ''} />
-                            {running ? 'Posting…' : 'Run Depreciation'}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <select
+                                value={runFy}
+                                onChange={e => { const fy = Number(e.target.value); setRunFy(fy); if (fy === currentFiscalYear()) setRunPeriod(p => Math.min(p, currentFiscalPeriod())); }}
+                                className="px-2 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                                aria-label="Fiscal year to post"
+                            >
+                                {[currentFiscalYear(), currentFiscalYear() - 1].map(fy => <option key={fy} value={fy}>{fiscalYearLabel(fy)}</option>)}
+                            </select>
+                            <select
+                                value={Math.min(runPeriod, runPeriodOptions.length)}
+                                onChange={e => setRunPeriod(Number(e.target.value))}
+                                className="px-2 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                                aria-label="Period to post"
+                            >
+                                {runPeriodOptions.map(p => <option key={p} value={p}>{fiscalPeriodMonthName(p)}</option>)}
+                            </select>
+                            <button
+                                onClick={handleRunDepreciation}
+                                disabled={running}
+                                className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-500 transition-colors disabled:opacity-50"
+                            >
+                                <Zap size={14} className={running ? 'animate-pulse' : ''} />
+                                {running ? 'Posting…' : 'Run depreciation'}
+                            </button>
+                        </div>
                     )}
                 </div>
 
@@ -1970,10 +1997,10 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                             ) : (
                                 pivotSchedule.map((row, idx) => (
                                     <tr key={idx} className="hover:bg-slate-50">
-                                        <td className="px-4 py-3 font-medium text-slate-800">{months[row.period - 1]} {new Date().getFullYear()}</td>
-                                        <td className="px-4 py-3 text-right text-slate-600 font-mono">${(row.CORPORATE || 0).toLocaleString()}</td>
-                                        <td className="px-4 py-3 text-right text-slate-600 font-mono">${(row.TAX || 0).toLocaleString()}</td>
-                                        <td className="px-4 py-3 text-right text-slate-600 font-mono">${(row.TECHNICAL || 0).toLocaleString()}</td>
+                                        <td className="px-4 py-3 font-medium text-slate-800">{fiscalPeriodMonthName(row.period)} {currentFiscalYear() + (((fiscalYearStart() - 1 + row.period - 1) >= 12) ? 1 : 0)}</td>
+                                        <td className="px-4 py-3 text-right text-slate-600 font-mono">{currencySym()}{(row.CORPORATE || 0).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-right text-slate-600 font-mono">{currencySym()}{(row.TAX || 0).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-right text-slate-600 font-mono">{currencySym()}{(row.TECHNICAL || 0).toLocaleString()}</td>
                                         <td className="px-4 py-3 text-center">
                                             <span className={`px-2 py-1 text-xs rounded-full ${row.status === 'Posted' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
                                                 }`}>
@@ -2032,11 +2059,11 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                                                     {row.code || costCenters.find(c => c.id === row.costCenterId)?.code || ''}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 text-right text-slate-600">${q1.toLocaleString()}</td>
-                                            <td className="px-4 py-3 text-right text-slate-600">${q2.toLocaleString()}</td>
-                                            <td className="px-4 py-3 text-right text-slate-600">${q3.toLocaleString()}</td>
-                                            <td className="px-4 py-3 text-right text-slate-600">${q4.toLocaleString()}</td>
-                                            <td className="px-4 py-3 text-right font-bold text-slate-800">${row.total.toLocaleString()}</td>
+                                            <td className="px-4 py-3 text-right text-slate-600">{currencySym()}{q1.toLocaleString()}</td>
+                                            <td className="px-4 py-3 text-right text-slate-600">{currencySym()}{q2.toLocaleString()}</td>
+                                            <td className="px-4 py-3 text-right text-slate-600">{currencySym()}{q3.toLocaleString()}</td>
+                                            <td className="px-4 py-3 text-right text-slate-600">{currencySym()}{q4.toLocaleString()}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-slate-800">{currencySym()}{row.total.toLocaleString()}</td>
                                         </tr>
                                     );
                                 })
@@ -2078,7 +2105,7 @@ const ForecastTab: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                     <div className="text-sm text-slate-500 mb-1">Projected Annual Maintenance Spend</div>
-                    <div className="text-3xl font-bold text-slate-800">${totalAnnualSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                    <div className="text-3xl font-bold text-slate-800">{currencySym()}{totalAnnualSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 </div>
             </div>
 
@@ -2116,8 +2143,8 @@ const ForecastTab: React.FC = () => {
                                         </td>
                                         <td className="px-4 py-3 text-slate-600">{f.assetId}</td> {/* ideally asset name */}
                                         <td className="px-4 py-3 text-right text-slate-600">{f.annualFrequency.toFixed(1)}</td>
-                                        <td className="px-4 py-3 text-right font-mono text-slate-600">${f.costPerEvent.toLocaleString()}</td>
-                                        <td className="px-4 py-3 text-right font-mono font-medium text-slate-800">${f.annualEstimatedSpend.toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-slate-600">{currencySym()}{f.costPerEvent.toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-right font-mono font-medium text-slate-800">{currencySym()}{f.annualEstimatedSpend.toLocaleString()}</td>
                                         <td className="px-4 py-3 text-center text-slate-600">
                                             {f.nextDueDate ? new Date(f.nextDueDate).toLocaleDateString() : '-'}
                                         </td>
@@ -2318,7 +2345,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-medium text-slate-600 mb-1">Est. Amount ($)</label>
+                                                        <label className="block text-xs font-medium text-slate-600 mb-1">Est. Amount ({currencySym()})</label>
                                                         <input
                                                             type="number"
                                                             value={claimForm.amount}
@@ -2472,11 +2499,11 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh, can = NO_CAN, 
                 <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-3 gap-4">
                     <div>
                         <div className="text-xs text-slate-500 uppercase font-bold">Total Claimed</div>
-                        <div className="text-lg font-bold text-slate-800">${totalClaimed.toLocaleString()}</div>
+                        <div className="text-lg font-bold text-slate-800">{currencySym()}{totalClaimed.toLocaleString()}</div>
                     </div>
                     <div>
                         <div className="text-xs text-slate-500 uppercase font-bold">Total Recovered</div>
-                        <div className="text-lg font-bold text-emerald-600">${totalApproved.toLocaleString()}</div>
+                        <div className="text-lg font-bold text-emerald-600">{currencySym()}{totalApproved.toLocaleString()}</div>
                     </div>
                     <div>
                         <div className="text-xs text-slate-500 uppercase font-bold">Recovery Rate</div>
@@ -2529,9 +2556,9 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh, can = NO_CAN, 
                                     <div className="flex items-center gap-4">
                                         {/* Cost Info */}
                                         <div className="text-right">
-                                            <div className="font-semibold text-slate-800 text-sm">${(claim.totalClaimAmount || 0).toLocaleString()}</div>
+                                            <div className="font-semibold text-slate-800 text-sm">{currencySym()}{(claim.totalClaimAmount || 0).toLocaleString()}</div>
                                             {claim.approvedAmount !== undefined && claim.status === 'APPROVED' && (
-                                                <div className="text-[10px] text-emerald-600">Approved: ${claim.approvedAmount.toLocaleString()}</div>
+                                                <div className="text-[10px] text-emerald-600">Approved: {currencySym()}{claim.approvedAmount.toLocaleString()}</div>
                                             )}
                                             <div className="text-[10px] text-slate-400">{claim.claimDate}</div>
                                         </div>
@@ -2608,7 +2635,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh, can = NO_CAN, 
 
                         {actionType === 'APPROVE' && (
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Approved Amount ($)</label>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Approved Amount ({currencySym()})</label>
                                 <input
                                     type="number"
                                     value={approvedAmount}
@@ -2734,7 +2761,7 @@ const VendorIntelTab: React.FC<VendorIntelTabProps> = ({ vendorKPIs, onRefresh }
                         {fleetRecoveryRate}%
                     </div>
                     <div className="text-xs text-slate-400 mt-1">
-                        ${fleetTotalRecovered.toLocaleString()} / ${fleetTotalClaimed.toLocaleString()}
+                        {currencySym()}{fleetTotalRecovered.toLocaleString()} / {currencySym()}{fleetTotalClaimed.toLocaleString()}
                     </div>
                 </div>
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -2841,13 +2868,13 @@ const VendorIntelTab: React.FC<VendorIntelTabProps> = ({ vendorKPIs, onRefresh }
                                     </div>
                                     <div className="text-center">
                                         <div className="text-sm font-bold text-slate-700">
-                                            ${(vendor.totalClaimed / 1000).toFixed(vendor.totalClaimed >= 1000 ? 0 : 1)}k
+                                            {currencySym()}{(vendor.totalClaimed / 1000).toFixed(vendor.totalClaimed >= 1000 ? 0 : 1)}k
                                         </div>
                                         <div className="text-[10px] text-slate-400 uppercase">Claimed</div>
                                     </div>
                                     <div className="text-center">
                                         <div className="text-sm font-bold text-emerald-600">
-                                            ${(vendor.totalRecovered / 1000).toFixed(vendor.totalRecovered >= 1000 ? 0 : 1)}k
+                                            {currencySym()}{(vendor.totalRecovered / 1000).toFixed(vendor.totalRecovered >= 1000 ? 0 : 1)}k
                                         </div>
                                         <div className="text-[10px] text-slate-400 uppercase">Recovered</div>
                                     </div>
@@ -2898,14 +2925,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
     const blockedCount = data.filter(d => d.status === 'BLOCKED').length;
 
     const formatCurrency = (val: number) => {
-        if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
-        if (val >= 1_000) return `$${(val / 1_000).toFixed(1)}K`;
-        return `$${val.toLocaleString()}`;
+        if (val >= 1_000_000) return `${currencySym()}${(val / 1_000_000).toFixed(1)}M`;
+        if (val >= 1_000) return `${currencySym()}${(val / 1_000).toFixed(1)}K`;
+        return `${currencySym()}${val.toLocaleString()}`;
     };
 
     // Null = the document has not been received; show a dash, not a fake $0.
     const amountOrDash = (val: number | null | undefined) =>
-        val === null || val === undefined ? '—' : `$${val.toLocaleString()}`;
+        val === null || val === undefined ? '—' : `${currencySym()}${val.toLocaleString()}`;
 
     // A missing document is not a variance — only flag amounts we actually have.
     const hasVariance = (val: number | null | undefined, poAmount: number) =>
@@ -3046,8 +3073,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
     // Insurance figures come from insurance_incidents — the previous version
     // relabelled WARRANTY claims as "INC-xxxxxx" incidents and called approved
     // ones "PAID".
-    const currentYear = new Date().getFullYear();
-    const settledYTD = insuranceIncidents.filter(i => i.settlementAmount != null && i.settlementDate && i.settlementDate.slice(0, 4) === String(currentYear));
+    const settledYTD = insuranceIncidents.filter(i => i.settlementAmount != null && i.settlementDate && fiscalYearOf(i.settlementDate) === currentFiscalYear());
     const claimsRecoveredYTD = settledYTD.reduce((sum, i) => sum + (i.settlementAmount || 0), 0);
     const incidents = insuranceIncidents.map(i => ({
         id: i.id,
@@ -3061,9 +3087,9 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
     void claims;
 
     const formatCurrency = (val: number) => {
-        if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
-        if (val >= 1_000) return `$${(val / 1_000).toFixed(1)}K`;
-        return `$${val.toLocaleString()}`;
+        if (val >= 1_000_000) return `${currencySym()}${(val / 1_000_000).toFixed(1)}M`;
+        if (val >= 1_000) return `${currencySym()}${(val / 1_000).toFixed(1)}K`;
+        return `${currencySym()}${val.toLocaleString()}`;
     };
 
     return (
@@ -3121,11 +3147,11 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
 
                                 <div className="flex items-center gap-8">
                                     <div className="text-right">
-                                        <div className="font-semibold text-slate-800">${(parseFloat(policy.insured_value) || 0).toLocaleString()}</div>
+                                        <div className="font-semibold text-slate-800">{currencySym()}{(parseFloat(policy.insured_value) || 0).toLocaleString()}</div>
                                         <div className="text-xs text-slate-400">Insured value</div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="font-semibold text-slate-800">${(parseFloat(policy.premium_annual) || 0).toLocaleString()}/yr</div>
+                                        <div className="font-semibold text-slate-800">{currencySym()}{(parseFloat(policy.premium_annual) || 0).toLocaleString()}/yr</div>
                                         <div className="text-xs text-slate-400">Premium</div>
                                     </div>
                                     <div className="text-right">
@@ -3169,7 +3195,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, insurance
 
                                 <div className="flex items-center gap-6">
                                     <div className="text-right">
-                                        <div className="font-semibold text-slate-800">${incident.amount.toLocaleString()}</div>
+                                        <div className="font-semibold text-slate-800">{currencySym()}{incident.amount.toLocaleString()}</div>
                                         <div className="text-xs text-slate-400">{incident.date}</div>
                                     </div>
                                     <span className={`px-3 py-1 text-xs rounded-full font-medium ${incident.status === 'SETTLED' || incident.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-700' :

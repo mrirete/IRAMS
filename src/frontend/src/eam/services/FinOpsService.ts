@@ -9,6 +9,7 @@
 import { supabase } from '../lib/supabase';
 import { mustWrite } from '../lib/supabaseWrite';
 import { monthlyExpense, projectAnnual } from '../../lib/depreciation';
+import { currentFiscalYear, currentFiscalPeriod, fiscalYearOf, fiscalYearStart, money, currencyCode } from '../../lib/fiscal';
 
 // =====================================================
 // TYPES
@@ -357,7 +358,7 @@ class FinOpsServiceClass {
         // Calculate Budget Utilization — THIS fiscal year, rejected budgets
         // excluded. The unfiltered version summed every year and every draft,
         // so the tile disagreed with the Budget Overview panel beside it.
-        const fy = new Date().getFullYear();
+        const fy = currentFiscalYear(); // tenant fiscal year (0396)
         const { data: budgets } = await supabase
             .from('budgets')
             .select('opex_budget, capex_budget, actual, committed, status')
@@ -388,13 +389,12 @@ class FinOpsServiceClass {
         const insuranceCoverage = policies?.reduce((sum, p) => sum + (p.insured_value || 0), 0) || 0;
 
         // Depreciation MTD = schedule rows posted for the current fiscal period
-        // (launch review B5 — this tile was a hard-coded zero).
-        const now = new Date();
+        // (launch review B5 — this tile was a hard-coded zero). Fiscal period since 0396.
         const { data: mtdRows } = await supabase
             .from('depreciation_schedules')
             .select('depreciation_amount')
-            .eq('fiscal_year', now.getFullYear())
-            .eq('period', now.getMonth() + 1);
+            .eq('fiscal_year', currentFiscalYear())
+            .eq('period', currentFiscalPeriod());
         const depreciationMTD = (mtdRows || []).reduce((s, r: any) => s + (Number(r.depreciation_amount) || 0), 0);
 
         return {
@@ -499,7 +499,7 @@ class FinOpsServiceClass {
      * Get all budgets for a fiscal year with cost center details
      */
     async getAllBudgets(fiscalYear?: number): Promise<(Budget & { costCenterName: string; costCenterCode: string })[]> {
-        const year = fiscalYear || new Date().getFullYear();
+        const year = fiscalYear || currentFiscalYear();
 
         const { data, error } = await supabase
             .from('budgets')
@@ -539,7 +539,7 @@ class FinOpsServiceClass {
      * Get budget for a cost center or WBS element
      */
     async getBudget(costCenterId?: string, wbsElementId?: string, fiscalYear?: number): Promise<Budget | null> {
-        const year = fiscalYear || new Date().getFullYear();
+        const year = fiscalYear || currentFiscalYear();
 
         let query = supabase.from('budgets').select('*').eq('fiscal_year', year);
 
@@ -602,7 +602,7 @@ class FinOpsServiceClass {
                     monthly_data: budgetData.monthlyData || {},
                     committed: 0,
                     actual: 0,
-                    currency: 'USD'
+                    currency: currencyCode() // the tenant's (Admin › Settings), was always USD
                 })
                 .select()
                 .single();
@@ -731,8 +731,9 @@ class FinOpsServiceClass {
         // Update budget actuals for the year the posting lands in — a
         // back-dated posting used to refresh only the current year.
         if (allocation.costCenterId) {
-            const fy = allocation.postingDate ? parseInt(allocation.postingDate.slice(0, 4)) : undefined;
-            await this.updateBudgetActuals(allocation.costCenterId, Number.isFinite(fy) ? fy : undefined);
+            // the FISCAL year the posting lands in (0396), not its calendar year
+            const fy = allocation.postingDate ? fiscalYearOf(allocation.postingDate) : undefined;
+            await this.updateBudgetActuals(allocation.costCenterId, fy);
         }
 
         return this.mapCostAllocation(data);
@@ -872,8 +873,8 @@ class FinOpsServiceClass {
             currentEstimate: estimatedCost,
             variancePct: variance,
             message: isAnomaly
-                ? `ALERT: Estimated cost $${estimatedCost.toFixed(2)} is ${variance > 0 ? 'above' : 'below'} historical average ($${avg.toFixed(2)}) by ${Math.abs(variance).toFixed(0)}%`
-                : `Cost estimate within normal range (Avg: $${avg.toFixed(2)})`
+                ? `ALERT: Estimated cost ${money(estimatedCost, { decimals: 2 })} is ${variance > 0 ? 'above' : 'below'} historical average (${money(avg, { decimals: 2 })}) by ${Math.abs(variance).toFixed(0)}%`
+                : `Cost estimate within normal range (Avg: ${money(avg, { decimals: 2 })})`
         };
     }
 
@@ -1371,7 +1372,7 @@ class FinOpsServiceClass {
 
             return {
                 success: true,
-                message: `Capital event recorded. Carrying amount: $${previousCarrying.toLocaleString()} → $${newGAV.toLocaleString()}. ` +
+                message: `Capital event recorded. Carrying amount: ${money(previousCarrying)} → ${money(newGAV)}. ` +
                     `Life: ${financial.usefulLifeMonths}mo → ${newLifeMonths}mo. ${booksRecalculated} depreciation book(s) recalculated.`,
                 event: capitalEvent as AssetCapitalEvent,
                 updatedFinancial,
@@ -1752,6 +1753,7 @@ class FinOpsServiceClass {
             lifeMonths: financial.usefulLifeMonths,
             startDate: book.startDate,
             posted,
+            fiscalStart: fiscalYearStart(),
         }).map(r => ({
             period: r.period,
             fiscalYear: r.fiscalYear,
@@ -2005,7 +2007,7 @@ class FinOpsServiceClass {
         if (newStatus === 'APPROVED') {
             const approved = details?.approvedAmount ?? total;
             if (!(approved > 0)) throw new Error('Approved amount must be greater than zero.');
-            if (approved > total) throw new Error(`Approved amount cannot exceed the claimed $${total.toLocaleString()}.`);
+            if (approved > total) throw new Error(`Approved amount cannot exceed the claimed ${money(total, { decimals: 2 })}.`);
             update.approved_at = new Date().toISOString();
             update.approved_by = details?.actorId || null;
             update.approved_amount = approved;

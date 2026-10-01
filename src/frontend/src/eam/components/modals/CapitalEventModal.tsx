@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, AlertCircle, TrendingUp, DollarSign, Clock, Wrench, ArrowUp, Zap } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { FinOpsService, CapitalEventType, RecapitalizationInput, RecapitalizationResult, AssetFinancial } from '../../services/FinOpsService';
 import { predictionService } from '../../services/PredictionService';
 
@@ -109,7 +110,7 @@ export const CapitalEventModal: React.FC<CapitalEventModalProps> = ({
                     <div className="bg-slate-50 rounded-lg p-3 grid grid-cols-3 gap-3 text-center">
                         <div>
                             <div className="text-[10px] text-slate-500 uppercase font-semibold">Carrying Amount</div>
-                            <div className="text-sm font-bold text-slate-800">${financialRecord.acquisitionCost.toLocaleString()}</div>
+                            <div className="text-sm font-bold text-slate-800">{currencySym()}{financialRecord.acquisitionCost.toLocaleString()}</div>
                         </div>
                         <div>
                             <div className="text-[10px] text-slate-500 uppercase font-semibold">Useful Life</div>
@@ -117,7 +118,7 @@ export const CapitalEventModal: React.FC<CapitalEventModalProps> = ({
                         </div>
                         <div>
                             <div className="text-[10px] text-slate-500 uppercase font-semibold">Salvage Value</div>
-                            <div className="text-sm font-bold text-slate-800">${financialRecord.residualValue.toLocaleString()}</div>
+                            <div className="text-sm font-bold text-slate-800">{currencySym()}{financialRecord.residualValue.toLocaleString()}</div>
                         </div>
                     </div>
 
@@ -146,7 +147,7 @@ export const CapitalEventModal: React.FC<CapitalEventModalProps> = ({
                     {/* Capital Amount & Life Extension */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Capital Amount ($) *</label>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Capital Amount ({currencySym()}) *</label>
                             <input
                                 type="number"
                                 value={capitalAmount || ''}
@@ -204,7 +205,7 @@ export const CapitalEventModal: React.FC<CapitalEventModalProps> = ({
                             <p className="text-[10px] text-slate-400 mt-0.5">Predict module: boosts Digital Twin health index</p>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">New Salvage Value ($)</label>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">New Salvage Value ({currencySym()})</label>
                             <input
                                 type="number"
                                 value={newSalvageValue !== undefined ? newSalvageValue : ''}
@@ -235,7 +236,7 @@ export const CapitalEventModal: React.FC<CapitalEventModalProps> = ({
                             <div className="grid grid-cols-3 gap-3 text-center">
                                 <div>
                                     <div className="text-xs text-slate-500">Carrying Amount</div>
-                                    <div className="text-sm font-bold text-blue-800">${financialRecord.acquisitionCost.toLocaleString()} → ${newCarrying.toLocaleString()}</div>
+                                    <div className="text-sm font-bold text-blue-800">{currencySym()}{financialRecord.acquisitionCost.toLocaleString()} → {currencySym()}{newCarrying.toLocaleString()}</div>
                                 </div>
                                 <div>
                                     <div className="text-xs text-slate-500">Useful Life</div>

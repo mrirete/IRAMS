@@ -22,6 +22,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { supabase } from '../eam/lib/supabase';
+import { configureFinance } from '../lib/fiscal';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -179,6 +180,17 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const [companyId, setCompanyId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [dirty, setDirty] = useState(false);
+
+    // Finance code without React context (FinOpsService, lib/depreciation)
+    // reads the fiscal-year start and currency from lib/fiscal. Pushed during
+    // render — not in an effect — so the children rendering in this same pass
+    // already see the tenant's values. Idempotent and cheap.
+    configureFinance({
+        fiscalYearStart: settings.fiscalYearStart,
+        currency: settings.currency,
+        currencySymbol: CURRENCY_SYMBOLS[settings.currency] || '$',
+        locale: settings.locale,
+    });
 
     // Load the enterprise settings. Failure is not fatal: the cached values (or
     // defaults) stay in force and the app keeps working, which is what should

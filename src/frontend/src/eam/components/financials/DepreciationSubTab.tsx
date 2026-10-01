@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DollarSign, BookOpen, Plus, ChevronRight, ChevronLeft, Table, AlertCircle, Trash2, X, RotateCcw } from 'lucide-react';
+import { currencySym } from '../../../lib/fiscal';
 import { Asset } from '../../types';
 import { FinOpsService, AssetFinancial, DepreciationBook, DepreciationScheduleItem, RecapitalizationResult } from '../../services/FinOpsService';
 import { CapitalEventModal } from '../modals/CapitalEventModal';
@@ -120,11 +121,11 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                         <tr key={item.period} className="hover:bg-slate-50/80 transition group">
                                             <td className="px-6 py-3 font-medium text-slate-700">{item.fiscalYear}</td>
                                             <td className="px-6 py-3 font-mono text-slate-400">{item.months ?? 12}</td>
-                                            <td className="px-6 py-3 text-right font-mono text-slate-600">${(item.openingBookValue ?? 0).toLocaleString()}</td>
-                                            <td className="px-6 py-3 text-right font-mono text-amber-600 font-medium">-${(item.depreciationExpense ?? 0).toLocaleString()}</td>
-                                            <td className="px-6 py-3 text-right font-mono text-slate-400">${(item.accumulatedDepreciation ?? 0).toLocaleString()}</td>
+                                            <td className="px-6 py-3 text-right font-mono text-slate-600">{currencySym()}{(item.openingBookValue ?? 0).toLocaleString()}</td>
+                                            <td className="px-6 py-3 text-right font-mono text-amber-600 font-medium">-{currencySym()}{(item.depreciationExpense ?? 0).toLocaleString()}</td>
+                                            <td className="px-6 py-3 text-right font-mono text-slate-400">{currencySym()}{(item.accumulatedDepreciation ?? 0).toLocaleString()}</td>
                                             <td className="px-6 py-3 text-right font-mono font-bold text-slate-800 group-hover:text-blue-600 transition">
-                                                ${(item.closingBookValue ?? 0).toLocaleString()}
+                                                {currencySym()}{(item.closingBookValue ?? 0).toLocaleString()}
                                             </td>
                                         </tr>
                                     ))}
@@ -216,12 +217,12 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
 
                                 <div className="space-y-3 mb-4">
                                     <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Acquisition Cost ($)</label>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Acquisition Cost ({currencySym()})</label>
                                         <input type="number" value={capCost} onChange={e => setCapCost(parseFloat(e.target.value))} className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Salvage ($)</label>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Salvage ({currencySym()})</label>
                                             <input type="number" min={0} value={capSalvage} onChange={e => setCapSalvage(parseFloat(e.target.value))} className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
                                         </div>
                                         <div>
@@ -282,7 +283,7 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                 </div>
                                 <div className="flex justify-between items-end mt-2">
                                     <div>
-                                        <div className="font-mono font-bold text-slate-700 text-lg">${(book.currentValue ?? 0).toLocaleString()}</div>
+                                        <div className="font-mono font-bold text-slate-700 text-lg">{currencySym()}{(book.currentValue ?? 0).toLocaleString()}</div>
                                         <div className="text-xs text-slate-500">{book.depreciationMethod.replace(/_/g, ' ')}</div>
                                     </div>
                                     <div className="text-right">
