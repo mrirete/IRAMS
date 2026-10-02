@@ -11,12 +11,12 @@ import {
     readingTypeOf, isStrategyPackageFile, strategyPackageOf, type CockpitFile,
 } from './inbound';
 import { renderCsv } from './dialect';
-import { structureSpec, fileNameOf, type CockpitObjectKey } from './structures';
+import { structureSpec, fileNameOf, COCKPIT_OBJECT_BY_KEY, type CockpitObjectKey } from './structures';
 
 /** A file as it sits in a downloaded folder, with rows under the real header. */
 const file = (object: CockpitObjectKey, structure: string, rows: string[][], folder = true): CockpitFile => {
     const spec = structureSpec(object, structure)!;
-    const objectName = { measuringPoint: 'PM - Measuring point', measurementDocument: 'PM - Measurement document', maintenancePlan: 'PM - Maintenance plan', maintenanceItem: 'PM - Maintenance item', generalTaskList: 'PM - General maintenance task list' }[object];
+    const objectName = COCKPIT_OBJECT_BY_KEY[object].name;
     return {
         name: `${folder ? `Source data for ${objectName}/` : ''}${fileNameOf(spec)}`,
         // Rows go through the codec's own writer, so a cell holding a decimal

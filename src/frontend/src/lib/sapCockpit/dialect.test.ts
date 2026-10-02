@@ -169,7 +169,7 @@ describe('the registry is what SAP handed out', () => {
 
     it('lists the predecessors the cockpit lists, and no more', () => {
         const plan = COCKPIT_OBJECT_BY_KEY.maintenancePlan;
-        expect(plan.predecessors).toHaveLength(plan.predecessorCount);
+        expect(plan.predecessors).toHaveLength(plan.predecessorCount!);
         expect(plan.predecessors).toContain('PM - Measuring point');
         // A measurement document needs its point loaded first; the list itself
         // has not been read off the cockpit, so only the count is recorded.

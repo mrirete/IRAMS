@@ -190,7 +190,7 @@ describe('Migration Cockpit sheets', () => {
 describe('S_TEXTS_FL → the asset description', () => {
   it('fills description from the sibling text sheet, first language wins, never over a value already there', () => {
     const p = SAP_PROFILES.find(x => x.name === 'SAP functional locations (cockpit)')!;
-    const rows = [
+    const rows: Record<string, string>[] = [
       { tag: 'SYS-300-BLR', name: 'Boiler system' },
       { tag: 'SYS-300-FWS', name: 'Feedwater system', description: 'kept' },
       { tag: 'SYS-300-NIL', name: 'No text' },
