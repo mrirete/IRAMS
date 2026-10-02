@@ -74,6 +74,7 @@ describe('values as SAP writes them', () => {
 
     it('pads times and rejects nonsense', () => {
         expect(fromSapTime('7:05')).toBe('07:05:00');
+        expect(fromSapTime('070500')).toBe('07:05:00');     // SAP's internal TIMS
         expect(fromSapTime('07:05:32')).toBe('07:05:32');
         expect(fromSapTime('')).toBe('');
     });

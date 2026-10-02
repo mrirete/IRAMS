@@ -34,7 +34,7 @@ import type { CockpitIssue } from './inbound';
 import type { SapLoadSource, SrcAsset, SrcSchedule } from '../sapLoad/build';
 import { objectClassOf } from '../../eam/services/hierarchyModel';
 import { addCadence, sapCycleUnit, isMeterUnit, type Cadence, type CadenceUnit } from '../../eam/lib/sapCycles';
-import { toSapDate, toSapTime, todaySapDate } from '../sapLoad/build';
+import { toSapDate } from '../sapLoad/build';
 import { SAP_ILART_MAP, SAP_PRIOK_MAP } from '../../eam/services/assetTemplates';
 import { scheduleChange, cadenceText, revisionText, type ScheduleChange } from './handover';
 
@@ -88,7 +88,8 @@ export interface CockpitExportParams {
     equipmentCategory?: string;
     /**
      * DATAB, the valid-from date SAP wants on every equipment, when the asset
-     * has no acquisition date of its own. DD.MM.YYYY. Defaults to today.
+     * has no acquisition date of its own. Any of YYYYMMDD, YYYY-MM-DD or
+     * DD.MM.YYYY; written as YYYYMMDD. Defaults to today.
      */
     validFrom?: string;
     /** SPRAS on every long text — the language key the texts are written in. Defaults to EN. */
@@ -193,6 +194,35 @@ class Issues {
 }
 
 const s = (v: unknown): string => (v == null ? '' : String(v)).trim();
+
+/**
+ * SAP's internal date: YYYYMMDD, no separators. The dotted DD.MM.YYYY is a
+ * display format — a user's logon setting — and the cockpit's staging fields
+ * are DATS: the sample S_EQUI received held DATAB and INBDT as eight-digit
+ * numbers (which is why Excel showed them as 2E+07). Takes ISO, dotted or
+ * already-compact input; anything else passes through for SAP to reject.
+ */
+export function cockpitDate(v: string | null | undefined): string {
+    const x = s(v);
+    if (!x) return '';
+    const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(x);
+    if (iso) return `${iso[1]}${iso[2]}${iso[3]}`;
+    const dmy = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(x);
+    if (dmy) return `${dmy[3]}${dmy[2]}${dmy[1]}`;
+    return x;
+}
+
+/** SAP's internal time: HHMMSS, no separators. Takes HH:MM, HH:MM:SS or HHMMSS. */
+export function cockpitTime(v: string | null | undefined): string {
+    const x = s(v);
+    if (!x) return '';
+    if (/^\d{6}$/.test(x)) return x;
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(x);
+    return m ? `${m[1].padStart(2, '0')}${m[2]}${m[3] ?? '00'}` : x;
+}
+
+const todayCockpitDate = (d = new Date()): string =>
+    `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 
 /** SAP field lengths worth enforcing on the load — the cockpit rejects longer values. */
 const LENGTHS: Record<string, number> = {
@@ -379,7 +409,7 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
                 // cockpit maps on load); blank = external (EQUNR IS the number).
                 NRANGE_IND: params.numbering === 'internal' ? 'X' : '',
                 EQTYP: s(params.equipmentCategory),
-                DATAB: toSapDate(fin?.acquisition_date) || s(params.validFrom) || todaySapDate(),
+                DATAB: cockpitDate(fin?.acquisition_date) || cockpitDate(params.validFrom) || todayCockpitDate(),
                 EQKTX: s(a.name) || s(a.tag),
                 TECHID: s(a.tag),
                 EQART: s(a.asset_class || a.asset_type_code).toUpperCase(),
@@ -387,7 +417,7 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
                 INVNR: s(props.inventoryNumber ?? props.inventory_number),
                 TPLNR: floc ? s(floc.tag) : '',
                 HEQUI: parent && objectClassOf(parent) === 'EQUIPMENT' ? objectOf(parent).ref : '',
-                ANSDT: toSapDate(fin?.acquisition_date), ANSWT: cost,
+                ANSDT: cockpitDate(fin?.acquisition_date), ANSWT: cost,
                 WAERS: cost ? s(company.get(s(a.company_id))?.currency) : '',
                 ...common(a),
             });
@@ -451,8 +481,8 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
         docs.add({
             MEASUREMENT_DOCUMENT: fromSap(l.source_system) && s(l.source_ref) ? s(l.source_ref) : l.id,
             MEASUREMENT_POINT: key,
-            READING_DATE: toSapDate(l.reading_date),
-            READING_TIME: toSapTime(l.reading_time ?? ''),
+            READING_DATE: cockpitDate(l.reading_date),
+            READING_TIME: cockpitTime(l.reading_time ?? ''),
             SHORT_TEXT: s(l.comments),
             READ_BY: s(l.entered_by),
             READING: s(l.reading_value),
@@ -560,7 +590,7 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
         mpla.add({
             WARPL: warpl, MPTYP: 'PM', WPTXT: title,
             ZYKL1: String(cadence.interval), ZEIEH: SAP_UNIT[cadence.unit],
-            STADT: start ? toSapDate(start) : '',
+            STADT: start ? cockpitDate(start) : '',
             HORIZ: '', CALL_CONFIRM: '',
         });
         if (meter) issues.add('warn', `schedule(s) run on a meter (${cadence.unit}) — exported with the cycle in that unit; SAP needs the plan tied to a counter measuring point (POINT), which must be set on load`);

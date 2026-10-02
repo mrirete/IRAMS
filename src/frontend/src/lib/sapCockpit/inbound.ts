@@ -220,9 +220,11 @@ export function fromSapDate(v: string): string {
     return compact ? `${compact[1]}-${compact[2]}-${compact[3]}` : '';
 }
 
-/** HH:MM:SS / HH:MM -> HH:MM:SS. Blank stays blank. */
+/** HHMMSS (SAP's internal time), HH:MM:SS or HH:MM -> HH:MM:SS. Blank stays blank. */
 export function fromSapTime(v: string): string {
     const s = (v ?? '').trim();
+    const compact = /^(\d{2})(\d{2})(\d{2})$/.exec(s);
+    if (compact) return `${compact[1]}:${compact[2]}:${compact[3]}`;
     if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return '';
     const parts = s.split(':');
     while (parts.length < 3) parts.push('00');

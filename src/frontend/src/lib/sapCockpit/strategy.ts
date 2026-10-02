@@ -36,7 +36,7 @@
  * worse than no schedule: it generates work orders on a rhythm nobody chose.
  */
 
-import { type CockpitIssue, type CockpitSet, type StrategyPackage, assetTagOf } from './inbound';
+import { type CockpitIssue, type CockpitSet, type StrategyPackage, assetTagOf, fromSapDate } from './inbound';
 import { type CockpitObjectKey } from './structures';
 import {
     parseSapCycle, isMeterUnit, addCadence, cadenceLabel, shortest, type Cadence,
@@ -309,10 +309,9 @@ export function toStrategyRows(set: CockpitSet): StrategyImport {
         if (planBound) { row.plan = s(r.WARPL); if (s(plan?.WPTXT)) row.plantext = s(plan?.WPTXT); }
         if (strategy) row.strategy = strategy;
 
-        const start = s(plan?.STADT);
-        if (start) {
-            const iso = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(start);
-            const startIso = iso ? `${iso[3]}-${iso[2]}-${iso[1]}` : start;
+        // STADT as SAP writes it (YYYYMMDD), or dotted, or ISO.
+        const startIso = fromSapDate(s(plan?.STADT));
+        if (startIso) {
             const next = addCadence(startIso, cadence);
             if (next) row.nextduedate = next;
         }

@@ -15,7 +15,7 @@ import { structureSpec } from './structures';
 import { parseCockpitCsv } from './dialect';
 import type { SapLoadSource } from '../sapLoad/build';
 
-const PARAMS: CockpitExportParams = { ...defaultExportParams(), planningPlant: '102A', plant: '102A', orderType: 'PM01', maintenancePlant: '102A', structureIndicator: 'YB01', companyCode: '1030', plannerGroup: 'A01', validFrom: '01.10.2026' };
+const PARAMS: CockpitExportParams = { ...defaultExportParams(), planningPlant: '102A', plant: '102A', orderType: 'PM01', maintenancePlant: '102A', structureIndicator: 'YB01', companyCode: '1030', plannerGroup: 'A01', validFrom: '2026-10-01' };
 
 function fixture(): SapLoadSource {
     return {
@@ -95,10 +95,10 @@ describe('files in the cockpit’s own shape', () => {
         const x = buildCockpitExport(fixture(), PARAMS);
         const rows = rowsOf(fileOf(x, 'S_MEASUREMENT_DOCU')!.text);
         expect(rows).toHaveLength(3);
-        expect(rows[0]).toBe('l1,d-vib,14.02.2026,07:05:00,Route 12,j.tech,,,4.2,,VIBR,,,,,,,,,,,,,,,,,');
-        expect(rows[1]).toMatch(/^l2,d-hrs,31.01.2026,,,,,,48210,720,/);
+        expect(rows[0]).toBe('l1,d-vib,20260214,070500,Route 12,j.tech,,,4.2,,VIBR,,,,,,,,,,,,,,,,,');   // DATS / TIMS: no separators
+        expect(rows[1]).toMatch(/^l2,d-hrs,20260131,,,,,,48210,720,/);
         // Taken in IREAMS on a point SAP already has: loaded, against SAP's point number.
-        expect(rows[2]).toMatch(/^l3,90000001,01.03.2026,/);
+        expect(rows[2]).toMatch(/^l3,90000001,20260301,/);
     });
 
     it('turns a new schedule into a task list, a plan and an item that reference each other', () => {
@@ -114,7 +114,7 @@ describe('files in the cockpit’s own shape', () => {
         expect(ops[0]).toMatch(/^IR000001,01,0010,MNMEC-PP,102A,PM01,Check bearing temperature,,,,,0.5,H,,1,/);
         expect(ops[1]).toMatch(/^IR000001,01,0020,MNMEC-PP,102A,PM01,Replace mechanical seal,,,,,4,H,,1,/);
         expect(comps).toEqual(['IR000001,01,0020,MAT-000123,2,EA,,,']);   // the part sits on the step it was planned for
-        expect(plan).toEqual(['PM-P101A-R01,,PM,,Feed pump monthly service,,,,,,,,,,,,,01.02.2026,,,,,1,,MON,,,']);
+        expect(plan).toEqual(['PM-P101A-R01,,PM,,Feed pump monthly service,,,,,,,,,,,,,20260201,,,,,1,,MON,,,']);
         expect(item[0]).toMatch(/^PM-P101A-R01,0010,Feed pump monthly service,,10004711,,102A,PM01,,MNMEC-PP,102A,,002,,2,/);
         expect(item[0]).toMatch(/,A,IR000001,01,,,$/);
         expect(objl).toEqual(['PM-P101A-R01,0010,1,,,,10004712,,']);   // the second assigned asset
@@ -158,7 +158,7 @@ describe('the register, in the cockpit’s own names', () => {
         const x = buildCockpitExport(fixture(), { ...PARAMS, measuringPointCategory: 'M' });   // the point category is the only other blank SAP would reject
         const pump = rowObj(x, 'S_EQUI', 1);   // rows sort by depth then tag: FAN-301 before P-101A
         expect(pump).toMatchObject({
-            EQUNR: '10004711', NRANGE_IND: '', EQTYP: 'M', DATAB: '01.10.2026',
+            EQUNR: '10004711', NRANGE_IND: '', EQTYP: 'M', DATAB: '20261001',
             EQKTX: 'Feed pump', TECHID: 'P-101A', TPLNR: 'SYS-300-BLR', HEQUI: '',
             SWERK: '102A', IWERK: '102A', BUKRS: '1030', ABCKZ: 'A',
         });
