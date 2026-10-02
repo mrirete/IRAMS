@@ -301,6 +301,31 @@ option {
 .ers-page-record { max-width: var(--ers-page-record); margin-inline: auto; }
 .ers-page-wide   { max-width: var(--ers-page-wide);   margin-inline: auto; }
 
+/* Primary page action. Six pages used `btn-primary` while nothing defined it,
+   so their main button rendered as bare text. Same look as ASSESS_PRIMARY_BTN
+   (components/audit/AssessLayout.tsx). In the components layer so a utility
+   class on the same element still wins. */
+@layer components {
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.625rem 1rem;
+    border-radius: 0.75rem;
+    background: var(--color-primary-600);
+    color: #fff;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+    transition: background-color 150ms ease;
+  }
+  .btn-primary:hover { background: var(--color-primary-700); }
+  .btn-primary:focus-visible { outline: 2px solid var(--color-primary-300); outline-offset: 2px; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
 /* ── Responsive Table Wrapper ── */
 .table-responsive {
   overflow-x: auto;

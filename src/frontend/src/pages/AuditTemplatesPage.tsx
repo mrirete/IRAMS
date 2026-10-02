@@ -13,15 +13,16 @@
  * ═══════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    FileText, Search,
-    ChevronRight, ChevronDown, CheckCircle,
+    FileText,
+    ChevronDown, CheckCircle,
     ClipboardCheck, Shield, Wrench, Lock,
     Download, Tag, ListChecks, PlayCircle, Info,
 } from 'lucide-react';
 import { PreviewBanner } from '../components/common/PreviewBanner';
+import { AssessPage, AssessHeader, StatStrip, ASSESS_PRIMARY_BTN, ASSESS_SECONDARY_BTN, onActivate } from '../components/audit/AssessLayout';
 import { ISO55001_TEMPLATE, ISO55001_SECTIONS } from '../eam/data/audit-templates/iso55001';
 import { PSM14_TEMPLATE, PSM14_SECTIONS } from '../eam/data/audit-templates/psm14';
 import { API_RBI_TEMPLATE, API_RBI_SECTIONS } from '../eam/data/audit-templates/apiRbi';
@@ -107,16 +108,8 @@ const ENGINE_DOCUMENTS = DEFAULT_DOCUMENTS.length;            // 21
 // ─── Page ────────────────────────────────────────────────────
 export const AuditTemplatesPage: React.FC = () => {
     const navigate = useNavigate();
-    const [search, setSearch] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState<string>('');
+    // Three built-in scopes fit on one screen — no search or category filter.
     const [expandedId, setExpandedId] = useState<string | null>(null);
-
-    const filtered = useMemo(() => SCOPES.filter(t => {
-        const q = search.toLowerCase();
-        const matchSearch = !q || t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q) || t.isoReference.toLowerCase().includes(q);
-        const matchCat = !categoryFilter || t.category === categoryFilter;
-        return matchSearch && matchCat;
-    }), [search, categoryFilter]);
 
     /** Start an assessment framed by this scope: presets objective + reference on the intake. */
     const handleStart = useCallback((scope: AssessmentScope) => {
@@ -147,89 +140,55 @@ export const AuditTemplatesPage: React.FC = () => {
     const totalQuestions = SCOPES.reduce((s, t) => s + t.questionCount, 0);
 
     return (
-        <div className="h-full overflow-y-auto p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-black text-slate-800">Assessment Scopes</h1>
-                    <p className="text-sm text-slate-500 mt-1">What an assessment is framed against — ISO 55001, PSM, Mechanical Integrity</p>
-                </div>
-            </div>
+        <AssessPage>
+            <AssessHeader
+                title="Assessment Scopes"
+                subtitle="What an assessment is framed against — ISO 55001, PSM, Mechanical Integrity"
+            />
 
-            <div className="mb-6">
-                <PreviewBanner message={`Every assessment runs the same engine: the ${ENGINE_QUESTIONS}-question maturity checklist and the ${ENGINE_DOCUMENTS}-document readiness check. A scope presets the objective and standard, and its clause-level question bank is the assessor's reference during the maturity step. Custom scopes are on the roadmap.`} />
-            </div>
+            <PreviewBanner message={`Every assessment runs the same engine: the ${ENGINE_QUESTIONS}-question maturity checklist and the ${ENGINE_DOCUMENTS}-document readiness check. A scope presets the objective and standard, and its clause-level question bank is the assessor's reference during the maturity step. Custom scopes are on the roadmap.`} />
 
-            {/* KPI Bar */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <KpiCard label="Scopes" value={SCOPES.length} color="#6366f1" />
-                <KpiCard label="Reference questions" value={totalQuestions} color="#06b6d4" />
-                <KpiCard label="Engine questions" value={ENGINE_QUESTIONS} color="#8b5cf6" />
-                <KpiCard label="Readiness documents" value={ENGINE_DOCUMENTS} color="#22c55e" />
-            </div>
-
-            {/* Filters */}
-            <div className="flex gap-3 mb-4">
-                <div className="flex-1 relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder="Search scopes..."
-                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-400"
-                    />
-                </div>
-                <select
-                    value={categoryFilter}
-                    onChange={e => setCategoryFilter(e.target.value)}
-                    className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700"
-                >
-                    <option value="">All Categories</option>
-                    {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
-                        <option key={key} value={key}>{cfg.label}</option>
-                    ))}
-                </select>
-            </div>
+            <StatStrip stats={[
+                { key: 'scopes', label: 'Scopes', value: SCOPES.length },
+                { key: 'ref', label: 'Reference questions', value: totalQuestions, tone: 'sky' },
+                { key: 'engine', label: 'Engine questions', value: ENGINE_QUESTIONS, tone: 'violet' },
+                { key: 'docs', label: 'Readiness documents', value: ENGINE_DOCUMENTS, tone: 'green' },
+            ]} />
 
             {/* Scope Cards */}
-            {filtered.length === 0 ? (
-                <div className="text-center py-20">
-                    <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                        <FileText size={28} className="text-slate-300" />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-600 mb-2">No scopes match</h3>
-                    <p className="text-sm text-slate-400">Adjust the search or category filter</p>
-                </div>
-            ) : (
-                <div className="space-y-3">
-                    {filtered.map(t => {
+            <div className="space-y-3">
+                    {SCOPES.map(t => {
                         const cat = CATEGORY_CONFIG[t.category];
                         const isExpanded = expandedId === t.id;
+                        const toggle = () => setExpandedId(isExpanded ? null : t.id);
                         return (
                             <div
                                 key={t.id}
-                                className={`border border-l-4 ${cat.border} rounded-xl transition-all group overflow-hidden ${
-                                    isExpanded ? `ring-1 ${cat.ring} shadow-lg` : 'border-slate-200 hover:shadow-md hover:border-slate-300'
+                                className={`bg-white border border-l-4 ${cat.border} rounded-xl transition-all overflow-hidden ${
+                                    isExpanded ? `ring-1 ${cat.ring} shadow-lg` : 'border-slate-200 hover:shadow-sm hover:border-slate-300'
                                 }`}
                             >
                                 <div
-                                    className={`flex items-start justify-between p-5 cursor-pointer bg-gradient-to-r ${cat.gradient}`}
-                                    onClick={() => setExpandedId(isExpanded ? null : t.id)}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-expanded={isExpanded}
+                                    className={`flex items-start gap-3 sm:gap-4 px-4 sm:px-5 py-4 cursor-pointer bg-gradient-to-r ${cat.gradient} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300`}
+                                    onClick={toggle}
+                                    onKeyDown={onActivate(toggle)}
                                 >
-                                    <div className="flex items-start gap-4 flex-1 min-w-0">
-                                        <div className={`w-12 h-12 rounded-xl ${cat.iconBg} flex items-center justify-center shrink-0 text-white shadow-md`}>
+                                        <div className={`hidden sm:flex w-11 h-11 rounded-xl ${cat.iconBg} items-center justify-center shrink-0 text-white shadow-sm`}>
                                             {cat.icon}
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                <h3 className="text-sm font-bold text-slate-800">{t.name}</h3>
-                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 flex items-center gap-0.5">
-                                                    <Lock size={8} /> BUILT-IN
+                                                <h3 className="text-[15px] font-bold text-slate-800">{t.name}</h3>
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 flex items-center gap-0.5">
+                                                    <Lock size={9} /> Built-in
                                                 </span>
                                             </div>
-                                            <p className="text-xs text-slate-500 line-clamp-2 mb-3">{t.description}</p>
+                                            <p className="text-sm text-slate-500 line-clamp-2 mb-3">{t.description}</p>
 
-                                            <div className="flex items-center gap-3 text-[11px] flex-wrap">
+                                            <div className="flex items-center gap-2 text-[11px] flex-wrap">
                                                 <span className={`${cat.bg} ${cat.color} px-2 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wide`}>{cat.label}</span>
                                                 <span className="flex items-center gap-1 text-slate-500 bg-slate-100 px-2 py-1 rounded-lg"><Tag size={10} /> v{t.version}</span>
                                                 <span className="flex items-center gap-1 text-slate-500 bg-slate-100 px-2 py-1 rounded-lg"><ListChecks size={10} /> {t.sections.length} sections</span>
@@ -237,26 +196,21 @@ export const AuditTemplatesPage: React.FC = () => {
                                                 <span className="flex items-center gap-1 text-slate-400"><Info size={10} /> {t.isoReference}</span>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    <div className="flex items-center gap-2 ml-3">
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                            <button onClick={() => handleStart(t)} className={`p-2 rounded-lg hover:${cat.bg} text-slate-400 ${cat.color.replace('text-', 'hover:text-')} transition-colors`} title="Start an assessment with this scope">
-                                                <PlayCircle size={16} />
-                                            </button>
-                                            <button onClick={() => handleExport(t)} className="p-2 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="Export question bank (JSON)">
-                                                <Download size={16} />
-                                            </button>
-                                        </div>
-                                        {isExpanded
-                                            ? <ChevronDown size={16} className={cat.color} />
-                                            : <ChevronRight size={16} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
-                                        }
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                            onClick={e => { e.stopPropagation(); handleStart(t); }}
+                                            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:border-primary-300 hover:text-primary-700 transition-colors"
+                                            title="Start an assessment with this scope"
+                                        >
+                                            <PlayCircle size={14} /> Start
+                                        </button>
+                                        <ChevronDown size={18} className={`transition-transform ${isExpanded ? `rotate-180 ${cat.color}` : 'text-slate-400'}`} />
                                     </div>
                                 </div>
 
                                 {isExpanded && (
-                                    <div className={`border-t px-5 pb-5 bg-gradient-to-b ${cat.gradient}`} style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+                                    <div className="border-t border-slate-100 px-4 sm:px-5 pb-5 bg-white">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
                                             <div>
                                                 <h4 className={`text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${cat.color}`}>
@@ -274,7 +228,7 @@ export const AuditTemplatesPage: React.FC = () => {
                                             </div>
                                             <div>
                                                 <h4 className={`text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${cat.color}`}>
-                                                    <FileText size={13} /> Reference questions (first of each section)
+                                                    <FileText size={13} /> Sample reference questions
                                                 </h4>
                                                 <div className="space-y-2">
                                                     {t.sections.slice(0, 5).map(s => s.questions[0]).filter(Boolean).map(q => (
@@ -286,34 +240,21 @@ export const AuditTemplatesPage: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-3 mt-5 pt-4 border-t border-slate-200/60">
-                                            <button onClick={() => handleStart(t)} className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-lg text-sm flex items-center gap-2 hover:shadow-lg hover:scale-[1.02] transition-all">
+                                        <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t border-slate-100">
+                                            <button onClick={() => handleStart(t)} className={ASSESS_PRIMARY_BTN}>
                                                 <PlayCircle size={16} /> Start assessment with this scope
                                             </button>
-                                            <button onClick={() => handleExport(t)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors">
+                                            <button onClick={() => handleExport(t)} className={ASSESS_SECONDARY_BTN}>
                                                 <Download size={14} /> Export question bank
                                             </button>
-                                            <div className="flex-1" />
-                                            <span className="text-[11px] text-slate-400">{t.isoReference} · v{t.version}</span>
+                                            <span className="sm:ml-auto text-[11px] text-slate-400">{t.isoReference} · v{t.version}</span>
                                         </div>
                                     </div>
                                 )}
                             </div>
                         );
                     })}
-                </div>
-            )}
-        </div>
+            </div>
+        </AssessPage>
     );
 };
-
-// ─── Shared Widgets ──────────────────────────────────────────
-
-function KpiCard({ label, value, color }: { label: string; value: string | number; color: string }) {
-    return (
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
-            <p className="text-2xl font-black mt-1" style={{ color }}>{value}</p>
-        </div>
-    );
-}

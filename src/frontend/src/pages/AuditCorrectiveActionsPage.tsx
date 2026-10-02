@@ -23,6 +23,7 @@ import { buildWorkOrder } from '../eam/lib/workOrder';
 import { useToast } from '../eam/contexts/ToastContext';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import type { AuditCorrectiveAction, AuditCAStatus, CAType } from '../types/audit';
+import { AssessPage, AssessHeader, StatStrip, ASSESS_PRIMARY_BTN } from '../components/audit/AssessLayout';
 
 const TYPE_CONFIG: Record<CAType, { label: string; color: string; bg: string; border: string; icon: React.ReactNode }> = {
     corrective: { label: 'Corrective', color: 'text-red-700', bg: 'bg-red-50', border: 'border-l-red-500', icon: <AlertTriangle size={14} /> },
@@ -83,7 +84,12 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
             || (a.assigned_to_name || '').toLowerCase().includes(q)
             || a.ca_number.toLowerCase().includes(q);
         const matchType = !typeFilter || a.action_type === typeFilter;
-        const matchStatus = !statusFilter || (statusFilter === 'overdue' ? isOverdue(a) : a.status === statusFilter);
+        // 'active' / 'closed' are the stat strip's groupings; the rest are single statuses.
+        const matchStatus = !statusFilter
+            || (statusFilter === 'overdue' ? isOverdue(a)
+                : statusFilter === 'active' ? (a.status === 'open' || a.status === 'in_progress')
+                    : statusFilter === 'closed' ? (a.status === 'completed' || a.status === 'verified')
+                        : a.status === statusFilter);
         return matchSearch && matchType && matchStatus;
     }), [actions, search, typeFilter, statusFilter]);
 
@@ -156,29 +162,28 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
         setConvertBusy(false);
     };
 
-    return (
-        <div className="h-full overflow-y-auto p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-black text-slate-800">Corrective Actions</h1>
-                    <p className="text-sm text-slate-500 mt-1">ISO 55001 §10.1 — Nonconformity tracking, remediation & WO conversion</p>
-                </div>
-                <button onClick={() => setShowNew(true)} className="btn-primary"><Plus size={16} className="mr-2" />Log Corrective Action</button>
-            </div>
+    const toggleStatus = (key: string) => setStatusFilter(f => (f === key ? '' : key));
 
-            {/* KPI Bar */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-                <KpiCard label="Total Actions" value={counts.total} color="#6366f1" />
-                <KpiCard label="Open / Active" value={counts.open} color="#f59e0b" />
-                <KpiCard label="Overdue" value={counts.overdue} color="#ef4444" />
-                <KpiCard label="Closed" value={counts.closed} color="#22c55e" />
-                <KpiCard label="Linked to WO" value={counts.withWo} color="#0ea5e9" />
-            </div>
+    return (
+        <AssessPage>
+            <AssessHeader
+                title="Corrective Actions"
+                subtitle="ISO 55001 §10.1 — nonconformity tracking, remediation and work-order conversion"
+                actions={<button onClick={() => setShowNew(true)} className={ASSESS_PRIMARY_BTN}><Plus size={16} />Log corrective action</button>}
+            />
+
+            {/* Figures double as filters */}
+            <StatStrip stats={[
+                { key: 'all', label: 'All actions', value: counts.total, onClick: () => setStatusFilter(''), active: !statusFilter },
+                { key: 'active', label: 'Open / active', value: counts.open, tone: 'amber', onClick: () => toggleStatus('active'), active: statusFilter === 'active' },
+                { key: 'overdue', label: 'Overdue', value: counts.overdue, tone: 'red', onClick: () => toggleStatus('overdue'), active: statusFilter === 'overdue' },
+                { key: 'closed', label: 'Closed', value: counts.closed, tone: 'green', onClick: () => toggleStatus('closed'), active: statusFilter === 'closed' },
+                { key: 'wo', label: 'Linked to a WO', value: counts.withWo, tone: 'sky' },
+            ]} />
 
             {/* Filters */}
-            <div className="flex gap-3 mb-4">
-                <div className="flex-1 relative">
+            <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 relative min-w-0">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                         value={search}
@@ -187,18 +192,22 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                         className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-400"
                     />
                 </div>
-                <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700">
+                <div className="flex gap-3 min-w-0">
+                <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} aria-label="Type" className="flex-1 min-w-0 sm:flex-none px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700">
                     <option value="">All Types</option>
                     {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
                         <option key={key} value={key}>{cfg.label}</option>
                     ))}
                 </select>
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700">
-                    <option value="">All Status</option>
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} aria-label="Status" className="flex-1 min-w-0 sm:flex-none px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700">
+                    <option value="">All statuses</option>
+                    <option value="active">Open / active</option>
+                    <option value="closed">Closed (done + verified)</option>
                     {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
                         <option key={key} value={key}>{cfg.label}</option>
                     ))}
                 </select>
+                </div>
             </div>
 
             {/* Action Items */}
@@ -207,15 +216,18 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                     <Loader2 size={24} className="animate-spin mr-2" /> Loading corrective actions…
                 </div>
             ) : filtered.length === 0 ? (
-                <div className="text-center py-20">
-                    <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                        <CheckCircle size={28} className="text-slate-300" />
+                <div className="text-center py-16 bg-white border border-dashed border-slate-200 rounded-xl">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle size={24} className="text-slate-300" />
                     </div>
-                    <h3 className="text-lg font-bold text-slate-600 mb-2">No corrective actions</h3>
-                    <p className="text-sm text-slate-400">{actions.length === 0 ? 'Log the first corrective action to start tracking nonconformities' : 'Adjust your filters'}</p>
+                    <h3 className="text-base font-bold text-slate-700 mb-1">{actions.length === 0 ? 'No corrective actions yet' : 'Nothing matches'}</h3>
+                    <p className="text-sm text-slate-500 mb-5">{actions.length === 0 ? 'Actions raised from assessment findings land here, or log one directly.' : 'Try another search, type or status.'}</p>
+                    {actions.length === 0
+                        ? <button onClick={() => setShowNew(true)} className={ASSESS_PRIMARY_BTN}><Plus size={16} />Log corrective action</button>
+                        : <button onClick={() => { setSearch(''); setTypeFilter(''); setStatusFilter(''); }} className="text-sm text-primary-600 hover:underline font-semibold">Clear filters</button>}
                 </div>
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                     {filtered.map(action => {
                         const typeCfg = TYPE_CONFIG[action.action_type] || TYPE_CONFIG.corrective;
                         const overdue = isOverdue(action);
@@ -225,21 +237,21 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                         return (
                             <div
                                 key={action.id}
-                                className={`bg-white border border-slate-200 border-l-4 ${typeCfg.border} rounded-xl p-5 hover:shadow-md hover:border-slate-300 transition-all ${overdue ? 'ring-1 ring-red-200' : ''}`}
+                                className={`bg-white border border-slate-200 border-l-4 ${typeCfg.border} rounded-xl px-4 sm:px-5 py-4 hover:shadow-sm hover:border-slate-300 transition-all ${overdue ? 'ring-1 ring-red-200' : ''}`}
                             >
-                                <div className="flex items-start gap-4">
-                                    <div className={`w-10 h-10 rounded-xl ${typeCfg.bg} flex items-center justify-center shrink-0 ${typeCfg.color}`}>
+                                <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+                                    <div className={`hidden sm:flex w-10 h-10 rounded-xl ${typeCfg.bg} items-center justify-center shrink-0 ${typeCfg.color}`}>
                                         {typeCfg.icon}
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                                             <span className="text-xs font-mono text-slate-400">{action.ca_number}</span>
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase ${typeCfg.bg} ${typeCfg.color}`}>{typeCfg.label}</span>
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase ${stCfg.bg} ${stCfg.color}`}>{stCfg.label}</span>
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase ${typeCfg.bg} ${typeCfg.color}`}>{typeCfg.label}</span>
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase ${stCfg.bg} ${stCfg.color}`}>{stCfg.label}</span>
                                             {action.wo_id && (
                                                 <button
                                                     onClick={() => navigate(`/work-orders/${action.wo_id}`)}
-                                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-700 flex items-center gap-0.5 hover:bg-primary-200 transition-colors"
+                                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-700 flex items-center gap-0.5 hover:bg-primary-200 transition-colors"
                                                     title="Open work order"
                                                 >
                                                     <Wrench size={8} /> {action.wo_number || 'WO'} <ExternalLink size={8} />
@@ -247,8 +259,8 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                             )}
                                             {action.assessment_id && (
                                                 <button
-                                                    onClick={() => navigate('/audits')}
-                                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 flex items-center gap-0.5 hover:bg-violet-200 transition-colors"
+                                                    onClick={() => navigate(`/audits?open=${action.assessment_id}`)}
+                                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 flex items-center gap-0.5 hover:bg-violet-200 transition-colors"
                                                     title="Raised from a scored finding in the maturity assessment"
                                                 >
                                                     <Target size={8} /> {action.assessment_number || 'Assessment'} <ExternalLink size={8} />
@@ -256,7 +268,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                             )}
                                         </div>
                                         <p className="text-sm font-medium text-slate-800">{action.description}</p>
-                                        <div className="flex items-center gap-4 mt-2 text-[11px] text-slate-400 flex-wrap">
+                                        <div className="flex items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-500 flex-wrap">
                                             {action.assigned_to_name && (
                                                 <span className="flex items-center gap-1"><User size={10} /> {action.assigned_to_name}{action.assigned_to_company ? ` (${action.assigned_to_company})` : ''}</span>
                                             )}
@@ -274,12 +286,13 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                     </div>
 
                                     {/* Row actions */}
-                                    <div className="flex flex-col items-end gap-2 shrink-0">
+                                    <div className="flex flex-wrap sm:flex-col items-center sm:items-end gap-2 shrink-0">
                                         <select
                                             value={action.status}
                                             onChange={e => handleStatusChange(action, e.target.value as AuditCAStatus)}
-                                            className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:outline-none focus:border-primary-400"
+                                            className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:border-primary-400"
                                             title="Change status"
+                                            aria-label={`Status of ${action.ca_number}`}
                                         >
                                             {Object.entries(STATUS_CONFIG).filter(([k]) => k !== 'overdue').map(([key, cfg]) => (
                                                 <option key={key} value={key}>{cfg.label}</option>
@@ -308,7 +321,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                             ) : (
                                                 <button
                                                     onClick={() => { setConvertingId(action.id); setConvertAssetId(''); }}
-                                                    className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                                                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-primary-700 bg-primary-50 border border-primary-100 rounded-lg hover:bg-primary-100 transition-colors"
                                                 >
                                                     <Wrench size={11} /> Convert to WO
                                                 </button>
@@ -385,17 +398,6 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                     </div>
                 </div>
             )}
-        </div>
+        </AssessPage>
     );
 };
-
-// ─── Shared Widgets ──────────────────────────────────────────
-
-function KpiCard({ label, value, color }: { label: string; value: string | number; color: string }) {
-    return (
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
-            <p className="text-2xl font-black mt-1" style={{ color }}>{value}</p>
-        </div>
-    );
-}

@@ -93,13 +93,23 @@ async function fetchMeasuredSignals(): Promise<MeasuredSignals> {
     };
 }
 
-const VerdictChip: React.FC<{ v: DimensionGap['verdict'] }> = ({ v }) => (
-    v === 'supports'
-        ? <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full px-2 py-0.5"><CheckCircle2 size={10} /> data supports</span>
-        : v === 'questions'
-            ? <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-2 py-0.5"><AlertTriangle size={10} /> data questions</span>
-            : <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide bg-slate-50 text-slate-400 border border-slate-200 rounded-full px-2 py-0.5"><CircleDashed size={10} /> unmeasured</span>
-);
+/**
+ * "unmeasured" covers two different situations; the chip names which one, so a
+ * row that shows a measured figure never also says "unmeasured":
+ *  - not self-rated: the records were read, the intake left the group blank;
+ *  - no data yet:    nothing in the records measures this group.
+ */
+const VerdictChip: React.FC<{ gap: DimensionGap }> = ({ gap }) => {
+    const base = 'inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 border whitespace-nowrap';
+    if (gap.verdict === 'supports') return <span className={`${base} bg-emerald-50 text-emerald-700 border-emerald-100`}><CheckCircle2 size={10} /> data supports</span>;
+    if (gap.verdict === 'questions') return <span className={`${base} bg-amber-50 text-amber-700 border-amber-200`}><AlertTriangle size={10} /> data questions</span>;
+    const measured = gap.proxies.some(p => p.pct != null);
+    return gap.selfScore == null && measured
+        ? <span className={`${base} bg-slate-50 text-slate-500 border-slate-200`}><CircleDashed size={10} /> not self-rated</span>
+        : <span className={`${base} bg-slate-50 text-slate-400 border-slate-200`}><CircleDashed size={10} /> no data yet</span>;
+};
+
+const GRID = 'sm:grid sm:grid-cols-[13.5rem_minmax(0,1fr)_14rem] sm:gap-x-5 sm:items-center';
 
 export const MaturityGapCard: React.FC = () => {
     const navigate = useNavigate();
@@ -168,9 +178,15 @@ export const MaturityGapCard: React.FC = () => {
 
     return (
         <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
-                <Compass size={15} className="text-primary-600" />
-                <h3 className="text-sm font-bold text-slate-800 m-0">Operating context — what you said vs what the data shows</h3>
+            <div className="px-4 sm:px-5 pt-4 pb-3 flex flex-wrap items-start gap-x-3 gap-y-2">
+                <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 border border-primary-100 flex items-center justify-center shrink-0"><Compass size={16} /></span>
+                <div className="min-w-0 flex-1 basis-64">
+                    <h3 className="text-sm font-bold text-slate-800 m-0">Operating context — what you said vs what the data shows</h3>
+                    <p className="text-[11px] text-slate-400 m-0 mt-0.5">
+                        Self-reported in intake {state.assessmentNumber} on {new Date(state.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · measured from your live records
+                    </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
                 {state.wizardMaturity && (
                     <span className="text-[10px] font-bold bg-primary-50 text-primary-700 border border-primary-100 rounded-full px-2 py-0.5"
                         title="From the completed maturity checklist (scored answers), not the directional intake">
@@ -187,37 +203,43 @@ export const MaturityGapCard: React.FC = () => {
                         </span>
                     );
                 })()}
-                <span className="ml-auto text-[10px] text-slate-400">
-                    self-reported intake {state.assessmentNumber} · {new Date(state.createdAt).toLocaleDateString()} · measured from your live records
-                </span>
+                </div>
             </div>
-            <div className="divide-y divide-slate-50">
+            {/* Column heads — the say/do comparison reads left to right */}
+            <div className={`hidden ${GRID} px-5 py-1.5 bg-slate-50 border-y border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400`}>
+                <span>Group · you said</span>
+                <span>Your records show</span>
+                <span className="text-right">Verdict</span>
+            </div>
+            <div className="divide-y divide-slate-100 border-t border-slate-100 sm:border-t-0">
                 {state.gaps.map(g => (
-                    <div key={g.key} className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2">
-                        <div className="flex items-center gap-2 w-44 shrink-0">
-                            <span className="text-sm font-semibold text-slate-700 capitalize">{g.label}</span>
-                            <span className="text-[11px] font-mono text-slate-400">{g.selfScore != null ? `${g.selfScore}/5` : '—'}</span>
+                    <div key={g.key} title={g.note} className={`px-4 sm:px-5 py-3 flex flex-col gap-2 ${GRID}`}>
+                        <div className="flex items-center justify-between sm:justify-start gap-2 min-w-0">
+                            <span className="text-sm font-semibold text-slate-700">{g.label}</span>
+                            {g.selfScore != null
+                                ? <span className="text-[11px] font-bold tabular-nums text-slate-600 bg-slate-100 rounded-md px-1.5 py-0.5 shrink-0">{g.selfScore}/5</span>
+                                : <span className="text-[11px] text-slate-300 shrink-0">not rated</span>}
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0">
                             {g.proxies.map(p => (
-                                <span key={p.label} className="text-[11px] text-slate-500">{p.label}: <b className="text-slate-700">{p.display}</b></span>
+                                <span key={p.label} className="text-xs text-slate-500">{p.label} <b className="text-slate-800 tabular-nums">{p.display}</b></span>
                             ))}
-                            {g.proxies.length === 0 && <span className="text-[11px] text-slate-400 italic">covered by the evidence-based assessment</span>}
+                            {g.proxies.length === 0 && <span className="text-xs text-slate-400 italic">Covered by the evidence-based assessment</span>}
                         </div>
-                        <div className="shrink-0 flex items-center gap-2">
-                            <VerdictChip v={g.verdict} />
+                        <div className="flex flex-wrap items-center sm:justify-end gap-2">
                             {g.verdict === 'questions' && (
                                 <button onClick={() => navigate(DIMENSION_PATHS[g.key].path)}
-                                    className="text-[11px] font-semibold text-primary-600 hover:text-primary-800 inline-flex items-center gap-0.5">
+                                    className="text-[11px] font-semibold text-primary-600 hover:text-primary-800 inline-flex items-center gap-0.5 whitespace-nowrap">
                                     {DIMENSION_PATHS[g.key].label} <ArrowRight size={10} />
                                 </button>
                             )}
+                            <VerdictChip gap={g} />
                         </div>
                     </div>
                 ))}
             </div>
             {state.quickWins.length > 0 && (
-                <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                <div className="px-4 sm:px-5 py-2.5 bg-slate-50/60 border-t border-slate-100 flex flex-wrap items-center gap-2">
                     <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Quick wins from your intake</span>
                     {state.quickWins.map((q, i) => (
                         <button key={i} onClick={() => navigate(DIMENSION_PATHS[q.dimension].path)}
