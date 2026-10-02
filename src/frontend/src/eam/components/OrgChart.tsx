@@ -1,4 +1,17 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+/**
+ * Organisation chart — the unit hierarchy (Site → Division → Department →
+ * Section → Team, configurable) and who sits in each unit.
+ *
+ * Data: three reads on open — levels (getOrgLevels, with their metadata), units,
+ * and every person with ALL their memberships (getOrgPeople). It used to fire
+ * one contacts query per unit and saw only primary members.
+ *
+ * Writes: membership changes go through set_contact_org_units /
+ * set_primary_org_unit (0399a), so taking someone out of one unit never drops
+ * their other units. Every write affordance is hidden without contacts.edit —
+ * the database refuses those writes anyway.
+ */
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DatabaseService } from '../services/DatabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -6,45 +19,21 @@ import { OrganizationUnit } from '../types';
 import { OrgUnitModal } from './OrgUnitModal';
 import { AddMemberModal } from './modals/AddMemberModal';
 import {
-    Plus, Edit2, Trash2, Users, ChevronRight, UserPlus, UserMinus,
-    Settings, X, Smartphone, FolderOpen, Folder, Home, ArrowLeft,
-    MoreHorizontal, Building2, Network
+    Plus, Edit2, Trash2, Users, ChevronRight, ChevronDown, UserPlus, UserMinus,
+    Settings, X, Smartphone, FolderOpen, Folder, Home, ArrowLeft, Search,
+    Info, Network, UserCheck, AlertTriangle,
 } from 'lucide-react';
-import { Contact } from '../types';
-
 import { OrgUnitDetailsDrawer } from './OrgUnitDetailsDrawer';
 import { DraggableUserList } from './DraggableUserList';
 import { OrgLevelSettingsModal } from './OrgLevelSettingsModal';
+import { levelStyle, pluralLevel, unitsMoved, unitsWithout, type OrgLevel, type OrgPerson } from '../lib/orgLevels';
 
-// Type for ORG_LEVEL dictionary entry
-interface OrgLevel {
-    code: string;
-    description: string;
-    sortOrder: number;
-    color: string;
-    childType: string | null;
-    childLabel: string | null;
-}
+type ConfirmAction =
+    | { type: 'delete-unit'; unit: OrganizationUnit; message: string }
+    | { type: 'remove-member'; person: OrgPerson; unit: OrganizationUnit; message: string }
+    | { type: 'assign-anyway'; person: OrgPerson; unit: OrganizationUnit; fromUnitId?: string; message: string };
 
-// Color utility – maps level color names to Tailwind classes
-const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string; badge: string; accent: string; hover: string }> = {
-    '#3b82f6': { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60 dark:hover:bg-blue-900/40' },
-    '#8b5cf6': { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60 dark:hover:bg-blue-900/40' },
-    '#f59e0b': { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', badge: 'bg-amber-100 text-amber-700', accent: 'text-amber-600', hover: 'hover:bg-amber-100/60 dark:hover:bg-amber-900/40' },
-    '#10b981': { bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-100 text-emerald-700', accent: 'text-emerald-600', hover: 'hover:bg-emerald-100/60 dark:hover:bg-emerald-900/40' },
-    '#6366f1': { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60 dark:hover:bg-blue-900/40' },
-    // Legacy named colors
-    indigo: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60' },
-    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60' },
-    green: { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800', badge: 'bg-green-100 text-green-700', accent: 'text-green-600', hover: 'hover:bg-green-100/60' },
-    purple: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60' },
-    amber: { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', badge: 'bg-amber-100 text-amber-700', accent: 'text-amber-600', hover: 'hover:bg-amber-100/60' },
-    rose: { bg: 'bg-rose-50 dark:bg-rose-900/20', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800', badge: 'bg-rose-100 text-rose-700', accent: 'text-rose-600', hover: 'hover:bg-rose-100/60' },
-    teal: { bg: 'bg-primary-50 dark:bg-primary-900/20', text: 'text-primary-700 dark:text-primary-300', border: 'border-primary-200 dark:border-primary-800', badge: 'bg-primary-100 text-primary-700', accent: 'text-primary-600', hover: 'hover:bg-primary-100/60' },
-    gray: { bg: 'bg-gray-50 dark:bg-gray-900/20', text: 'text-gray-700 dark:text-gray-300', border: 'border-gray-200 dark:border-gray-800', badge: 'bg-gray-100 text-gray-700', accent: 'text-gray-600', hover: 'hover:bg-gray-100/60' },
-};
-
-const getLevelColors = (color: string) => LEVEL_COLORS[color] || LEVEL_COLORS.gray;
+const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
 export const OrgChart: React.FC = () => {
     // Restructuring the chart moves people between units; the database (0399a)
@@ -52,902 +41,737 @@ export const OrgChart: React.FC = () => {
     const { permissions } = useAuth();
     const { showToast } = useToast();
     const canEdit = permissions?.contacts?.edit === true;
-    const denied = () => { showToast('Your role can view the organisation chart but not change it.', 'error'); };
-    // All org units flat
-    const [allUnits, setAllUnits] = useState<OrganizationUnit[]>([]);
-    const [loading, setLoading] = useState(true);
 
-    // Modal state
+    const [levels, setLevels] = useState<OrgLevel[]>([]);
+    const [units, setUnits] = useState<OrganizationUnit[]>([]);
+    const [people, setPeople] = useState<OrgPerson[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+
+    // Modals / panels
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedUnit, setSelectedUnit] = useState<OrganizationUnit | undefined>(undefined);
     const [targetParent, setTargetParent] = useState<OrganizationUnit | undefined>(undefined);
-    const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
-    const [targetUnitForMember, setTargetUnitForMember] = useState<OrganizationUnit | undefined>(undefined);
-
-    // Drawer
-    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-    const [selectedUnitForDetails, setSelectedUnitForDetails] = useState<OrganizationUnit | null>(null);
-
-    // User list sidebar
-    const [showUserList, setShowUserList] = useState(false);
-    const [userListRefreshKey, setUserListRefreshKey] = useState(0);
-
-    // Dynamic Org Levels
-    const [orgLevels, setOrgLevels] = useState<OrgLevel[]>([]);
-    const [stats, setStats] = useState<Record<string, number>>({});
-
-    // Member counts and cache per unit
-    const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
-    const [unitMembers, setUnitMembers] = useState<Record<string, Contact[]>>({});
-
-    // Expanded members per unit-card
-    const [expandedMembers, setExpandedMembers] = useState<Record<string, boolean>>({});
-
-    // DnD
-    const [dragOverId, setDragOverId] = useState<string | null>(null);
-
-    // Mobile assign
-    const [selectedContactForAssign, setSelectedContactForAssign] = useState<{ id: string; name: string } | null>(null);
-    const [isMobileAssignMode, setIsMobileAssignMode] = useState(false);
-
-    // Settings
+    const [memberTarget, setMemberTarget] = useState<OrganizationUnit | null>(null);
+    const [detailsUnit, setDetailsUnit] = useState<OrganizationUnit | null>(null);
+    const [showPeoplePanel, setShowPeoplePanel] = useState(false);
+    const [peopleRefreshKey, setPeopleRefreshKey] = useState(0);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-    // Confirmation modal (delete unit / remove member)
-    const [confirmAction, setConfirmAction] = useState<{
-        type: 'delete-unit' | 'remove-member';
-        id: string;
-        name: string;
-        message: string;
-        contactId?: string;
-        unitId?: string;
-        unitName?: string;
-    } | null>(null);
+    const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
     const [isConfirming, setIsConfirming] = useState(false);
 
-    // ═══ VIEW MODE ═══
+    // View
     const [viewMode, setViewMode] = useState<'folder' | 'tree'>('folder');
+    const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+    const [expandedMembers, setExpandedMembers] = useState<Record<string, boolean>>({});
+    const [collapsedTree, setCollapsedTree] = useState<Record<string, boolean>>({});
+    const [highlightPersonId, setHighlightPersonId] = useState<string | null>(null);
+    const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-    // ═══ FOLDER NAVIGATION STATE ═══
-    const [currentFolderId, setCurrentFolderId] = useState<string | null>(null); // null = root
+    // Search
+    const [query, setQuery] = useState('');
+    const [searchOpen, setSearchOpen] = useState(false);
+    const searchRef = useRef<HTMLDivElement>(null);
 
-    // Build lookup map
-    const unitMap = useMemo(() => {
-        const m = new Map<string, OrganizationUnit>();
-        allUnits.forEach(u => m.set(u.id, u));
-        return m;
-    }, [allUnits]);
+    // Phone: pick a person, then tap a unit
+    const [isMobileAssignMode, setIsMobileAssignMode] = useState(false);
+    const [mobilePick, setMobilePick] = useState<{ id: string; name: string } | null>(null);
 
-    // Compute breadcrumb path from currentFolder up to root
-    const breadcrumbs = useMemo(() => {
-        const path: OrganizationUnit[] = [];
-        let id = currentFolderId;
-        while (id && unitMap.has(id)) {
-            const unit = unitMap.get(id)!;
-            path.unshift(unit);
-            id = unit.parentId || null;
-        }
-        return path;
-    }, [currentFolderId, unitMap]);
+    // ═══ LOAD ═══
+    const loadPeople = useCallback(async () => {
+        const p = await DatabaseService.getInstance().getOrgPeople();
+        setPeople(p);
+        setPeopleRefreshKey(k => k + 1);
+    }, []);
 
-    // Get children of current folder
-    const currentChildren = useMemo(() => {
-        if (!currentFolderId) {
-            // Root: show units with no parent
-            return allUnits.filter(u => !u.parentId);
-        }
-        return allUnits.filter(u => u.parentId === currentFolderId);
-    }, [allUnits, currentFolderId]);
-
-    const currentFolder = currentFolderId ? unitMap.get(currentFolderId) || null : null;
-
-    // Count children recursively
-    const getDescendantCount = useCallback((unitId: string): number => {
-        const directChildren = allUnits.filter(u => u.parentId === unitId);
-        return directChildren.length + directChildren.reduce((sum, c) => sum + getDescendantCount(c.id), 0);
-    }, [allUnits]);
-
-    // Count direct children
-    const getDirectChildCount = useCallback((unitId: string): number => {
-        return allUnits.filter(u => u.parentId === unitId).length;
-    }, [allUnits]);
-
-    useEffect(() => { loadData(); }, []);
-
-    const loadData = async () => {
-        setLoading(true);
+    const loadAll = useCallback(async () => {
+        setLoadError(null);
         try {
             const db = DatabaseService.getInstance();
-
-            // Load ORG_LEVEL dictionaries
-            const dictionaries = await db.getDictionaries();
-            const levelDicts = dictionaries
-                .filter((d: any) => d.type === 'ORG_LEVEL' && d.active !== false)
-                .map((d: any) => ({
-                    code: d.code,
-                    description: d.description,
-                    sortOrder: d.metadata?.sort_order ?? 99,
-                    color: d.metadata?.color ?? d.colorCode ?? 'gray',
-                    childType: d.metadata?.child_type ?? null,
-                    childLabel: d.metadata?.child_label ?? null
-                }))
-                .sort((a: OrgLevel, b: OrgLevel) => a.sortOrder - b.sortOrder);
-            setOrgLevels(levelDicts);
-
-            // Load all units flat
-            const data = await db.getOrgUnits();
-            setAllUnits(data);
-
-            // Stats
-            const newStats: Record<string, number> = {};
-            levelDicts.forEach((lvl: OrgLevel) => {
-                newStats[lvl.code] = data.filter((u: OrganizationUnit) => u.type === lvl.code).length;
-            });
-            setStats(newStats);
-
-            // Member counts + cache
-            const counts: Record<string, number> = {};
-            const membersCache: Record<string, Contact[]> = {};
-            await Promise.all(data.map(async (u: OrganizationUnit) => {
-                try {
-                    const members = await db.getContactsByUnit(u.id);
-                    counts[u.id] = members.length;
-                    membersCache[u.id] = members;
-                } catch { counts[u.id] = 0; membersCache[u.id] = []; }
-            }));
-            setMemberCounts(counts);
-            setUnitMembers(membersCache);
-        } catch (e) {
-            console.error(e);
+            const [lv, us, pp] = await Promise.all([db.getOrgLevels(), db.getOrgUnits(), db.getOrgPeople()]);
+            setLevels(lv);
+            setUnits(us);
+            setPeople(pp);
+            setPeopleRefreshKey(k => k + 1);
+        } catch (e: any) {
+            setLoadError(e?.message || 'The organisation chart could not be loaded.');
         } finally {
             setLoading(false);
         }
+    }, []);
+
+    useEffect(() => { void loadAll(); }, [loadAll]);
+
+    useEffect(() => {
+        const close = (e: MouseEvent) => { if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false); };
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, []);
+
+    // ═══ DERIVED ═══
+    const unitMap = useMemo(() => new Map(units.map(u => [u.id, u])), [units]);
+    const levelMap = useMemo(() => new Map(levels.map(l => [l.code, l])), [levels]);
+    const peopleById = useMemo(() => new Map(people.map(p => [p.id, p])), [people]);
+
+    const childrenOf = useMemo(() => {
+        const m = new Map<string | null, OrganizationUnit[]>();
+        for (const u of units) {
+            const key = u.parentId && unitMap.has(u.parentId) ? u.parentId : null; // orphans surface at the root
+            if (!m.has(key)) m.set(key, []);
+            m.get(key)!.push(u);
+        }
+        m.forEach(list => list.sort(byName));
+        return m;
+    }, [units, unitMap]);
+
+    const membersOf = useMemo(() => {
+        const m = new Map<string, OrgPerson[]>();
+        for (const p of people) for (const u of p.unitIds) {
+            if (!m.has(u)) m.set(u, []);
+            m.get(u)!.push(p);
+        }
+        // active first, then by name
+        m.forEach(list => list.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)));
+        return m;
+    }, [people]);
+
+    const activeMemberCount = (unitId: string) => (membersOf.get(unitId) || []).filter(p => p.active).length;
+
+    const pathOf = useCallback((unitId: string | null): OrganizationUnit[] => {
+        const path: OrganizationUnit[] = [];
+        const seen = new Set<string>();
+        let id = unitId;
+        while (id && unitMap.has(id) && !seen.has(id)) {
+            seen.add(id);
+            const u = unitMap.get(id)!;
+            path.unshift(u);
+            id = u.parentId || null;
+        }
+        return path;
+    }, [unitMap]);
+
+    const breadcrumbs = useMemo(() => pathOf(currentFolderId), [pathOf, currentFolderId]);
+    const currentFolder = currentFolderId ? unitMap.get(currentFolderId) || null : null;
+    const currentChildren = childrenOf.get(currentFolderId) || [];
+
+    const topLevel = levels[0] || null;
+    const levelFor = (u: OrganizationUnit) => levelMap.get(u.type) || null;
+    const childLevelOf = (u: OrganizationUnit | null): OrgLevel | null => {
+        if (!u) return topLevel;
+        const lvl = levelFor(u);
+        if (lvl?.childType) return levelMap.get(lvl.childType) || null;
+        const idx = lvl ? levels.indexOf(lvl) : -1;
+        return idx >= 0 && idx < levels.length - 1 ? levels[idx + 1] : null;
     };
 
-    // ═══ NAVIGATION ═══
-    const navigateToFolder = (unitId: string | null) => {
+    /** "2 Divisions" or "1 Division · 1 Department" — from what is actually there, not the config. */
+    const childSummary = (unitId: string): string | null => {
+        const kids = childrenOf.get(unitId) || [];
+        if (!kids.length) return null;
+        const counts = new Map<string, number>();
+        kids.forEach(k => counts.set(k.type, (counts.get(k.type) || 0) + 1));
+        return Array.from(counts.entries())
+            .sort((a, b) => (levelMap.get(a[0])?.sortOrder ?? 99) - (levelMap.get(b[0])?.sortOrder ?? 99))
+            .map(([type, n]) => `${n} ${pluralLevel(levelMap.get(type)?.description || 'sub-unit', n)}`)
+            .join(' · ');
+    };
+
+    const activePeople = people.filter(p => p.active);
+    const placed = activePeople.filter(p => p.unitIds.length > 0).length;
+    const unassigned = activePeople.length - placed;
+
+    const managerName = (u: OrganizationUnit) => (u.managerId ? peopleById.get(u.managerId)?.name || null : null);
+
+    // ═══ SEARCH ═══
+    const q = query.trim().toLowerCase();
+    const unitHits = q ? units.filter(u => u.name.toLowerCase().includes(q) || (u.code || '').toLowerCase().includes(q)).slice(0, 6) : [];
+    const personHits = q ? people.filter(p => p.name.toLowerCase().includes(q) || (p.title || '').toLowerCase().includes(q)).slice(0, 6) : [];
+
+    const openUnit = (unitId: string | null) => {
+        setViewMode('folder');
         setCurrentFolderId(unitId);
         setExpandedMembers({});
     };
-
-    // ═══ CRUD HANDLERS ═══
-    const handleAddChild = (parent?: OrganizationUnit) => {
-        if (!canEdit) return denied();
-        setSelectedUnit(undefined);
-        setTargetParent(parent);
-        setIsModalOpen(true);
+    const goToPerson = (p: OrgPerson) => {
+        setSearchOpen(false);
+        setQuery('');
+        if (!p.unitIds.length) { showToast(`${p.name} is not in any unit yet.`, 'info'); return; }
+        openUnit(p.primaryUnitId || p.unitIds[0]);
+        setHighlightPersonId(p.id);
+        window.setTimeout(() => setHighlightPersonId(null), 4000);
     };
 
-    const handleEdit = (unit: OrganizationUnit) => {
-        if (!canEdit) return denied();
-        setSelectedUnit(unit);
-        setTargetParent(undefined);
-        setIsModalOpen(true);
+    // ═══ WRITES ═══
+    const assign = async (person: OrgPerson, unit: OrganizationUnit, fromUnitId?: string) => {
+        const db = DatabaseService.getInstance();
+        if (fromUnitId) await db.setContactOrgUnits(person.id, unitsMoved(person, fromUnitId, unit.id));
+        else await db.assignContactsToUnit([person.id], unit.id);
+        showToast(`${person.name} ${fromUnitId ? 'moved to' : 'placed in'} ${unit.name}.`, 'success');
+        setExpandedMembers(prev => ({ ...prev, [unit.id]: true }));
+        await loadPeople();
     };
 
-    const handleDelete = (id: string, name: string) => {
-        if (!canEdit) return denied();
-        const childCount = getDirectChildCount(id);
-        const mCount = memberCounts[id] || 0;
-        if (childCount > 0) {
-            // Sub-units are not removed with their parent (no cascade); the
-            // delete would be refused. Say so before asking.
-            showToast(`"${name}" still has ${childCount} sub-unit${childCount > 1 ? 's' : ''}. Move or delete ${childCount > 1 ? 'them' : 'it'} first.`, 'error');
-            return;
+    /** Drop / tap-assign: refuse no-ops, warn (in-app) when the person has no access to the unit's scope. */
+    const requestAssign = async (contactId: string, unit: OrganizationUnit, fromUnitId?: string) => {
+        if (!canEdit) return;
+        const person = peopleById.get(contactId);
+        if (!person) { showToast('That person is not in the directory any more.', 'error'); return; }
+        if (fromUnitId === unit.id) return;
+        if (!fromUnitId && person.unitIds.includes(unit.id)) { showToast(`${person.name} is already in ${unit.name}.`, 'info'); return; }
+        try {
+            const hasAccess = await DatabaseService.getInstance().checkUserAccess(contactId, unit.id);
+            if (!hasAccess) {
+                setConfirmAction({
+                    type: 'assign-anyway', person, unit, fromUnitId,
+                    message: `${person.name} has no sign-in access set up for "${unit.name}" (Admin › User Access). They can still be placed in the chart — they just won't see this unit's work until access is granted.`,
+                });
+                return;
+            }
+            await assign(person, unit, fromUnitId);
+        } catch (err: any) {
+            showToast(`Not changed: ${err?.message || 'the change was refused.'}`, 'error');
         }
-        let message = `Are you sure you want to delete "${name}"?`;
-        if (mCount > 0) message += `\n\n${mCount} member${mCount > 1 ? 's' : ''} will be taken out of it (they stay in the directory).`;
-        setConfirmAction({ type: 'delete-unit', id, name, message });
     };
 
-    const handleRemoveMember = (member: Contact, unit: OrganizationUnit) => {
-        if (!canEdit) return denied();
+    const askRemove = (person: OrgPerson, unit: OrganizationUnit) => {
+        const after = unitsWithout(person, unit.id);
+        const promoted = person.primaryUnitId === unit.id && after.length ? unitMap.get(after[0])?.name : null;
         setConfirmAction({
-            type: 'remove-member',
-            id: member.id,
-            name: member.name || `${member.firstName} ${member.lastName}`,
-            message: `Remove "${member.name}" from "${unit.name}"?\n\nThis person will be unassigned from this organizational unit.`,
-            contactId: member.id,
-            unitId: unit.id,
-            unitName: unit.name,
+            type: 'remove-member', person, unit,
+            message: `Take ${person.name} out of "${unit.name}"? They stay in the directory${after.length ? ` and in their other unit${after.length > 1 ? 's' : ''}` : ''}.${promoted ? `\n\n${promoted} becomes their primary unit.` : ''}`,
         });
     };
 
-    const executeConfirmAction = async () => {
+    const askDelete = (unit: OrganizationUnit) => {
+        const kids = (childrenOf.get(unit.id) || []).length;
+        if (kids) {
+            showToast(`"${unit.name}" still has ${kids} sub-unit${kids > 1 ? 's' : ''}. Move or delete ${kids > 1 ? 'them' : 'it'} first.`, 'error');
+            return;
+        }
+        const n = (membersOf.get(unit.id) || []).length;
+        setConfirmAction({
+            type: 'delete-unit', unit,
+            message: `Delete "${unit.name}"?${n ? `\n\n${n} ${n === 1 ? 'person is' : 'people are'} taken out of it (they stay in the directory).` : ''}`,
+        });
+    };
+
+    const executeConfirm = async () => {
         if (!confirmAction) return;
         setIsConfirming(true);
         try {
             const db = DatabaseService.getInstance();
             if (confirmAction.type === 'delete-unit') {
-                await db.deleteOrgUnit(confirmAction.id);
-            } else if (confirmAction.type === 'remove-member' && confirmAction.contactId) {
-                await db.assignContactsToUnit([confirmAction.contactId], null);
-                if (confirmAction.unitId) {
-                    setMemberCounts(prev => ({ ...prev, [confirmAction.unitId!]: Math.max(0, (prev[confirmAction.unitId!] || 1) - 1) }));
-                    setUnitMembers(prev => ({ ...prev, [confirmAction.unitId!]: (prev[confirmAction.unitId!] || []).filter(m => m.id !== confirmAction.contactId) }));
-                    setUserListRefreshKey(k => k + 1);
-                }
+                await db.deleteOrgUnit(confirmAction.unit.id);
+                if (currentFolderId === confirmAction.unit.id) setCurrentFolderId(confirmAction.unit.parentId || null);
+                await loadAll();
+            } else if (confirmAction.type === 'remove-member') {
+                await db.setContactOrgUnits(confirmAction.person.id, unitsWithout(confirmAction.person, confirmAction.unit.id));
+                await loadPeople();
+            } else {
+                await assign(confirmAction.person, confirmAction.unit, confirmAction.fromUnitId);
             }
             setConfirmAction(null);
-            loadData();
         } catch (e: any) {
-            showToast(e.message || 'That change was not saved.', 'error');
+            showToast(e?.message || 'That change was not saved.', 'error');
             setConfirmAction(null);
         } finally {
             setIsConfirming(false);
         }
     };
 
-    const handleAddMember = (unit: OrganizationUnit) => {
-        if (!canEdit) return denied();
-        setTargetUnitForMember(unit);
-        setIsAddMemberOpen(true);
-    };
-
-    const handleOpenDetails = (unit: OrganizationUnit) => {
-        setSelectedUnitForDetails(unit);
-        setIsDrawerOpen(true);
-    };
+    const openNewUnit = (parent: OrganizationUnit | null) => { setSelectedUnit(undefined); setTargetParent(parent || undefined); setIsModalOpen(true); };
+    const openEditUnit = (u: OrganizationUnit) => { setSelectedUnit(u); setTargetParent(undefined); setIsModalOpen(true); };
 
     // ═══ DnD ═══
-    const handleDragOver = (e: React.DragEvent, unitId: string) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'copy';
-        setDragOverId(unitId);
+    const dropProps = (unit: OrganizationUnit) => canEdit ? {
+        onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; setDragOverId(unit.id); },
+        onDragLeave: (e: React.DragEvent) => { e.stopPropagation(); setDragOverId(null); },
+        onDrop: (e: React.DragEvent) => {
+            e.preventDefault(); e.stopPropagation(); setDragOverId(null);
+            const raw = e.dataTransfer.getData('application/json');
+            if (!raw) return;
+            try {
+                const { contactId, sourceUnitId } = JSON.parse(raw);
+                void requestAssign(contactId, unit, sourceUnitId || undefined);
+            } catch { /* not ours */ }
+        },
+    } : {};
+
+    // ═══ RENDER PIECES ═══
+    const levelBadge = (unit: OrganizationUnit) => {
+        const lvl = levelFor(unit);
+        return (
+            <span key={`lvl-${unit.id}`} className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border whitespace-nowrap ${levelStyle(lvl?.color).badge}`}>
+                {lvl?.description || unit.type}
+            </span>
+        );
     };
 
-    const handleDragLeave = (e: React.DragEvent) => {
-        e.stopPropagation();
-        setDragOverId(null);
-    };
-
-    const handleDrop = async (e: React.DragEvent, targetUnit: OrganizationUnit) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragOverId(null);
-        const data = e.dataTransfer.getData('application/json');
-        if (!data) return;
-        if (!canEdit) return denied();
-
-        try {
-            const { contactId, name, sourceUnitId } = JSON.parse(data);
-            if (sourceUnitId && sourceUnitId === targetUnit.id) return;
-
-            const db = DatabaseService.getInstance();
-            const hasAccess = await db.checkUserAccess(contactId, targetUnit.id);
-            if (!hasAccess) {
-                const proceed = confirm(`⚠️ No explicit permission found for '${name}' on '${targetUnit.name}'.\n\nAssign anyway?`);
-                if (!proceed) return;
-            }
-
-            await db.assignContactsToUnit([contactId], targetUnit.id);
-
-            // Optimistic updates
-            setMemberCounts(prev => {
-                const updated = { ...prev, [targetUnit.id]: (prev[targetUnit.id] || 0) + 1 };
-                if (sourceUnitId && sourceUnitId !== targetUnit.id) {
-                    updated[sourceUnitId] = Math.max(0, (prev[sourceUnitId] || 1) - 1);
-                }
-                return updated;
-            });
-
-            if (sourceUnitId && sourceUnitId !== targetUnit.id) {
-                setUnitMembers(prev => {
-                    const movedMember = (prev[sourceUnitId] || []).find(m => m.id === contactId);
-                    const updated: Record<string, Contact[]> = { ...prev, [sourceUnitId]: (prev[sourceUnitId] || []).filter(m => m.id !== contactId) };
-                    if (movedMember) updated[targetUnit.id] = [...(prev[targetUnit.id] || []), movedMember];
-                    return updated;
-                });
-            } else {
-                setUnitMembers(prev => {
-                    const already = (prev[targetUnit.id] || []).some(m => m.id === contactId);
-                    if (!already) {
-                        return { ...prev, [targetUnit.id]: [...(prev[targetUnit.id] || []), { id: contactId, name, firstName: name.split(' ')[0] || '', lastName: name.split(' ')[1] || '' } as any] };
-                    }
-                    return prev;
-                });
-            }
-
-            setExpandedMembers(prev => ({ ...prev, [targetUnit.id]: true }));
-            setUserListRefreshKey(k => k + 1);
-            loadData();
-        } catch (err: any) {
-            showToast(`Not moved: ${err?.message || 'the change was refused.'}`, 'error');
-        }
-    };
-
-    // Mobile assign
-    const handleMobileAssign = async (targetUnit: OrganizationUnit) => {
-        if (!selectedContactForAssign) return;
-        if (!canEdit) return denied();
-        try {
-            const db = DatabaseService.getInstance();
-            await db.assignContactsToUnit([selectedContactForAssign.id], targetUnit.id);
-            setMemberCounts(prev => ({ ...prev, [targetUnit.id]: (prev[targetUnit.id] || 0) + 1 }));
-            setUserListRefreshKey(k => k + 1);
-            setSelectedContactForAssign(null);
-            loadData();
-        } catch (err: any) {
-            showToast(`Not assigned: ${err?.message || 'the change was refused.'}`, 'error');
-        }
-    };
-
-    // ═══ RENDERING ═══
-
-    if (loading) return (
-        <div className="flex items-center justify-center h-64 gap-3 text-gray-500">
-            <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
-            Loading Organization Structure...
+    const memberRow = (person: OrgPerson, unit: OrganizationUnit) => (
+        <div
+            key={person.id}
+            draggable={canEdit && person.active}
+            onDragStart={(e) => {
+                e.dataTransfer.setData('application/json', JSON.stringify({ contactId: person.id, name: person.name, type: 'CONTACT', sourceUnitId: unit.id }));
+                e.dataTransfer.effectAllowed = 'move';
+            }}
+            className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 border transition-all ${highlightPersonId === person.id ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-200' : 'bg-slate-50 border-slate-100 hover:border-slate-300'} ${canEdit && person.active ? 'cursor-grab active:cursor-grabbing' : ''} ${person.active ? '' : 'opacity-60'}`}
+        >
+            <div className="flex items-center gap-2.5 min-w-0">
+                <div className="h-7 w-7 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-[10px] shrink-0">{person.initials}</div>
+                <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate leading-tight">
+                        {person.name}
+                        {unit.managerId === person.id && <span className="ml-1.5 text-[10px] font-bold text-primary-700">Lead</span>}
+                    </p>
+                    <p className="text-[11px] text-slate-500 truncate">
+                        {person.title || person.role || 'No role'}
+                        {person.primaryUnitId !== unit.id && person.unitIds.length > 1 && <span className="text-slate-400"> · also here</span>}
+                        {!person.active && <span className="text-slate-400"> · inactive</span>}
+                    </p>
+                </div>
+            </div>
+            {canEdit && (
+                <button onClick={(e) => { e.stopPropagation(); askRemove(person, unit); }}
+                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0"
+                    aria-label={`Take ${person.name} out of ${unit.name}`} title="Take out of this unit">
+                    <X size={13} />
+                </button>
+            )}
         </div>
     );
 
-    // Current level config
-    const currentLevelConfig = currentFolder ? orgLevels.find(l => l.code === currentFolder.type) : null;
-    const childLevelConfig = currentLevelConfig
-        ? orgLevels.find(l => l.code === currentLevelConfig.childType)
-        : orgLevels[0] || null;
+    const memberList = (unit: OrganizationUnit) => {
+        const list = membersOf.get(unit.id) || [];
+        return (
+            <div className="space-y-1.5">
+                {list.length === 0
+                    ? <p className="text-xs text-slate-400 italic py-2 text-center">Nobody in this unit yet{canEdit ? ' — drag someone here or add them.' : '.'}</p>
+                    : list.map(p => memberRow(p, unit))}
+                {canEdit && (
+                    <button onClick={(e) => { e.stopPropagation(); setMemberTarget(unit); }}
+                        className="w-full text-xs text-primary-700 hover:text-primary-800 font-semibold py-1.5 border border-dashed border-primary-200 rounded-lg hover:bg-primary-50 transition-colors">
+                        + Add people
+                    </button>
+                )}
+            </div>
+        );
+    };
 
-    // Label for "New ___" button
-    const addLabel = currentFolder
-        ? (childLevelConfig?.description || 'Sub-unit')
-        : (orgLevels[0]?.description || 'Division');
+    // ═══ STATES ═══
+    if (loading) return (
+        <div className="space-y-4" aria-busy="true" aria-label="Loading the organisation chart">
+            <div className="h-16 bg-white border border-slate-200 rounded-xl animate-pulse" />
+            <div className="h-11 bg-white border border-slate-200 rounded-xl animate-pulse" />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {[0, 1, 2].map(i => <div key={i} className="h-32 bg-white border border-slate-200 rounded-xl animate-pulse" />)}
+            </div>
+        </div>
+    );
+
+    if (loadError) return (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-800 flex items-start gap-3">
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+            <div className="flex-1">
+                <p className="font-semibold">The organisation chart did not load.</p>
+                <p className="mt-0.5">{loadError}</p>
+            </div>
+            <button onClick={() => { setLoading(true); void loadAll(); }} className="px-3 py-1.5 rounded-lg bg-white border border-red-200 font-semibold hover:bg-red-100">Retry</button>
+        </div>
+    );
+
+    const childLevel = childLevelOf(currentFolder);
+    const addLabel = childLevel?.description || 'Sub-unit';
+
+    // ═══ TREE NODE ═══
+    const renderTreeNode = (unit: OrganizationUnit, depth: number): React.ReactNode => {
+        const lvl = levelFor(unit);
+        const kids = childrenOf.get(unit.id) || [];
+        const collapsed = !!collapsedTree[unit.id];
+        const n = activeMemberCount(unit.id);
+        const lead = managerName(unit);
+        return (
+            <li key={unit.id}>
+                <div
+                    className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50 transition-colors ${dragOverId === unit.id ? 'bg-primary-50 ring-2 ring-primary-300' : ''}`}
+                    style={{ paddingLeft: `${depth * 1.25 + 0.5}rem` }}
+                    {...dropProps(unit)}
+                >
+                    {kids.length ? (
+                        <button onClick={() => setCollapsedTree(c => ({ ...c, [unit.id]: !c[unit.id] }))}
+                            className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label={collapsed ? `Expand ${unit.name}` : `Collapse ${unit.name}`} aria-expanded={!collapsed}>
+                            {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                    ) : <span className="w-[18px] shrink-0" />}
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${levelStyle(lvl?.color).dot}`} aria-hidden />
+                    <button onClick={() => openUnit(unit.id)} className="min-w-0 flex-1 flex items-center gap-2 text-left">
+                        <span className="font-semibold text-sm text-slate-800 truncate">{unit.name}</span>
+                        <span className="hidden sm:inline">{levelBadge(unit)}</span>
+                        {lead && <span className="hidden md:inline text-[11px] text-slate-500 truncate">· {lead}</span>}
+                    </button>
+                    <span className="text-[11px] text-slate-500 tabular-nums inline-flex items-center gap-1 shrink-0" title={`${n} people`}><Users size={11} className="text-slate-400" />{n}</span>
+                    <span className="hidden sm:inline text-[10px] font-mono text-slate-400 shrink-0 w-24 truncate text-right">{unit.code}</span>
+                    {canEdit && (
+                        <span className="flex items-center gap-0.5 shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
+                            <button onClick={() => openEditUnit(unit)} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-white rounded" aria-label={`Edit ${unit.name}`}><Edit2 size={12} /></button>
+                            {childLevelOf(unit) && (
+                                <button onClick={() => openNewUnit(unit)} className="p-1 text-slate-400 hover:text-primary-700 hover:bg-white rounded" aria-label={`Add ${childLevelOf(unit)!.description} inside ${unit.name}`}><Plus size={12} /></button>
+                            )}
+                        </span>
+                    )}
+                </div>
+                {kids.length > 0 && !collapsed && <ul className="border-l border-slate-100" style={{ marginLeft: `${depth * 1.25 + 1.05}rem` }}>{kids.map(k => renderTreeNode(k, 0))}</ul>}
+            </li>
+        );
+    };
 
     return (
-        <div className="w-full flex flex-col items-center py-6 px-4 sm:px-8 bg-white dark:bg-gray-900 min-h-full">
-            <div className="w-full max-w-7xl space-y-6">
+        <div className="space-y-5 pb-16 animate-in fade-in duration-300">
+            {/* ═══ OVERVIEW STRIP — levels in hierarchy order, then people ═══ */}
+            <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+                {levels.map(l => {
+                    const n = units.filter(u => u.type === l.code).length;
+                    return (
+                        <div key={l.code} className="flex items-center gap-2">
+                            <span className={`w-2.5 h-2.5 rounded-full ${levelStyle(l.color).dot}`} aria-hidden />
+                            <span className={`text-lg font-black tabular-nums ${n ? 'text-slate-800' : 'text-slate-300'}`}>{n}</span>
+                            <span className="text-xs text-slate-500">{pluralLevel(l.description, n)}</span>
+                        </div>
+                    );
+                })}
+                <div className="hidden sm:block h-6 w-px bg-slate-200" />
+                <div className="flex items-center gap-2" title="Active people with at least one unit">
+                    <UserCheck size={14} className="text-emerald-600" />
+                    <span className="text-lg font-black tabular-nums text-slate-800">{placed}</span>
+                    <span className="text-xs text-slate-500">of {activePeople.length} people placed</span>
+                </div>
+                {unassigned > 0 && (
+                    canEdit ? (
+                        <button onClick={() => setShowPeoplePanel(true)} className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 hover:bg-amber-100">
+                            {unassigned} not in any unit — place them
+                        </button>
+                    ) : (
+                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">{unassigned} not in any unit</span>
+                    )
+                )}
+            </div>
 
-                {/* ═══ STATS ROW ═══ */}
-                <div className="w-full flex justify-center gap-4 sm:gap-6 flex-wrap">
-                    {orgLevels.map(level => {
-                        const colors = getLevelColors(level.color);
-                        return (
-                            <div key={level.code}
-                                className={`w-36 sm:w-44 ${colors.bg} border ${colors.border} px-4 py-3 rounded-xl shadow-sm flex flex-col items-center justify-center transition-all hover:scale-105 hover:shadow-md cursor-default`}>
-                                <div className={`text-[10px] font-bold ${colors.text} uppercase tracking-wider mb-0.5`}>{level.description}s</div>
-                                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats[level.code] || 0}</div>
-                            </div>
-                        );
-                    })}
-                    {/* Total people stat */}
-                    <div className="w-36 sm:w-44 bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800 px-4 py-3 rounded-xl shadow-sm flex flex-col items-center justify-center">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">People</div>
-                        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{Object.values(memberCounts).reduce((s, n) => s + n, 0)}</div>
-                    </div>
+            {/* ═══ TOOLBAR ═══ */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                <div ref={searchRef} className="relative flex-1 min-w-0">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        value={query}
+                        onChange={e => { setQuery(e.target.value); setSearchOpen(true); }}
+                        onFocus={() => setSearchOpen(true)}
+                        onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); setSearchOpen(false); } }}
+                        placeholder="Find a unit or a person…"
+                        aria-label="Find a unit or a person"
+                        className="w-full pl-9 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                    />
+                    {query && (
+                        <button onClick={() => { setQuery(''); setSearchOpen(false); }} aria-label="Clear search"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"><X size={14} /></button>
+                    )}
+                    {searchOpen && q && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1 max-h-[22rem] overflow-y-auto">
+                            {unitHits.length === 0 && personHits.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">Nothing matches “{query.trim()}”.</p>}
+                            {unitHits.length > 0 && <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Units</p>}
+                            {unitHits.map(u => (
+                                <button key={u.id} onClick={() => { setSearchOpen(false); setQuery(''); openUnit(u.id); }}
+                                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${levelStyle(levelFor(u)?.color).dot}`} />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-sm font-medium text-slate-800 truncate">{u.name}</span>
+                                        <span className="block text-[11px] text-slate-400 truncate">{pathOf(u.parentId || null).map(x => x.name).join(' › ') || 'Top level'}</span>
+                                    </span>
+                                    {levelBadge(u)}
+                                </button>
+                            ))}
+                            {personHits.length > 0 && <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">People</p>}
+                            {personHits.map(p => (
+                                <button key={p.id} onClick={() => goToPerson(p)} className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2.5">
+                                    <span className="h-7 w-7 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-[10px] shrink-0">{p.initials}</span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-sm font-medium text-slate-800 truncate">{p.name}{!p.active && <span className="text-slate-400 font-normal"> · inactive</span>}</span>
+                                        <span className="block text-[11px] text-slate-400 truncate">
+                                            {p.unitIds.length ? p.unitIds.map(id => unitMap.get(id)?.name).filter(Boolean).join(', ') : 'Not in any unit'}
+                                        </span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
-                {/* ═══ TOOLBAR ═══ */}
-                <div className="flex justify-between items-center gap-4 flex-wrap">
-                    {/* Breadcrumbs */}
-                    <div className="flex items-center gap-1 text-sm overflow-x-auto">
-                        <button
-                            onClick={() => navigateToFolder(null)}
-                            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg transition-colors font-medium min-w-fit ${!currentFolderId
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                }`}
-                        >
-                            <Home size={14} />
-                            <span className="hidden sm:inline">Organization</span>
+                <div className="flex flex-wrap items-center gap-2">
+                    <div role="tablist" aria-label="View" className="flex rounded-xl bg-white border border-slate-200 p-0.5">
+                        <button role="tab" aria-selected={viewMode === 'folder'} onClick={() => setViewMode('folder')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${viewMode === 'folder' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
+                            <Folder size={13} /> Browse
                         </button>
+                        <button role="tab" aria-selected={viewMode === 'tree'} onClick={() => setViewMode('tree')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${viewMode === 'tree' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
+                            <Network size={13} /> Whole tree
+                        </button>
+                    </div>
+                    {canEdit && (
+                        <>
+                            <button
+                                onClick={() => { const on = !isMobileAssignMode; setIsMobileAssignMode(on); if (on) setShowPeoplePanel(true); else setMobilePick(null); }}
+                                className={`md:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${isMobileAssignMode ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-200 text-slate-700'}`}>
+                                <Smartphone size={14} /> {isMobileAssignMode ? 'Done placing' : 'Tap to place'}
+                            </button>
+                            <button onClick={() => setShowPeoplePanel(v => !v)}
+                                className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${showPeoplePanel ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                                <Users size={14} /> {showPeoplePanel ? 'Hide people' : 'Place people'}
+                            </button>
+                            {(viewMode === 'tree' ? topLevel : childLevel) && (
+                                <button onClick={() => openNewUnit(viewMode === 'tree' ? null : currentFolder)}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold shadow-sm transition-colors">
+                                    <Plus size={14} /> New {viewMode === 'tree' ? topLevel!.description : addLabel}
+                                </button>
+                            )}
+                            <button onClick={() => setIsSettingsOpen(true)} aria-label="Configure hierarchy levels" title="Configure hierarchy levels"
+                                className="p-2 text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded-xl hover:bg-slate-50">
+                                <Settings size={16} />
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
 
+            {viewMode === 'tree' ? (
+                /* ═══ WHOLE TREE ═══ */
+                <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4">
+                    {(childrenOf.get(null) || []).length === 0 ? (
+                        <div className="text-center py-12 text-slate-400">
+                            <Network size={40} className="mx-auto mb-3 opacity-40" />
+                            <p className="font-medium text-slate-600">No organisation structure yet</p>
+                            <p className="text-sm mt-1">Start with a {topLevel?.description || 'unit'}.</p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex justify-end gap-3 mb-1 text-[11px] font-semibold">
+                                <button className="text-slate-500 hover:text-slate-800" onClick={() => setCollapsedTree({})}>Expand all</button>
+                                <button className="text-slate-500 hover:text-slate-800" onClick={() => setCollapsedTree(Object.fromEntries(units.filter(u => (childrenOf.get(u.id) || []).length).map(u => [u.id, true])))}>Collapse all</button>
+                            </div>
+                            <ul>{(childrenOf.get(null) || []).map(u => renderTreeNode(u, 0))}</ul>
+                        </>
+                    )}
+                </div>
+            ) : (
+                /* ═══ BROWSE ═══ */
+                <>
+                    {/* Breadcrumbs */}
+                    <nav aria-label="Where you are" className="flex items-center gap-1 text-sm overflow-x-auto -mt-1">
+                        <button onClick={() => openUnit(null)}
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium whitespace-nowrap transition-colors ${!currentFolderId ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800 hover:bg-white'}`}>
+                            <Home size={13} /> Organisation
+                        </button>
                         {breadcrumbs.map((crumb, idx) => {
-                            const isLast = idx === breadcrumbs.length - 1;
-                            const lvl = orgLevels.find(l => l.code === crumb.type);
-                            const colors = getLevelColors(lvl?.color || 'gray');
+                            const last = idx === breadcrumbs.length - 1;
                             return (
                                 <React.Fragment key={crumb.id}>
-                                    <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-                                    <button
-                                        onClick={() => !isLast && navigateToFolder(crumb.id)}
-                                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-colors font-medium min-w-fit ${isLast
-                                            ? `${colors.bg} ${colors.text} border ${colors.border}`
-                                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                            }`}
-                                    >
-                                        {isLast ? <FolderOpen size={14} /> : <Folder size={14} />}
-                                        {crumb.name}
+                                    <ChevronRight size={14} className="text-slate-300 shrink-0" />
+                                    <button onClick={() => !last && openUnit(crumb.id)} aria-current={last ? 'page' : undefined}
+                                        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium whitespace-nowrap transition-colors ${last ? 'bg-white border border-slate-200 text-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-white'}`}>
+                                        {last ? <FolderOpen size={13} /> : <Folder size={13} />} {crumb.name}
                                     </button>
                                 </React.Fragment>
                             );
                         })}
-                    </div>
+                    </nav>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        {/* Back button when in folder */}
-                        {currentFolderId && (
-                            <button
-                                onClick={() => navigateToFolder(currentFolder?.parentId || null)}
-                                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
-                            >
-                                <ArrowLeft size={14} /> Back
-                            </button>
-                        )}
-
-                        {/* Mobile Assign */}
-                        <button
-                            onClick={() => {
-                                setIsMobileAssignMode(!isMobileAssignMode);
-                                if (isMobileAssignMode) setSelectedContactForAssign(null);
-                                else setShowUserList(true);
-                            }}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors md:hidden ${isMobileAssignMode ? 'bg-green-600 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                                }`}
-                        >
-                            <Smartphone size={14} />
-                            {isMobileAssignMode ? 'Exit Assign' : 'Tap Assign'}
-                        </button>
-
-                        {/* Assign People */}
-                        <button
-                            onClick={() => setShowUserList(!showUserList)}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors ${showUserList ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'}`}
-                        >
-                            <Users size={14} />
-                            {showUserList ? 'Hide People' : 'People'}
-                        </button>
-
-                        {/* New unit – at root always show; inside folder only if non-leaf */}
-                        {canEdit && (!currentFolder || childLevelConfig) && (
-                            <button
-                                onClick={() => handleAddChild(currentFolder || undefined)}
-                                className="flex items-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium shadow-sm transition-colors"
-                            >
-                                <Plus size={14} /> New {addLabel}
-                            </button>
-                        )}
-
-                        {/* View Toggle */}
-                        <div className="flex items-center bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm">
-                            <button
-                                onClick={() => setViewMode('folder')}
-                                className={`p-2 transition-colors ${viewMode === 'folder' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
-                                title="Folder View"
-                            >
-                                <Folder size={16} />
-                            </button>
-                            <button
-                                onClick={() => setViewMode('tree')}
-                                className={`p-2 transition-colors ${viewMode === 'tree' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
-                                title="Tree View"
-                            >
-                                <Network size={16} />
-                            </button>
-                        </div>
-
-                        {/* Settings */}
-                        <button
-                            onClick={() => setIsSettingsOpen(true)}
-                            className="p-2 text-gray-500 hover:text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
-                            title="Configure Hierarchy Levels"
-                        >
-                            <Settings size={16} />
-                        </button>
-                    </div>
-                </div>
-
-                {/* ═══ CONTENT AREA ═══ */}
-                {viewMode === 'tree' ? (
-                    /* ═══ TREE VIEW ═══ */
-                    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 overflow-x-auto">
-                        <div className="min-w-[400px]">
-                            {allUnits.filter(u => !u.parentId).length === 0 ? (
-                                <div className="text-center py-12 text-gray-400">
-                                    <Network size={48} className="mx-auto mb-3 opacity-40" />
-                                    <p className="font-medium">No organization structure yet</p>
-                                    <p className="text-sm mt-1">Create your first {orgLevels[0]?.description || 'unit'} to get started</p>
+                    {/* The unit you are in: who leads it, who is in it */}
+                    {currentFolder && (() => {
+                        const lvl = levelFor(currentFolder);
+                        const st = levelStyle(lvl?.color);
+                        const lead = managerName(currentFolder);
+                        const members = membersOf.get(currentFolder.id) || [];
+                        const kidsLabel = childSummary(currentFolder.id);
+                        return (
+                            <section className={`bg-white border border-slate-200 border-l-4 ${st.border} rounded-xl ${dragOverId === currentFolder.id ? 'ring-2 ring-primary-300' : ''}`} {...dropProps(currentFolder)}>
+                                <div className="px-4 sm:px-5 py-4 flex flex-col sm:flex-row sm:items-start gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <h2 className="text-lg font-bold text-slate-800">{currentFolder.name}</h2>
+                                            {levelBadge(currentFolder)}
+                                            {currentFolder.code && <span className="text-xs font-mono text-slate-400">{currentFolder.code}</span>}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-500">
+                                            <span className="flex items-center gap-1"><UserCheck size={12} className="text-slate-400" />{lead ? <>Led by <b className="text-slate-700 font-semibold">{lead}</b></> : 'No lead set'}</span>
+                                            <span className="flex items-center gap-1"><Users size={12} className="text-slate-400" />{activeMemberCount(currentFolder.id)} {activeMemberCount(currentFolder.id) === 1 ? 'person' : 'people'}</span>
+                                            {kidsLabel && <span className="flex items-center gap-1"><Network size={12} className="text-slate-400" />{kidsLabel}</span>}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button onClick={() => openUnit(currentFolder.parentId || null)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"><ArrowLeft size={13} /> Up</button>
+                                        <button onClick={() => setDetailsUnit(currentFolder)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"><Info size={13} /> Details</button>
+                                        {canEdit && <button onClick={() => openEditUnit(currentFolder)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50" aria-label={`Edit ${currentFolder.name}`}><Edit2 size={14} /></button>}
+                                    </div>
                                 </div>
-                            ) : (
-                                allUnits.filter(u => !u.parentId).map(rootUnit => {
-                                    const renderTreeNode = (unit: OrganizationUnit, depth: number, isLast: boolean, parentLines: boolean[]): React.ReactNode => {
-                                        const lvl = orgLevels.find(l => l.code === unit.type);
-                                        const colors = getLevelColors(lvl?.color || 'gray');
-                                        const children = allUnits.filter(u => u.parentId === unit.id);
-                                        const mCount = memberCounts[unit.id] || 0;
+                                <div className="border-t border-slate-100 px-4 sm:px-5 py-3">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">People in {currentFolder.name}</p>
+                                    {members.length > 0 || canEdit ? (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                            {members.map(p => memberRow(p, currentFolder))}
+                                            {canEdit && (
+                                                <button onClick={() => setMemberTarget(currentFolder)}
+                                                    className="flex items-center justify-center gap-1.5 text-xs text-primary-700 font-semibold py-2 border border-dashed border-primary-200 rounded-lg hover:bg-primary-50 transition-colors">
+                                                    <UserPlus size={13} /> Add people
+                                                </button>
+                                            )}
+                                        </div>
+                                    ) : <p className="text-xs text-slate-400 italic">Nobody in this unit yet.</p>}
+                                </div>
+                            </section>
+                        );
+                    })()}
 
-                                        return (
-                                            <div key={unit.id} className="select-none">
-                                                <div className="flex items-stretch">
-                                                    {/* Connector lines for ancestry */}
-                                                    {depth > 0 && parentLines.map((showLine, idx) => (
-                                                        <div key={idx} className="w-6 flex-shrink-0 relative">
-                                                            {showLine && (
-                                                                <div className="absolute left-3 top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-700" />
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                    {depth > 0 && (
-                                                        <div className="w-6 flex-shrink-0 relative">
-                                                            <div className="absolute left-3 top-0 h-1/2 w-px bg-gray-200 dark:bg-gray-700" />
-                                                            <div className="absolute left-3 top-1/2 w-3 h-px bg-gray-200 dark:bg-gray-700" />
-                                                            {!isLast && (
-                                                                <div className="absolute left-3 top-1/2 bottom-0 w-px bg-gray-200 dark:bg-gray-700" />
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Node content */}
-                                                    <div
-                                                        className={`flex items-center gap-2 px-3 py-2 my-0.5 rounded-lg border ${colors.border} ${colors.bg} ${colors.hover} cursor-pointer transition-all group flex-1 min-w-0`}
-                                                        onClick={() => { setViewMode('folder'); navigateToFolder(unit.id); }}
-                                                    >
-                                                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: lvl?.color || '#6b7280' }} />
-                                                        <div className="min-w-0 flex-1">
-                                                            <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate block">{unit.name}</span>
-                                                        </div>
-                                                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${colors.badge} flex-shrink-0`}>
-                                                            {lvl?.description || unit.type}
-                                                        </span>
-                                                        <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">{unit.code}</span>
-                                                        {mCount > 0 && (
-                                                            <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500 flex-shrink-0">
-                                                                <Users size={10} /> {mCount}
-                                                            </span>
-                                                        )}
-                                                        {children.length > 0 && (
-                                                            <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400 flex-shrink-0">
-                                                                <Folder size={10} /> {children.length}
-                                                            </span>
-                                                        )}
-                                                        <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
-                                                            <button onClick={(e) => { e.stopPropagation(); handleEdit(unit); }} className="p-1 text-gray-400 hover:text-gray-700 hover:bg-white/60 rounded">
-                                                                <Edit2 size={12} />
-                                                            </button>
-                                                            <button onClick={(e) => { e.stopPropagation(); setSelectedUnit(undefined); setTargetParent(unit); setIsModalOpen(true); }} className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Add child">
-                                                                <Plus size={12} />
-                                                            </button>
-                                                        </div>
+                    {/* Units inside */}
+                    {currentChildren.length > 0 && currentFolder && (
+                        <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-1">{childSummary(currentFolder.id)}</h3>
+                    )}
+                    {currentChildren.length === 0 ? (
+                        <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl bg-white">
+                            <FolderOpen size={36} className="mx-auto text-slate-300 mb-3" />
+                            <p className="font-semibold text-slate-700">
+                                {currentFolder ? (childLevel ? `No ${pluralLevel(childLevel.description)} inside ${currentFolder.name}` : `${currentFolder.name} is the lowest level`) : 'No organisation structure yet'}
+                            </p>
+                            <p className="text-sm text-slate-500 mt-1 mb-4">
+                                {currentFolder
+                                    ? (childLevel ? `A ${childLevel.description} sits under a ${levelFor(currentFolder)?.description || 'unit'}.` : 'People are placed here directly.')
+                                    : `Start with a ${topLevel?.description || 'unit'} — everything else hangs off it.`}
+                            </p>
+                            {canEdit && childLevel && (
+                                <button onClick={() => openNewUnit(currentFolder)}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold">
+                                    <Plus size={14} /> Add {childLevel.description}
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {currentChildren.map(unit => {
+                                const lvl = levelFor(unit);
+                                const st = levelStyle(lvl?.color);
+                                const kidLevel = childLevelOf(unit);
+                                const kidsLabel = childSummary(unit.id);
+                                const n = activeMemberCount(unit.id);
+                                const lead = managerName(unit);
+                                const isExpanded = !!expandedMembers[unit.id];
+                                const isDropTarget = dragOverId === unit.id;
+                                const tapping = isMobileAssignMode && !!mobilePick;
+                                const activate = () => {
+                                    if (tapping) { void requestAssign(mobilePick!.id, unit); setMobilePick(null); return; }
+                                    openUnit(unit.id);
+                                };
+                                return (
+                                    <div key={unit.id}
+                                        className={`bg-white border border-slate-200 border-l-4 ${st.border} rounded-xl transition-all ${isDropTarget ? 'ring-2 ring-primary-400 shadow-lg' : tapping ? 'ring-2 ring-emerald-300' : 'hover:shadow-sm hover:border-slate-300'}`}
+                                        {...dropProps(unit)}
+                                    >
+                                        <div role="button" tabIndex={0} onClick={activate}
+                                            onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); activate(); } }}
+                                            className="px-4 pt-3.5 pb-3 cursor-pointer rounded-t-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <h3 className="font-semibold text-slate-800 truncate">{unit.name}</h3>
+                                                        <ChevronRight size={14} className="text-slate-400 shrink-0" />
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        {levelBadge(unit)}
+                                                        {unit.code && <span className="text-[10px] font-mono text-slate-400 truncate">{unit.code}</span>}
                                                     </div>
                                                 </div>
-                                                {children.length > 0 && (
-                                                    <div>
-                                                        {children.map((child, idx) =>
-                                                            renderTreeNode(child, depth + 1, idx === children.length - 1, depth > 0 ? [...parentLines, !isLast] : [])
-                                                        )}
+                                                {canEdit && (
+                                                    <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                                                        <button onClick={() => openEditUnit(unit)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded" aria-label={`Edit ${unit.name}`}><Edit2 size={13} /></button>
+                                                        <button onClick={() => askDelete(unit)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" aria-label={`Delete ${unit.name}`}><Trash2 size={13} /></button>
                                                     </div>
                                                 )}
                                             </div>
-                                        );
-                                    };
-                                    return renderTreeNode(rootUnit, 0, true, []);
-                                })
-                            )}
-                        </div>
-                    </div>
-                ) : (
-                    /* ═══ FOLDER VIEW ═══ */
-                    <>
-                        {/* Current folder header */}
-                        {currentFolder && (
-                            <div className={`border rounded-xl p-4 ${getLevelColors(currentLevelConfig?.color || 'gray').bg} ${getLevelColors(currentLevelConfig?.color || 'gray').border}`}>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${getLevelColors(currentLevelConfig?.color || 'gray').badge}`}>
-                                            <Building2 size={20} />
+                                            <p className="mt-2 text-xs text-slate-500 flex items-center gap-1 truncate">
+                                                <UserCheck size={12} className="text-slate-400 shrink-0" />
+                                                {lead ? <>Led by <span className="font-medium text-slate-700 truncate">{lead}</span></> : <span className="text-slate-400">No lead set</span>}
+                                            </p>
                                         </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{currentFolder.name}</h2>
-                                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getLevelColors(currentLevelConfig?.color || 'gray').badge}`}>
-                                                    {currentLevelConfig?.description || currentFolder.type}
-                                                </span>
-                                            </div>
-                                            <p className="text-xs text-gray-500 font-mono">{currentFolder.code}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <button onClick={() => handleOpenDetails(currentFolder)} className="p-2 text-gray-500 hover:bg-white/60 rounded-lg transition-colors" title="View Details">
-                                            <MoreHorizontal size={16} />
-                                        </button>
-                                        <button onClick={() => handleEdit(currentFolder)} className="p-2 text-gray-500 hover:bg-white/60 rounded-lg transition-colors" title="Edit">
-                                            <Edit2 size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="mt-3 flex items-center gap-3 text-xs text-gray-500">
-                                    <span className="flex items-center gap-1"><Users size={12} /> {memberCounts[currentFolder.id] || 0} members</span>
-                                    <span className="flex items-center gap-1"><Network size={12} /> {getDirectChildCount(currentFolder.id)} {childLevelConfig?.description || 'sub-unit'}s</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Folder contents */}
-                        {currentChildren.length === 0 ? (
-                            <div className="text-center text-gray-500 py-16 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/50 dark:bg-gray-800/30">
-                                <FolderOpen size={48} className="mx-auto text-gray-300 dark:text-gray-600 mb-4" />
-                                <p className="mb-2 font-medium text-gray-600 dark:text-gray-400">
-                                    {currentFolder ? `No ${childLevelConfig?.description || 'sub-unit'}s yet` : 'No organization units defined'}
-                                </p>
-                                <p className="text-sm text-gray-400 mb-4">
-                                    {currentFolder
-                                        ? `Add a ${childLevelConfig?.description || 'sub-unit'} inside "${currentFolder.name}"`
-                                        : `Create a ${orgLevels[0]?.description || 'Division'} to start building your organization`}
-                                </p>
-                                {canEdit && <button
-                                    onClick={() => handleAddChild(currentFolder || undefined)}
-                                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
-                                >
-                                    <Plus size={14} /> Add First {addLabel}
-                                </button>}
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                                {currentChildren.map(unit => {
-                                    const lvl = orgLevels.find(l => l.code === unit.type);
-                                    const colors = getLevelColors(lvl?.color || 'gray');
-                                    const lvlIdx = orgLevels.findIndex(l => l.code === unit.type);
-                                    const childLvl = lvl?.childType
-                                        ? orgLevels.find(l => l.code === lvl.childType)
-                                        : (lvlIdx >= 0 && lvlIdx < orgLevels.length - 1 ? orgLevels[lvlIdx + 1] : null);
-                                    const childLabel = childLvl?.description || 'Sub-unit';
-                                    const childCount = getDirectChildCount(unit.id);
-                                    const mCount = memberCounts[unit.id] || 0;
-                                    const members = unitMembers[unit.id] || [];
-                                    const isExpanded = expandedMembers[unit.id];
-                                    const isDragTarget = dragOverId === unit.id;
-
-                                    return (
-                                        <div
-                                            key={unit.id}
-                                            className={`border rounded-xl overflow-hidden transition-all duration-200 cursor-pointer ${colors.border} ${isDragTarget ? 'ring-2 ring-blue-400 shadow-lg scale-[1.02]' : 'shadow-sm hover:shadow-md'}`}
-                                            onDragOver={(e) => handleDragOver(e, unit.id)}
-                                            onDragLeave={handleDragLeave}
-                                            onDrop={(e) => handleDrop(e, unit)}
-                                            onClick={() => {
-                                                if (isMobileAssignMode && selectedContactForAssign) {
-                                                    handleMobileAssign(unit);
-                                                    return;
-                                                }
-                                                navigateToFolder(unit.id);
-                                            }}
-                                        >
-                                            {/* Card Header */}
-                                            <div className={`p-4 ${colors.bg} ${colors.hover} transition-colors`}
-                                            >
-                                                <div className="flex items-start justify-between">
-                                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                        <div className={`p-2 rounded-lg ${colors.badge} flex-shrink-0`}>
-                                                            <Folder size={18} />
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">{unit.name}</h3>
-                                                                <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
-                                                            </div>
-                                                            <div className="flex items-center gap-2 mt-0.5">
-                                                                <span className="text-[10px] font-mono text-gray-500">{unit.code}</span>
-                                                                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${colors.badge}`}>
-                                                                    {lvl?.description || unit.type}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    {canEdit && <div className="flex items-center gap-1 flex-shrink-0 ml-2" onClick={e => e.stopPropagation()}>
-                                                        <button onClick={() => handleEdit(unit)} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-white/60 rounded transition-colors" title="Edit">
-                                                            <Edit2 size={13} />
-                                                        </button>
-                                                        <button onClick={() => handleDelete(unit.id, unit.name)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete">
-                                                            <Trash2 size={13} />
-                                                        </button>
-                                                    </div>}
-                                                </div>
-
-                                                {/* Badges row */}
-                                                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); setExpandedMembers(p => ({ ...p, [unit.id]: !p[unit.id] })); }}
-                                                        className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full border transition-all ${isExpanded
-                                                            ? 'bg-blue-100 text-blue-700 border-blue-300'
-                                                            : isMobileAssignMode && selectedContactForAssign
-                                                                ? 'bg-green-100 text-green-700 border-green-300 animate-pulse'
-                                                                : 'text-gray-600 bg-white/70 border-gray-200 hover:bg-blue-50 hover:border-blue-200'
-                                                            }`}
-                                                        title={`${mCount} people`}
-                                                    >
-                                                        <Users size={11} /> {mCount}
-                                                    </button>
-                                                    {childCount > 0 && (
-                                                        <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                            <Folder size={11} /> {childCount} {childLabel}s
-                                                        </span>
-                                                    )}
-                                                    <div className="flex-1" />
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleAddMember(unit); }}
-                                                        className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors"
-                                                        title="Add Member"
-                                                    >
-                                                        <UserPlus size={12} /> Member
-                                                    </button>
-                                                    {childLvl && (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); setSelectedUnit(undefined); setTargetParent(unit); setIsModalOpen(true); }}
-                                                            className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded border ${getLevelColors(childLvl.color).border} ${getLevelColors(childLvl.color).bg} ${getLevelColors(childLvl.color).text} hover:opacity-80 transition-colors`}
-                                                            title={`Add ${childLabel} inside ${unit.name}`}
-                                                        >
-                                                            <Plus size={11} /> {childLabel}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Expanded Members */}
-                                            {isExpanded && (
-                                                <div className="border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 space-y-1.5"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    onDragOver={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                                                    onDrop={(e) => { e.stopPropagation(); }}
-                                                >
-                                                    {members.length === 0 ? (
-                                                        <p className="text-xs text-gray-400 italic py-2 text-center">No members assigned</p>
-                                                    ) : (
-                                                        members.map(member => (
-                                                            <div
-                                                                key={member.id}
-                                                                draggable
-                                                                onDragStart={(e) => {
-                                                                    e.dataTransfer.setData('application/json', JSON.stringify({
-                                                                        contactId: member.id,
-                                                                        name: member.name,
-                                                                        type: 'CONTACT',
-                                                                        sourceUnitId: unit.id
-                                                                    }));
-                                                                    e.dataTransfer.effectAllowed = 'move';
-                                                                }}
-                                                                className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 hover:border-gray-300 transition-all cursor-grab active:cursor-grabbing"
-                                                            >
-                                                                <div className="flex items-center gap-2 min-w-0">
-                                                                    <div className="h-7 w-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center text-blue-700 dark:text-blue-300 font-bold text-[10px] flex-shrink-0">
-                                                                        {member.firstName?.[0]}{member.lastName?.[0]}
-                                                                    </div>
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate leading-tight">{member.name}</p>
-                                                                        <p className="text-[10px] text-gray-500 truncate">{member.defaultType || member.title || 'No role'}</p>
-                                                                    </div>
-                                                                </div>
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleRemoveMember(member, unit);
-                                                                    }}
-                                                                    className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0"
-                                                                    title="Remove from unit"
-                                                                >
-                                                                    <X size={13} />
-                                                                </button>
-                                                            </div>
-                                                        ))
-                                                    )}
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleAddMember(unit); }}
-                                                        className="w-full text-xs text-blue-600 hover:text-blue-800 font-medium py-1.5 border border-dashed border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
-                                                    >
-                                                        + Add Member
-                                                    </button>
-                                                </div>
+                                        <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
+                                            <button onClick={() => setExpandedMembers(p => ({ ...p, [unit.id]: !p[unit.id] }))} aria-expanded={isExpanded}
+                                                className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full border transition-colors ${isExpanded ? 'bg-primary-50 text-primary-700 border-primary-200' : 'text-slate-600 bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                                <Users size={11} /> {n} {n === 1 ? 'person' : 'people'} {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                                            </button>
+                                            {kidsLabel && <span className="text-xs text-slate-500 flex items-center gap-1 min-w-0 truncate"><Folder size={11} className="text-slate-400 shrink-0" />{kidsLabel}</span>}
+                                            {canEdit && kidLevel && (
+                                                <button onClick={() => openNewUnit(unit)}
+                                                    className="ml-auto inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                    title={`Add a ${kidLevel.description} inside ${unit.name}`}>
+                                                    <Plus size={11} /> {kidLevel.description}
+                                                </button>
                                             )}
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
+                                        {isExpanded && (
+                                            <div className="border-t border-slate-100 p-3" onClick={e => e.stopPropagation()}>
+                                                {memberList(unit)}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </>
+            )}
 
             {/* ═══ MODALS ═══ */}
-            <OrgUnitModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onSave={loadData}
-                unit={selectedUnit}
-                parentUnit={targetParent}
-            />
+            <OrgUnitModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={() => void loadAll()} unit={selectedUnit} parentUnit={targetParent} />
 
-            {targetUnitForMember && isAddMemberOpen && (
-                <AddMemberModal
-                    unit={targetUnitForMember}
-                    onClose={() => setIsAddMemberOpen(false)}
-                    onSave={loadData}
-                />
+            {memberTarget && (
+                <AddMemberModal unit={memberTarget} onClose={() => setMemberTarget(null)} onSave={() => void loadPeople()} />
             )}
 
-            <OrgUnitDetailsDrawer
-                isOpen={isDrawerOpen}
-                onClose={() => setIsDrawerOpen(false)}
-                unit={selectedUnitForDetails}
-                onUpdate={(u) => { loadData(); setSelectedUnitForDetails(u); }}
-            />
+            <OrgUnitDetailsDrawer isOpen={!!detailsUnit} onClose={() => setDetailsUnit(null)} unit={detailsUnit}
+                onUpdate={(u) => { void loadAll(); setDetailsUnit(u); }} />
 
-            <DraggableUserList
-                isOpen={showUserList}
-                onClose={() => setShowUserList(false)}
-                refreshKey={userListRefreshKey}
-                onSelectContact={isMobileAssignMode ? (contact) => {
-                    setSelectedContactForAssign({ id: contact.id, name: contact.name });
-                } : undefined}
-            />
+            {canEdit && (
+                <DraggableUserList isOpen={showPeoplePanel} onClose={() => { setShowPeoplePanel(false); setIsMobileAssignMode(false); setMobilePick(null); }}
+                    refreshKey={peopleRefreshKey}
+                    onSelectContact={isMobileAssignMode ? (c) => { setMobilePick({ id: c.id, name: c.name }); setShowPeoplePanel(false); } : undefined} />
+            )}
 
-            <OrgLevelSettingsModal
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-                onSave={loadData}
-                levels={orgLevels}
-            />
+            {canEdit && <OrgLevelSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onSave={() => void loadAll()} levels={levels} />}
 
-            {/* Mobile Assign Bar */}
-            {isMobileAssignMode && selectedContactForAssign && (
-                <div className="fixed bottom-0 left-0 right-0 bg-green-600 text-white px-4 py-3 flex items-center justify-between z-50 shadow-lg shadow-green-900/30 safe-area-inset">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">📌</div>
-                        <div>
-                            <p className="text-sm font-semibold">{selectedContactForAssign.name}</p>
-                            <p className="text-[10px] text-green-100">Tap a folder above to assign</p>
-                        </div>
+            {/* Phone: the picked person waits for a tap on a unit */}
+            {isMobileAssignMode && mobilePick && (
+                <div className="fixed bottom-16 left-3 right-3 bg-emerald-600 text-white rounded-xl px-4 py-3 flex items-center justify-between z-50 shadow-lg">
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">{mobilePick.name}</p>
+                        <p className="text-[11px] text-emerald-100">Tap a unit to place them there</p>
                     </div>
-                    <button onClick={() => setSelectedContactForAssign(null)} className="p-2 hover:bg-green-700 rounded-lg transition-colors">
-                        <X size={18} />
-                    </button>
+                    <button onClick={() => setMobilePick(null)} className="p-2 hover:bg-emerald-700 rounded-lg" aria-label="Cancel"><X size={18} /></button>
                 </div>
             )}
-            {/* Confirmation Modal (Delete Unit / Remove Member) */}
+
+            {/* Confirm (delete unit / take someone out / place without access) */}
             {confirmAction && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => !isConfirming && setConfirmAction(null)}>
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => !isConfirming && setConfirmAction(null)}>
+                    <div role="dialog" aria-modal="true" aria-labelledby="org-confirm-title" className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-3 mb-4">
-                            <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                confirmAction.type === 'remove-member'
-                                    ? 'bg-orange-100 dark:bg-orange-900/30'
-                                    : 'bg-red-100 dark:bg-red-900/30'
-                            }`}>
-                                {confirmAction.type === 'remove-member'
-                                    ? <UserMinus size={20} className="text-orange-600" />
-                                    : <Trash2 size={20} className="text-red-600" />
-                                }
+                            <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${confirmAction.type === 'delete-unit' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>
+                                {confirmAction.type === 'delete-unit' ? <Trash2 size={20} /> : confirmAction.type === 'remove-member' ? <UserMinus size={20} /> : <AlertTriangle size={20} />}
                             </div>
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                                    {confirmAction.type === 'remove-member' ? 'Remove Member' : 'Delete Organization Unit'}
-                                </h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">{confirmAction.name}</p>
-                            </div>
+                            <h3 id="org-confirm-title" className="text-lg font-bold text-slate-800">
+                                {confirmAction.type === 'delete-unit' ? 'Delete unit' : confirmAction.type === 'remove-member' ? 'Take out of unit' : 'Place without access?'}
+                            </h3>
                         </div>
-                        <div className={`border rounded-lg p-3 mb-5 ${
-                            confirmAction.type === 'remove-member'
-                                ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800'
-                                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                        }`}>
-                            <p className={`text-sm whitespace-pre-line ${
-                                confirmAction.type === 'remove-member'
-                                    ? 'text-orange-800 dark:text-orange-300'
-                                    : 'text-red-800 dark:text-red-300'
-                            }`}>{confirmAction.message}</p>
-                        </div>
-                        <div className="flex justify-end gap-3">
-                            <button
-                                onClick={() => setConfirmAction(null)}
-                                disabled={isConfirming}
-                                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={executeConfirmAction}
-                                disabled={isConfirming}
-                                className={`px-4 py-2 text-sm font-semibold text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                                    confirmAction.type === 'remove-member'
-                                        ? 'bg-orange-600 hover:bg-orange-700'
-                                        : 'bg-red-600 hover:bg-red-700'
-                                }`}
-                            >
-                                {isConfirming ? (
-                                    <><span className="animate-spin inline-block h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></span> Processing...</>
-                                ) : confirmAction.type === 'remove-member' ? (
-                                    <><UserMinus size={14} /> Remove</>
-                                ) : (
-                                    <><Trash2 size={14} /> Delete</>
-                                )}
+                        <p className="text-sm text-slate-600 whitespace-pre-line mb-6">{confirmAction.message}</p>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setConfirmAction(null)} disabled={isConfirming} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+                            <button onClick={() => void executeConfirm()} disabled={isConfirming}
+                                className={`px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 ${confirmAction.type === 'delete-unit' ? 'bg-red-600 hover:bg-red-700' : confirmAction.type === 'remove-member' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary-600 hover:bg-primary-700'}`}>
+                                {isConfirming ? 'Working…' : confirmAction.type === 'delete-unit' ? 'Delete' : confirmAction.type === 'remove-member' ? 'Take out' : 'Place anyway'}
                             </button>
                         </div>
                     </div>

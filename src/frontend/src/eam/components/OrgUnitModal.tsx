@@ -87,17 +87,10 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
 
     const loadOrgLevels = async () => {
         try {
-            const dictionaries = await DatabaseService.getInstance().getDictionaries();
-            const levels = dictionaries
-                .filter((d: any) => d.type === 'ORG_LEVEL' && d.active !== false)
-                .map((d: any) => ({
-                    code: d.code,
-                    description: d.description,
-                    sortOrder: d.metadata?.sort_order ?? 99,
-                    childType: d.metadata?.child_type ?? null
-                }))
-                .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
-            setOrgLevels(levels);
+            // getOrgLevels reads the metadata column (order + child level);
+            // via getDictionaries it was dropped, so "add inside X" defaulted
+            // to whichever level happened to come first.
+            setOrgLevels(await DatabaseService.getInstance().getOrgLevels());
         } catch (err) {
             console.error('Failed to load org levels:', err);
         }

@@ -36,7 +36,8 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
                     db.getContacts(),
                     db.getOrgUnits()
                 ]);
-                setContacts(allContacts);
+                // Deactivated people and vendors are not placed in the org chart.
+                setContacts(allContacts.filter(c => c.active !== false && !c.flags?.isVendor && !(c.types || []).includes('VENDOR')));
                 setOrgUnits(allUnits);
             } catch (error) {
                 console.error("Failed to load contacts for DnD", error);

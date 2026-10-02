@@ -733,7 +733,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     };
 
     return (
-        <div className={`flex flex-col h-full gap-4 w-full ${viewMode === 'directory' && !selectedContact ? 'ers-page-record' : ''}`}>
+        <div className={`flex flex-col h-full gap-4 w-full ${viewMode === 'orgChart' ? 'ers-page-wide' : viewMode === 'directory' && !selectedContact ? 'ers-page-record' : ''}`}>
             {/* Top Navigation */}
             <div className="flex items-center gap-4 border-b border-gray-200 dark:border-gray-700 pb-2">
                 <button
@@ -751,9 +751,8 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             </div>
 
             {viewMode === 'orgChart' ? (
-                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-auto">
-                    <OrgChart />
-                </div>
+                // The chart draws its own surfaces; a card around it doubled the frame.
+                <OrgChart />
             ) : (
                 <div className="flex h-full gap-6 overflow-hidden">
                     {/* Left Side: Container */}

@@ -35,6 +35,7 @@ import {
 import type { MaintenanceStrategy, StrategyPackage } from '../../lib/maintenanceStrategy';
 import { evaluateReading } from '../../lib/readingAlarm';
 import { movementTypeFor } from '../lib/movementType';
+import { mapOrgLevelRow, type OrgLevel, type OrgPerson } from '../lib/orgLevels';
 import { isPreventiveWoType, buildWorkOrder } from '../lib/workOrder';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { addCadence, normaliseUnit, toDateOnly } from '../lib/pmCadence';
@@ -1369,8 +1370,58 @@ export class DatabaseService {
             organizationUnitIds: row.organization_unit_members?.map((m: any) => m.organization_unit_id) || []
         }));
 
-        this._cachedContacts = mappedContacts;
+        // (No longer writes this._cachedContacts: one unit's people are not
+        // "the contacts", and the org chart called this once per unit.)
         return mappedContacts;
+    }
+
+    /**
+     * ORG_LEVEL config with its metadata (order, colour, child level). Use this,
+     * not getDictionaries(): that mapping drops the metadata column, which left
+     * the org chart with every level unordered, grey and childless.
+     */
+    public async getOrgLevels(): Promise<OrgLevel[]> {
+        const { data, error } = await supabase
+            .from('reference_codes_effective')
+            .select('id, code, description, active, metadata, sort_order, color_code')
+            .eq('category', 'ORG_LEVEL');
+        if (error) throw new Error(`Organisation levels not loaded: ${error.message}`);
+        return (data || [])
+            .filter((r: any) => r.active !== false)
+            .map(mapOrgLevelRow)
+            .sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+
+    /**
+     * Everyone who can be placed in the org chart, with every unit they belong
+     * to — primary (contacts.organization_unit_id) AND secondary memberships —
+     * in ONE query. Replaces one getContactsByUnit() round trip per unit, which
+     * also only ever saw primary members.
+     */
+    public async getOrgPeople(): Promise<OrgPerson[]> {
+        const { data, error } = await supabase
+            .from('contacts')
+            .select('id, name, first_name, last_name, title, roles, is_active, is_vendor, organization_unit_id, organization_unit_members(organization_unit_id)')
+            .order('name');
+        if (error) throw new Error(`People not loaded: ${error.message}`);
+        return (data || [])
+            .filter((r: any) => !r.is_vendor && !(r.roles || []).includes('VENDOR'))
+            .map((r: any) => {
+                const primary: string | null = r.organization_unit_id ?? null;
+                const secondary: string[] = (r.organization_unit_members || []).map((m: any) => m.organization_unit_id).filter(Boolean);
+                const unitIds = Array.from(new Set([...(primary ? [primary] : []), ...secondary]));
+                const name: string = r.name || [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unnamed';
+                return {
+                    id: r.id,
+                    name,
+                    initials: ((r.first_name?.[0] || name[0] || '') + (r.last_name?.[0] || name.split(' ')[1]?.[0] || '')).toUpperCase(),
+                    title: r.title || null,
+                    role: (r.roles && r.roles[0]) || null,
+                    active: r.is_active !== false,
+                    primaryUnitId: primary,
+                    unitIds,
+                };
+            });
     }
 
     /**

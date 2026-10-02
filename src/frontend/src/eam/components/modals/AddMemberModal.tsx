@@ -16,6 +16,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [unitNames, setUnitNames] = useState<Map<string, string>>(new Map());
 
     useEffect(() => {
         loadPotentials();
@@ -29,7 +30,15 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
         // For now, show everyone except those already in this unit so we don't double add visual logic
         // But actually moving from another unit is a valid use case.
         // So just show everyone not in THIS unit.
-        setContacts(all.filter(c => c.organizationUnitId !== unit.id && !c.types.includes('VENDOR')));
+        // Not already here (primary or secondary), not deactivated, not a vendor.
+        const allUnits = await DatabaseService.getInstance().getOrgUnits();
+        setUnitNames(new Map(allUnits.map(u => [u.id, u.name])));
+        setContacts(all.filter(c =>
+            c.organizationUnitId !== unit.id
+            && !(c.organizationUnitIds || []).includes(unit.id)
+            && c.active !== false
+            && !c.flags?.isVendor
+            && !(c.types || []).includes('VENDOR')));
         setLoading(false);
     };
 
@@ -99,7 +108,12 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
                                 </div>
                                 <div className="flex-1">
                                     <div className={`text-sm font-medium ${selectedIds.has(c.id) ? 'text-blue-900' : 'text-slate-900'}`}>{c.name}</div>
-                                    <div className="text-xs text-slate-500">{c.title} {c.organizationUnitId ? '(Reassign)' : ''}</div>
+                                    <div className="text-xs text-slate-500">
+                                        {c.title}
+                                        {c.organizationUnitId && (
+                                            <span className="text-amber-700"> · moves from {unitNames.get(c.organizationUnitId) || 'their current unit'}</span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         ))
