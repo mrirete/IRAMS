@@ -669,12 +669,21 @@ export const OrgChart: React.FC = () => {
                                 };
                                 return (
                                     <div key={unit.id}
-                                        className={`bg-white border border-slate-200 border-l-4 ${st.border} rounded-xl transition-all ${isDropTarget ? 'ring-2 ring-primary-400 shadow-lg' : tapping ? 'ring-2 ring-emerald-300' : 'hover:shadow-sm hover:border-slate-300'}`}
+                                        className={`relative bg-white border border-slate-200 border-l-4 ${st.border} rounded-xl transition-all ${isDropTarget ? 'ring-2 ring-primary-400 shadow-lg' : tapping ? 'ring-2 ring-emerald-300' : 'hover:shadow-sm hover:border-slate-300'}`}
                                         {...dropProps(unit)}
                                     >
-                                        <div role="button" tabIndex={0} onClick={activate}
+                                        {/* Edit/Delete sit beside the open-unit target, not inside it:
+                                            buttons nested in role="button" are invalid and made the card
+                                            announce as "… Edit X Delete X". */}
+                                        {canEdit && (
+                                            <div className="absolute top-2.5 right-2.5 flex items-center gap-0.5 z-10">
+                                                <button onClick={() => openEditUnit(unit)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded" aria-label={`Edit ${unit.name}`}><Edit2 size={13} /></button>
+                                                <button onClick={() => askDelete(unit)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" aria-label={`Delete ${unit.name}`}><Trash2 size={13} /></button>
+                                            </div>
+                                        )}
+                                        <div role="button" tabIndex={0} onClick={activate} aria-label={`Open ${unit.name}`}
                                             onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); activate(); } }}
-                                            className="px-4 pt-3.5 pb-3 cursor-pointer rounded-t-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300">
+                                            className={`px-4 pt-3.5 pb-3 ${canEdit ? 'pr-20' : ''} cursor-pointer rounded-t-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300`}>
                                             <div className="flex items-start justify-between gap-2">
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-1.5">
@@ -686,12 +695,6 @@ export const OrgChart: React.FC = () => {
                                                         {unit.code && <span className="text-[10px] font-mono text-slate-400 truncate">{unit.code}</span>}
                                                     </div>
                                                 </div>
-                                                {canEdit && (
-                                                    <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-                                                        <button onClick={() => openEditUnit(unit)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded" aria-label={`Edit ${unit.name}`}><Edit2 size={13} /></button>
-                                                        <button onClick={() => askDelete(unit)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" aria-label={`Delete ${unit.name}`}><Trash2 size={13} /></button>
-                                                    </div>
-                                                )}
                                             </div>
                                             <p className="mt-2 text-xs text-slate-500 flex items-center gap-1 truncate">
                                                 <UserCheck size={12} className="text-slate-400 shrink-0" />
