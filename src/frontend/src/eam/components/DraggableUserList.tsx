@@ -11,6 +11,15 @@ interface DraggableUserListProps {
     onSelectContact?: (contact: Contact) => void;
 }
 
+// First + last initial when both are known; otherwise derive from the display name
+// ("GE Productions" -> "GP", "J.test3" -> "JT") so no avatar renders empty.
+const initialsOf = (c: Contact): string => {
+    const fromParts = `${c.firstName?.trim()?.[0] ?? ''}${c.lastName?.trim()?.[0] ?? ''}`;
+    if (fromParts) return fromParts.toUpperCase();
+    const words = (c.name || '').trim().split(/[\s._-]+/).filter(Boolean);
+    return words.slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+};
+
 export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, onClose, refreshKey, onSelectContact }) => {
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [orgUnits, setOrgUnits] = useState<OrganizationUnit[]>([]);
@@ -117,12 +126,8 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
                                     }`}
                             >
                                 <GripVertical className="h-4 w-4 text-gray-400 mr-2 opacity-50 group-hover:opacity-100" />
-                                <div className="relative">
-                                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs mr-3">
-                                        {contact.firstName?.[0]}{contact.lastName?.[0]}
-                                    </div>
-                                    {/* Assignment indicator dot */}
-                                    <span className={`absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white ${unitName ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                <div className="h-8 w-8 shrink-0 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs mr-3">
+                                    {initialsOf(contact)}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
