@@ -64,10 +64,12 @@ export interface CockpitStructureSpec {
     /** What the structure holds, in plain words. */
     note: string;
     /**
-     * Set when the header was NOT read off a cockpit file but derived — and
-     * says from what. The one exception to the verbatim rule, kept visible:
-     * a file written from a provisional header is flagged for the person
-     * loading it, and the flag comes off when a real download confirms it.
+     * Set when a header was NOT read off a cockpit file but derived — and
+     * says from what. The one allowed exception to the verbatim rule, kept
+     * visible: a file written from a provisional header is flagged for the
+     * person loading it, and the flag comes off when a real download confirms
+     * it. (S_IHPA and S_TEXTS_EQUI were provisional for a day; the download
+     * confirmed both, byte for byte.) Nothing is provisional right now.
      */
     provisional?: string;
 }
@@ -118,10 +120,10 @@ export const COCKPIT_OBJECTS: CockpitObjectSpec[] = [
         key: 'equipment',
         name: 'PM - Equipment',
         // Loads after the functional locations it is installed at (TPLNR) and
-        // the superior equipment it hangs under (HEQUI). SAP Help (staging
-        // object, 2023) names three structures — S_EQUI, S_IHPA, S_TEXTS_EQUI
-        // — and these prerequisites. Only S_EQUI has been received as a file;
-        // the other two are provisional, see their notes.
+        // the superior equipment it hangs under (HEQUI). Three structures, as
+        // SAP Help lists them; all three headers read off the download received
+        // 2026-10-03 ("Source data for PM - Equipment.zip"). Prerequisites from
+        // SAP Help (the README in the download was empty).
         predecessorCount: 7,
         predecessors: [
             'Batch unique at material and client level', 'Batch unique at plant level',
@@ -140,14 +142,12 @@ export const COCKPIT_OBJECTS: CockpitObjectSpec[] = [
                 mode: 'FreeText',
                 note: 'Partners on the equipment, one row per role (PARVW) and position — the functional location’s S_IHPA_FL keyed on the equipment instead. SAP Help: the partner function must be the language-independent database value, and partner synchronisation (EQUI-KUNDE filling the EQUI/EQUZ fields) does not happen on migration.',
                 header: 'EQUNR(k/*),PARVW(k/*),POSNR(k/*),KUNNR,LIFNR,PERNR,PARNR',
-                provisional: 'Header derived from S_IHPA_FL (read off the functional-location download) with the equipment key in place of EXTERNAL_NUMBER, and the structure name from SAP Help, which lists exactly these three structures for the object. The SAP assessor confirmed (2026-10-03) that no PM - Equipment source-data download exists to read it from, so the cockpit’s Simulate step is where it is checked.',
             },
             {
                 structure: 'S_TEXTS_EQUI',
                 mode: 'FreeText',
                 note: 'Short and long text per language (SPRAS): TEXT_DESCR is the description in that language, LONGTEXT the body — where the Assets module’s Description lands. SAP Help: when the same language has a description here and in S_EQUI, the text structure wins and the master’s EQKTX is ignored.',
                 header: 'EQUNR(k/*),SPRAS(k/*),TEXT_DESCR,LONGTEXT',
-                provisional: 'Header derived from S_TEXTS_FL (read off the functional-location download) with the equipment key in place of EXTERNAL_NUMBER, and the structure name from SAP Help, which lists exactly these three structures for the object. The SAP assessor confirmed (2026-10-03) that no PM - Equipment source-data download exists to read it from, so the cockpit’s Simulate step is where it is checked.',
             },
         ],
     },

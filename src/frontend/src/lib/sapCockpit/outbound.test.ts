@@ -209,7 +209,7 @@ describe('the register, in the cockpit’s own names', () => {
         expect(rowObj(buildCockpitExport(fixture(), { ...PARAMS, language: 'DE' }), 'S_TEXTS_FL').SPRAS).toBe('DE');
     });
 
-    it('an equipment’s description travels on S_TEXTS_EQUI, keyed the way the equipment is, and says the header is provisional', () => {
+    it('an equipment’s description travels on S_TEXTS_EQUI, keyed the way the equipment is', () => {
         const src = fixture();
         src.assets[1] = { ...src.assets[1], properties: { description: 'Boiler feed pump, 6-stage, 40 t/h at 70 bar' } };
         const x = buildCockpitExport(src, PARAMS);
@@ -217,9 +217,8 @@ describe('the register, in the cockpit’s own names', () => {
         expect(rowObj(x, 'S_TEXTS_EQUI')).toEqual({ EQUNR: '10004711', SPRAS: 'EN', TEXT_DESCR: 'Feed pump', LONGTEXT: 'Boiler feed pump, 6-stage, 40 t/h at 70 bar' });
         // Internal numbering: the text row carries the same legacy key as the equipment row.
         expect(rowObj(buildCockpitExport(src, { ...PARAMS, numbering: 'internal' }), 'S_TEXTS_EQUI').EQUNR).toBe('P-101A');
-        // The header has not been seen on a download, and the file says so — once, as a warning, not a blocker.
-        const warns = x.issues.filter(i => i.level === 'warn' && /S_TEXTS_EQUI is written from a header IREAMS has not seen/.test(i.message));
-        expect(warns).toHaveLength(1);
+        // The header was confirmed by the cockpit's own download: nothing to warn about.
+        expect(x.issues.some(i => /S_TEXTS_EQUI is written from a header IREAMS has not seen/.test(i.message))).toBe(false);
         // No description, no file, no warning.
         expect(fileOf(buildCockpitExport(fixture(), PARAMS), 'S_TEXTS_EQUI')).toBeUndefined();
         expect(buildCockpitExport(fixture(), PARAMS).issues.some(i => /S_TEXTS_EQUI/.test(i.message))).toBe(false);

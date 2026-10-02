@@ -223,10 +223,11 @@ describe('the registry is what SAP handed out', () => {
         ]);
     });
 
-    it('marks exactly the headers that were never read off a download as provisional, and nothing else', () => {
+    it('has nothing provisional: every header was read off a cockpit download', () => {
         const provisional = ALL_STRUCTURES.filter(x => x.spec.provisional).map(x => `${x.object}/${x.spec.structure}`);
-        expect(provisional).toEqual(['equipment/S_IHPA', 'equipment/S_TEXTS_EQUI']);
-        // Each is its functional-location twin with the equipment key in front.
+        expect(provisional).toEqual([]);
+        // The equipment partner and text structures are their functional-location
+        // twins with the equipment key in front — confirmed by the download.
         expect(fields('equipment', 'S_TEXTS_EQUI')).toEqual(['EQUNR', ...fields('functionalLocation', 'S_TEXTS_FL').slice(1)]);
         expect(fields('equipment', 'S_IHPA')).toEqual(['EQUNR', ...fields('functionalLocation', 'S_IHPA_FL').slice(1)]);
     });
