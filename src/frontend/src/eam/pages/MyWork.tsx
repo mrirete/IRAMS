@@ -335,10 +335,10 @@ export const MyWork: React.FC = () => {
         : (done === null || doneLoading ? 'Your finished jobs' : `${doneStats.completedAll} finished ${doneStats.completedAll === 1 ? 'job' : 'jobs'} on record`);
 
     const noPerson = (
-        <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
-            <ClipboardList size={36} className="text-slate-400" />
-            <div className="font-semibold text-slate-800">Your account isn't linked to a person record</div>
-            <p className="text-sm text-slate-500 m-0">Work is assigned to people. Ask your administrator to link your login to a person in People &amp; Org, and your assignments will appear here.</p>
+        <div className="bg-white border border-slate-200 rounded-card p-5 sm:p-8 text-center flex flex-col items-center gap-3">
+            <ClipboardList size={32} className="text-slate-400" />
+            <div className="text-sm sm:text-base font-semibold text-slate-800">Your account isn't linked to a person record</div>
+            <p className="text-xs sm:text-sm text-slate-500 m-0">Work is assigned to people. Ask your administrator to link your login to a person in People &amp; Org, and your assignments will appear here.</p>
             <Button variant="secondary" size="sm" onClick={() => navigate('/work-orders')} leftIcon={<ClipboardList size={14} />}>
                 Browse all work orders
             </Button>
@@ -346,12 +346,12 @@ export const MyWork: React.FC = () => {
     );
 
     const content = (
-        <div className="ers-page-narrow flex flex-col gap-5 pb-8">
+        <div className="ers-page-narrow flex flex-col gap-4 sm:gap-5 pb-8">
             {/* ── Header ── */}
             <div className="flex items-center gap-3">
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-slate-800">My Work</h1>
-                    <p className="text-sm text-slate-500">{subtitle}</p>
+                    <h1 className="text-lg font-bold text-slate-900">My Work</h1>
+                    <p className="text-xs sm:text-sm text-slate-500">{subtitle}</p>
                 </div>
                 <span className="flex-1" />
                 <Button variant="secondary" size="sm" onClick={() => { setLoading(true); load(); if (done !== null) loadDone(); }} leftIcon={<RefreshCw size={14} />} className="hidden md:inline-flex">
@@ -415,11 +415,12 @@ export const MyWork: React.FC = () => {
                     )}
                     {!loading && !error && rows.length === 0 && !contactId && !userId && noPerson}
                     {!loading && !error && rows.length === 0 && (contactId || userId) && (
-                        <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
-                            <CheckCircle2 size={36} className="text-emerald-500" />
-                            <div className="font-semibold text-slate-800">You're all caught up</div>
-                            <p className="text-sm text-slate-500 m-0">No open work is assigned to you. New assignments will appear here.</p>
-                            <div className="flex gap-2">
+                        <div className="bg-white border border-slate-200 rounded-card p-5 sm:p-8 text-center flex flex-col items-center gap-3">
+                            <CheckCircle2 size={32} className="text-emerald-500" />
+                            <div className="text-sm sm:text-base font-semibold text-slate-800">You're all caught up</div>
+                            <p className="text-xs sm:text-sm text-slate-500 m-0">No open work is assigned to you. New assignments will appear here.</p>
+                            {/* Phone: stacked full width — side by side they ran past the card edges */}
+                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                 <Button variant="secondary" size="sm" onClick={() => setSegment('done')} leftIcon={<History size={14} />}>
                                     See what you've finished
                                 </Button>

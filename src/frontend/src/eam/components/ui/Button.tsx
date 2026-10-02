@@ -65,12 +65,17 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         },
         ref
     ) => {
+        // cn() only joins, it does not merge: a caller's `hidden sm:inline-flex` lost to the
+        // base `inline-flex` (later in Tailwind's output), so "desktop-only" buttons showed
+        // on phones and overflowed their rows. A caller that hides the button owns display.
+        const callerHides = /(^|\s)hidden(\s|$)/.test(className || '');
         return (
             <button
                 ref={ref}
                 disabled={disabled || loading}
                 className={cn(
-                    'inline-flex items-center justify-center font-semibold whitespace-nowrap',
+                    !callerHides && 'inline-flex',
+                    'items-center justify-center font-semibold whitespace-nowrap',
                     'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-1',
                     'disabled:cursor-not-allowed disabled:opacity-60',
                     VARIANTS[variant],

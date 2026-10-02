@@ -31,7 +31,7 @@ import {
     Lock,
     TrendingUp,
     ShieldCheck,
-    Printer, Copy, ChevronLeft, Download, GitPullRequest,
+    Printer, Copy, ChevronLeft, GitPullRequest,
     Shield, Box, Paperclip, AlertOctagon, Book, Bookmark, Package, Info, Bell, Send, Layers, Eye, Repeat, Network,
     DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check, Factory
 } from 'lucide-react';
@@ -74,7 +74,6 @@ import { computeAssetReliability, computePMEffectiveness, pmEffectivenessKpi, kp
 import { failureScopeFor } from '../../lib/iso14224Taxonomy';
 import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
-import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { DensityToggle, type Density } from '../components/ui/DensityToggle';
 import { Button, Badge, StatusPill, PriorityPill, Modal, DataList, ModernSelect, type DataColumn } from '../components/ui';
 import { supabase } from '../lib/supabase';
@@ -352,10 +351,10 @@ export const WorkOrders: React.FC = () => {
                 onSave={handleJobCreated}
                 dictionaries={dictionaries}
             />
-            <div className={`${viewMode === 'DETAIL' ? 'hidden' : 'hidden sm:flex'} flex-wrap justify-between items-center mb-3 md:mb-4 gap-2`}>
+            <div className={`${viewMode === 'DETAIL' ? 'hidden' : 'flex'} flex-wrap justify-between items-center mb-3 md:mb-4 gap-2`}>
                 <div>
-                    <h1 className="text-base md:text-lg font-bold text-slate-900">Work Order Manager</h1>
-                    <p className="text-[11px] md:text-xs text-slate-500">Track jobs and strategies</p>
+                    <h1 className="text-lg font-bold text-slate-900">Work Order Manager</h1>
+                    <p className="hidden sm:block text-xs text-slate-500">Track jobs and strategies</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <AskRelanternButton
@@ -363,7 +362,7 @@ export const WorkOrders: React.FC = () => {
                         contextSummary={`Work Order Summary: ${workOrders.length} total WOs. Open: ${workOrders.filter(w => isOpenWo(w.status)).length}. Overdue: ${workOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && !['CLOSED', 'TECO', 'CANCELLED'].includes(w.status)).length}. PM-to-CM Ratio: ${workOrders.filter(w => (w.type as string) === 'PM').length}:${workOrders.filter(w => (w.type as string) === 'CM').length}.`}
                         compact
                     />
-                    <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                    <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-lg">
                         <button
                             onClick={() => setViewMode('LIST')}
                             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${viewMode === 'LIST' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
@@ -420,10 +419,6 @@ export const WorkOrders: React.FC = () => {
                             showToast(`Deleted ${deleted} of ${ids.length} Work Order(s)`, deleted === ids.length ? 'success' : 'warning');
                         }}
                     />
-                    {/* FAB for mobile — one-hand creation (visible < 768px only) */}
-                    {canCreate && (
-                        <FloatingActionButton onClick={() => setIsCreateOpen(true)} label="New Work Order" />
-                    )}
                 </>
             )}
 
@@ -560,20 +555,6 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     const [sortAsc, setSortAsc] = useState(() => {
         return localStorage.getItem('irams_wo_sort_asc') === 'true';
     });
-
-    const handleSortChange = (field: SortField) => {
-        setActiveViewId('');
-        if (sortField === field) {
-            const newAsc = !sortAsc;
-            setSortAsc(newAsc);
-            localStorage.setItem('irams_wo_sort_asc', String(newAsc));
-        } else {
-            setSortField(field);
-            setSortAsc(false);
-            localStorage.setItem('irams_wo_sort_field', field);
-            localStorage.setItem('irams_wo_sort_asc', 'false');
-        }
-    };
 
     // ═══ U-4: Saved Views (filter + sort presets) + W-4 Backlog cockpit preset ═══
     // Backlog = open work only (excludes finished statuses); the "Backlog" preset
@@ -873,9 +854,10 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         <h1 className="text-base md:text-lg font-bold text-slate-900">Work Orders</h1>
                         <p className="text-[11px] md:text-xs text-slate-500">Manage maintenance tasks, schedules, and resources.</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    {/* Phone: the row owns the width and the saved-view button gives way, so New never runs off the edge */}
+                    <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
                         {/* Sort — the column headers sort too, but nobody found them (2026-09-20). */}
-                        <div className="inline-flex items-stretch rounded-lg border border-slate-200 bg-white text-xs overflow-hidden" title="Sort the list">
+                        <div className="flex-shrink-0 inline-flex items-stretch rounded-lg border border-slate-200 bg-white text-xs overflow-hidden" title="Sort the list">
                             <select
                                 aria-label="Sort by"
                                 value={sortField}
@@ -896,10 +878,10 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                             >{sortAsc ? '↑' : '↓'}</button>
                         </div>
                         {/* U-4: Saved Views selector */}
-                        <div className="relative" ref={viewsRef}>
+                        <div className="relative min-w-0 flex-1 sm:flex-none" ref={viewsRef}>
                             <button
                                 onClick={() => setViewsOpen(o => !o)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] md:min-h-0 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 max-w-[190px]"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] md:min-h-0 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 max-w-full sm:max-w-[190px]"
                                 title="Saved views — filter + sort presets"
                             >
                                 <Layers size={13} className="flex-shrink-0 text-slate-400" />
@@ -939,15 +921,17 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                             disabled={!canCreate}
                             size="sm"
                             leftIcon={<Plus size={14} />}
-                            className="hidden sm:inline-flex"
                             title={!canCreate ? 'Insufficient permissions' : 'Create new work order'}
+                            className="flex-shrink-0 ml-auto sm:ml-0"
                         >
-                            New Work Order
+                            {/* Phone: the one create button (the floating "+" beside Log Issue is gone) */}
+                            <span className="sm:hidden">New</span>
+                            <span className="hidden sm:inline">New Work Order</span>
                         </Button>
                     </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                     <div className="relative flex-1">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
@@ -975,10 +959,11 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                 </div>
 
                 {/* Planned vs Reactive — governance KPI + quick filter */}
-                <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
+                {/* Phone: bar + chips share one row (label hidden; the bar's title says it). */}
+                <div className="flex items-center gap-x-3 sm:gap-x-4 gap-y-2 flex-wrap">
                     <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Planned vs Reactive</span>
-                        <div className="flex h-2 w-24 rounded-full overflow-hidden bg-slate-100 border border-slate-200" title={`${classRatio.pro} proactive · ${classRatio.rea} reactive`}>
+                        <span className="hidden sm:inline text-[10px] font-bold text-slate-500 uppercase tracking-wide">Planned vs Reactive</span>
+                        <div className="flex h-2 w-14 sm:w-24 rounded-full overflow-hidden bg-slate-100 border border-slate-200" title={`${classRatio.pro} proactive · ${classRatio.rea} reactive`}>
                             <div className="bg-emerald-500 h-full" style={{ width: `${classRatio.proPct}%` }} />
                             <div className="bg-red-500 h-full" style={{ width: `${classRatio.reaPct}%` }} />
                         </div>
@@ -986,7 +971,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         <span className="text-[11px] text-slate-300">/</span>
                         <span className="text-[11px] font-bold text-red-600">{classRatio.reaPct}%</span>
                     </div>
-                    <div className="flex gap-1.5 sm:ml-auto">
+                    <div className="flex gap-1.5 ml-auto">
                         {([['ALL', 'All'], ['PROACTIVE', 'Proactive'], ['REACTIVE', 'Reactive']] as const).map(([val, label]) => (
                             <button
                                 key={val}
@@ -1064,27 +1049,6 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                     </p>
                 </div>
             </Modal>
-
-            {/* ═══ Mobile sort toolbar (DataList renders the cards below) ═══ */}
-            <div className="md:hidden flex items-center gap-1 px-3 py-2 border-b border-slate-100 bg-slate-50/50 overflow-x-auto scrollbar-hide flex-shrink-0">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mr-1 flex-shrink-0">Sort:</span>
-                {([['priority', 'Priority'], ['dueDate', 'Due Date'], ['status', 'Status'], ['created', 'Created']] as [SortField, string][]).map(([field, label]) => (
-                    <button
-                        key={field}
-                        onClick={() => handleSortChange(field)}
-                        className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-[10px] font-bold transition-all whitespace-nowrap ${
-                            sortField === field
-                                ? 'bg-primary-600 text-white shadow-sm'
-                                : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
-                        }`}
-                    >
-                        {label}
-                        {sortField === field && (
-                            <span className="text-[8px]">{sortAsc ? '↑' : '↓'}</span>
-                        )}
-                    </button>
-                ))}
-            </div>
 
             {/* ═══ Unified list — Fiori-dense table (md+) / MaintainX cards (mobile) ═══ */}
             <DataList<WorkOrder>
@@ -2160,7 +2124,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     };
 
     return (
-        <div className="flex flex-col h-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative">
+        // Phone: the record runs edge to edge (cancels main's p-4) — a card inside the
+        // page gutter left the form ~300 of 390 px. sm+ keeps the card.
+        <div className="flex flex-col h-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative max-sm:-mx-4 max-sm:-mt-4 max-sm:rounded-none max-sm:border-x-0 max-sm:border-t-0 max-sm:shadow-none">
             {/* Header */}
             <UnifiedDetailHeader
                 title={localJob.woNumber || localJob.id}
@@ -2193,11 +2159,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         label: 'Save',
                         icon: isSaving
                             ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            : <Download size={14} />,
+                            : <Save size={14} />,
                         onClick: handleSave,
                         variant: 'primary' as const,
                         disabled: isSaving,
                         isPrimary: true,
+                        hideOnMobile: true, // the phone footer carries Save
                     },
                     ...(localJob.status === WorkOrderStatus.TECO && !localJob.reviewedBy && jdPerms?.workOrders?.approve === true ? [{
                         label: 'Accept work',
@@ -2427,7 +2394,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     onClick={handleSave}
                     loading={isSaving}
                     size="md"
-                    leftIcon={<Download size={14} />}
+                    leftIcon={<Save size={14} />}
                 >
                     Save
                 </Button>

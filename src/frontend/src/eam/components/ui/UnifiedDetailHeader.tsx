@@ -14,6 +14,8 @@ export interface HeaderAction {
     compactLabel?: boolean;
     /** Mark as primary — always visible. Non-primary actions go to overflow on mobile */
     isPrimary?: boolean;
+    /** Leave out of the phone header — the page already offers it in its mobile footer (Save) */
+    hideOnMobile?: boolean;
 }
 
 export interface UnifiedDetailHeaderProps {
@@ -130,7 +132,7 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                 <div className="flex items-center gap-1 flex-shrink-0">
                     {isActionArray ? (
                         <>
-                            {primaryActions.map((action, i) => (
+                            {primaryActions.filter(a => !a.hideOnMobile).map((action, i) => (
                                 <button
                                     key={`mp-${i}`}
                                     onClick={action.onClick}

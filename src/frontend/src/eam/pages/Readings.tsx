@@ -639,7 +639,7 @@ export const Readings: React.FC = () => {
                         {/* Titled by purpose, not "Assets" — on mobile this pane fills the
                             screen and was being mistaken for the main Asset Register. */}
                         <div className="min-w-0">
-                            <h2 className="font-bold text-slate-900 leading-tight truncate">Condition Data</h2>
+                            <h2 className="text-lg font-bold text-slate-900 leading-tight truncate">Condition Data</h2>
                             <p className="text-[10px] text-slate-400 leading-tight truncate">pick an asset to record readings</p>
                         </div>
                         <div className="flex border border-slate-200 rounded-lg overflow-hidden">
@@ -1630,7 +1630,7 @@ const BatchEntryView: React.FC<{
 
     return (
         <div className="flex flex-col h-full relative">
-            <div className="p-4 sm:p-6 border-b border-slate-200 bg-white flex flex-wrap justify-between items-center gap-3">
+            <div className="p-3 sm:p-6 border-b border-slate-200 bg-white flex flex-wrap justify-between items-center gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                     {onBack && (
                         <button onClick={onBack} className="flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-slate-800 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50" title="Back to the asset browser">
@@ -1638,8 +1638,8 @@ const BatchEntryView: React.FC<{
                         </button>
                     )}
                     <div className="min-w-0">
-                        <h1 className="text-lg sm:text-xl font-bold text-slate-900">{titleOverride || 'Readings Entry Sheet'}</h1>
-                        <p className="text-sm text-slate-500">{pickAssets ? `${sheetAssets.length} asset${sheetAssets.length === 1 ? '' : 's'} · ${rows.length} points` : `Record data for ${rows.length} points.`}</p>
+                        <h1 className="text-lg font-bold text-slate-900">{titleOverride || 'Readings Entry Sheet'}</h1>
+                        <p className="text-xs sm:text-sm text-slate-500">{pickAssets ? `${sheetAssets.length} asset${sheetAssets.length === 1 ? '' : 's'} · ${rows.length} points` : `Record data for ${rows.length} points.`}</p>
                     </div>
                 </div>
                 <div className="flex gap-2 items-center">
@@ -1716,11 +1716,12 @@ const BatchEntryView: React.FC<{
                 ))}
                 {/* Empty sheet → centered hero picker, with what's due right under it */}
                 {pickAssets && sheetAssets.length === 0 && (
-                    <div className="min-h-full flex flex-col items-center justify-center text-center p-6 sm:p-8">
-                        <Activity size={36} className="mb-3 text-slate-300" />
-                        <p className="text-lg font-bold text-slate-800">Find an asset · capture its readings</p>
+                    // Phone: starts at the top — centred, it left ~200 px blank above the search box
+                    <div className="min-h-full flex flex-col items-center justify-start sm:justify-center text-center px-4 py-5 sm:p-8">
+                        <Activity size={28} className="mb-2 sm:mb-3 text-slate-300" />
+                        <p className="text-base sm:text-lg font-bold text-slate-800">Find an asset · capture its readings</p>
                         <p className="text-xs mt-1.5 max-w-sm text-slate-500">Search the register and add assets to this sheet — their reading points stack below as one round. Assets marked <span className="text-amber-600 font-semibold">no points</span> need a reading point configured first.</p>
-                        <div className="relative w-full max-w-lg mt-6 text-left">
+                        <div className="relative w-full max-w-lg mt-4 sm:mt-6 text-left">
                             <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
                             <input
                                 autoFocus

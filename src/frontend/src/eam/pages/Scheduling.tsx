@@ -1062,13 +1062,13 @@ export const Scheduling: React.FC = () => {
     return (
         <div className="ers-page-wide w-full flex flex-col h-[calc(100vh-6rem)]">
             {/* Top Toolbar */}
-            <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Work Scheduling</h1>
-                    <p className="text-sm text-slate-500">Plan maintenance, manage backlog, and optimize resource utilization.</p>
+            <div className="flex flex-wrap justify-between items-center mb-3 sm:mb-4 gap-2 sm:gap-3">
+                <div className="min-w-0">
+                    <h1 className="text-lg font-bold text-slate-900">Work Scheduling</h1>
+                    <p className="hidden sm:block text-sm text-slate-500">Plan maintenance, manage backlog, and optimize resource utilization.</p>
                 </div>
-                <div className="flex items-center gap-3 min-w-0">
-                <div className="flex items-center gap-3 overflow-x-auto min-w-0">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-hide min-w-0">
                     <AskRelanternButton
                         contextType="scheduling"
                         contextSummary={aiContextService.buildSchedulingContext({
@@ -1088,32 +1088,32 @@ export const Scheduling: React.FC = () => {
                     <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
                         <button
                             onClick={() => setViewMode('CALENDAR')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'CALENDAR' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'CALENDAR' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <CalendarIcon size={16} /><span className="hidden sm:inline">Calendar</span>
                         </button>
                         <button
                             onClick={() => setViewMode('GANTT')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'GANTT' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'GANTT' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <BarChart2 size={16} /><span className="hidden sm:inline">Gantt</span>
                         </button>
                         <button
                             onClick={() => setViewMode('BACKLOG')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'BACKLOG' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'BACKLOG' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <List size={16} /><span className="hidden sm:inline">Backlog</span>
                         </button>
                         <button
                             onClick={() => setViewMode('MRS')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'MRS' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'MRS' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <Users size={16} /><span className="hidden sm:inline">Resources</span>
                         </button>
                         <button
                             onClick={() => setViewMode('CREW')}
                             title="Who is on what right now — the supervisor's morning view"
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'CREW' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'CREW' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <Briefcase size={16} /><span className="hidden sm:inline">Crew</span>
                         </button>
@@ -1126,7 +1126,7 @@ export const Scheduling: React.FC = () => {
                             aria-haspopup="menu"
                             aria-expanded={moreOpen}
                             title="More — shift handover, print or export"
-                            className="px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
+                            className="px-2.5 sm:px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
                         >
                             <MoreHorizontal size={16} /><span className="hidden sm:inline">More</span>
                         </button>
@@ -1165,21 +1165,21 @@ export const Scheduling: React.FC = () => {
                 {viewMode === 'CALENDAR' && (
                     <>
                         {/* Calendar Toolbar */}
-                        <div className="px-4 py-2.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
+                        <div className="px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+                            <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
                                 {/* Search */}
-                                <div className="relative">
-                                    <Search className="absolute left-2.5 top-2 text-slate-400" size={14} />
+                                <div className="relative flex-1 sm:flex-none min-w-0">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                                     <input
                                         type="text"
                                         placeholder="Search WO, asset, title..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white w-56 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-600"
+                                        className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-600"
                                     />
                                 </div>
                                 {/* Scale Switcher */}
-                                <div className="flex bg-slate-100 rounded-lg p-0.5">
+                                <div className="flex flex-shrink-0 bg-slate-100 rounded-lg p-0.5">
                                     {(['MONTH', 'WEEK', 'DAY'] as CalendarScale[]).map(scale => (
                                         <button
                                             key={scale}
@@ -1194,11 +1194,12 @@ export const Scheduling: React.FC = () => {
                                     ))}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3">
+                            {/* Phone: one swipeable row of single-line chips (they wrapped to three lines) */}
+                            <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-hide w-full sm:w-auto">
                                 <button
                                     onClick={() => setShowProjections(!showProjections)}
                                     data-toggle="projections"
-                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showProjections ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    className={`text-[11px] sm:text-xs font-bold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 sm:gap-2 border transition ${showProjections ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
                                 >
                                     {showProjections ? <Eye size={14} /> : <EyeOff size={14} />}
                                     {showProjections ? 'Hide Projections' : 'Show Projections'}
@@ -1207,7 +1208,7 @@ export const Scheduling: React.FC = () => {
                                 <button
                                     onClick={() => setShowRisk(!showRisk)}
                                     title="Predicted failure windows from Predict (RUL) — advisory markers; schedule preventive work ahead of them"
-                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showRisk ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    className={`text-[11px] sm:text-xs font-bold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 sm:gap-2 border transition ${showRisk ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
                                 >
                                     <AlertTriangle size={14} />
                                     {showRisk ? 'Predicted Failures: on' : 'Predicted Failures: off'}
@@ -1216,7 +1217,7 @@ export const Scheduling: React.FC = () => {
                                     onClick={() => setShowClosed(!showClosed)}
                                     aria-pressed={showClosed}
                                     title="Completed (TECO/CLOSED) and cancelled work orders"
-                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showClosed ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    className={`text-[11px] sm:text-xs font-bold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 sm:gap-2 border transition ${showClosed ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
                                 >
                                     <Archive size={14} />
                                     Show closed

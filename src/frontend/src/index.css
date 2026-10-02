@@ -1992,32 +1992,38 @@ select {
    Phase P1 — Mobile Input Sizing & Tap Targets
    ═══════════════════════════════════════════════ */
 
-/* On mobile: increase input height and font to prevent iOS auto-zoom */
-@media (max-width: 639px) {
-  input[type="text"],
-  input[type="email"],
-  input[type="password"],
-  input[type="number"],
-  input[type="date"],
-  input[type="time"],
-  input[type="search"],
-  textarea,
-  select {
-    min-height: 44px;
-    font-size: 16px !important; /* Prevents iOS Safari zoom on focus */
+/* Phone baseline for form controls: 14px / 40px. It lives in the base layer so
+   a control's own size utility (text-[11px] on a status pill, min-h-0 on an
+   inline chip) still wins — the old unlayered `16px !important` overrode every
+   class and blew every field up to thumb size. iOS focus-zoom (Safari zooms
+   below 16px) is stopped in main.tsx with maximum-scale=1, iOS only. */
+@layer base {
+  @media (max-width: 639px) {
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    input[type="date"],
+    input[type="time"],
+    input[type="search"],
+    textarea,
+    select {
+      min-height: 40px;
+      font-size: 14px;
+    }
   }
+}
 
-  /* Dense opt-out for secondary controls (rule composers, per-row planning
-     fields, risk selectors): 14px / 36px so a card of six small fields stays a
-     card instead of a column of thumb-sized boxes. Trade-off: iOS Safari may
-     zoom on focus inside these containers (it zooms below 16px). Primary
-     fields (search, description, frequency) keep the 44px default. */
-  .ers-dense input[type="text"],
-  .ers-dense input[type="number"],
-  .ers-dense input[type="date"],
-  .ers-dense input[type="search"],
+@media (max-width: 639px) {
+  /* Dense containers (rule composers, per-row planning fields, whole Details
+     tabs): 14px / 36px, so a card of six small fields stays a card instead of
+     a column of thumb-sized boxes. */
+  .ers-dense input[type="text"]:not(.ers-pill),
+  .ers-dense input[type="number"]:not(.ers-pill),
+  .ers-dense input[type="date"]:not(.ers-pill),
+  .ers-dense input[type="search"]:not(.ers-pill),
   .ers-dense textarea,
-  .ers-dense select {
+  .ers-dense select:not(.ers-pill) {
     min-height: 36px;
     font-size: 14px !important;
   }

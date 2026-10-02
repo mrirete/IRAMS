@@ -397,14 +397,14 @@ export const TaskLibraryManager: React.FC = () => {
             <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-200 bg-slate-50 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                            <BookOpen className="text-blue-600" /> Task Library
+                        <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                            <BookOpen size={18} className="text-blue-600" /> Task Library
                         </h2>
                         <p className="text-sm text-slate-500 hidden sm:block">Reusable job templates for Maintenance, Inspection, Safety and Project work.</p>
                     </div>
                     {canCreateTL && (
                         <Button size="sm" leftIcon={<Plus size={14} />} onClick={handleCreate} className="flex-shrink-0">
-                            New Template
+                            <span className="sm:hidden">New</span><span className="hidden sm:inline">New Template</span>
                         </Button>
                     )}
                 </div>

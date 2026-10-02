@@ -226,6 +226,9 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [showMassChange, setShowMassChange] = useState(false);
     const [showFabMenu, setShowFabMenu] = useState(false);
+    // Phone: row checkboxes appear only in select mode — always-on they cost every row
+    // a column before the tag. Desktop keeps them visible.
+    const [selectMode, setSelectMode] = useState(false);
 
     // Asset Tag editability: SAP PM best practice — tag is immutable after first save.
     // Only editable for freshly created or duplicated assets (one-time setup).
@@ -930,8 +933,37 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                     /* ─── FULL TABLE VIEW (no asset selected) ─── */
                     <>
                 {/* Header */}
-                <div className="p-2 sm:p-3 md:p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
-                    <h2 className="hidden sm:block text-lg font-bold text-slate-900">Asset Registry</h2>
+                <div className="px-3 py-2 sm:p-3 md:p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
+                    <h2 className="text-lg font-bold text-slate-900">Asset Registry</h2>
+                    {/* Phone actions — replace the old floating "+" that sat beside Log Issue */}
+                    <div className="flex sm:hidden items-center gap-2">
+                        <button
+                            onClick={() => { if (selectMode) setSelectedIds(new Set()); setSelectMode(m => !m); }}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${selectMode ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-slate-300 bg-white text-slate-600'}`}
+                        >
+                            {selectMode ? 'Done' : 'Select'}
+                        </button>
+                        {canCreate && (
+                            <div className="relative">
+                                <Button onClick={() => setShowFabMenu(v => !v)} size="sm" leftIcon={<Plus size={14} />}>
+                                    New
+                                </Button>
+                                {showFabMenu && (
+                                    <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setShowFabMenu(false)} />
+                                        <div className="absolute right-0 top-full mt-1 z-50 w-44 bg-white border border-slate-200 rounded-lg shadow-xl py-1">
+                                            <button onClick={() => { openAddModal('Asset'); setShowFabMenu(false); }} className="w-full px-3 py-2.5 text-left text-sm hover:bg-slate-50 flex items-center gap-2">
+                                                <Package size={14} className="text-blue-600" /> New Asset
+                                            </button>
+                                            <button onClick={() => { openAddModal('Location'); setShowFabMenu(false); }} className="w-full px-3 py-2.5 text-left text-sm hover:bg-slate-50 border-t border-slate-100 flex items-center gap-2">
+                                                <MapPin size={14} className="text-emerald-600" /> New Location
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
                     <div className="hidden sm:flex flex-wrap gap-2">
                         {/* Bulk Import */}
                         {canCreate && (
@@ -991,9 +1023,9 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                 </div>
 
                 {/* Filters & Bulk Actions */}
-                <div className="p-4 border-b border-slate-100 bg-white flex gap-2 items-center">
+                <div className="p-3 sm:p-4 border-b border-slate-100 bg-white flex gap-2 items-center">
                     {selectedIds.size > 0 ? (
-                        <div className="flex-1 flex items-center gap-2 bg-blue-50 p-2 rounded-lg animate-in fade-in">
+                        <div className="flex-1 flex flex-wrap items-center gap-2 bg-blue-50 p-2 rounded-lg animate-in fade-in">
                             <span className="text-xs font-bold text-blue-800 ml-2">{selectedIds.size} Selected</span>
                             <div className="h-4 w-px bg-blue-200 mx-2"></div>
 
@@ -1208,8 +1240,8 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     onClick={() => handleRowClick(asset)}
                                     onContextMenu={(e) => handleTreeContextMenu(e, asset)}
                                 >
-                                    {/* Checkbox */}
-                                    <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    {/* Checkbox — phone shows it only in select mode */}
+                                    <div className={`flex-shrink-0 ${selectMode || selectedIds.size > 0 ? '' : 'hidden sm:block'}`} onClick={(e) => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
                                             checked={isSelected}
@@ -1416,7 +1448,8 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
             {/* Right Detail Pane */}
             {
                 selectedAsset && (
-                    <div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden ers-detail-panel-enter">
+                    // Phone: edge to edge (cancels main's p-4), same as the Work Order record.
+                    <div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden ers-detail-panel-enter max-sm:-mx-4 max-sm:-mt-4 max-sm:rounded-none max-sm:border-x-0 max-sm:border-t-0 max-sm:shadow-none">
 
                         {/* Unified Detail Header */}
                         <UnifiedDetailHeader
@@ -1467,6 +1500,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     variant: 'primary' as const,
                                     disabled: saving,
                                     isPrimary: true,
+                                    hideOnMobile: true, // the phone footer carries Save
                                 }] : []),
                                 {
                                     label: 'Analyze',
@@ -1577,7 +1611,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         </div>
 
                         {/* Tab Content */}
-                        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
+                        <div className="flex-1 overflow-y-auto p-2 sm:p-6 pb-24 sm:pb-6 bg-slate-50">
                             {/* One reading column for every tab — the detail pane is as wide as the
                                 window allows, and an unbounded form is harder to read than a bounded
                                 one. Binds only on wide monitors; narrower panes are unchanged. */}
@@ -1617,12 +1651,6 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
                         {canEdit && (
                             <div className="sm:hidden mobile-detail-footer justify-end">
-                                <button
-                                    onClick={() => setSelectedAsset(null)}
-                                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-200"
-                                >
-                                    Close
-                                </button>
                                 <Button
                                     onClick={handleSave}
                                     loading={saving}
@@ -1979,59 +2007,6 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                 }}
             />
 
-            {/* FAB for mobile — one-hand creation menu (visible < 768px only).
-                Hidden while the add form is open so it can't sit over the Create button, and
-                while a record is open: the full-screen detail pane has its own Save footer and
-                Add Asset action, and at z-999 the FAB would float over every pop-up. */}
-            {canCreate && !isAddModalOpen && !selectedAsset && (
-                <div className="sm:hidden fixed bottom-20 right-5 z-[999] flex flex-col items-end gap-3">
-                    {showFabMenu && (
-                        <>
-                            {/* Backdrop to close the menu */}
-                            <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-[-1]" onClick={() => setShowFabMenu(false)} />
-                            
-                            {/* Option 1: New Location */}
-                            <button
-                                onClick={() => {
-                                    openAddModal('Location');
-                                    setShowFabMenu(false);
-                                }}
-                                className="flex items-center gap-2 px-3 py-2 bg-green-600 active:bg-green-700 text-white rounded-full shadow-lg animate-in slide-in-from-bottom-5 duration-200"
-                            >
-                                <span className="text-xs font-bold px-1 select-none">New Location</span>
-                                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                                    <MapPin size={15} />
-                                </div>
-                            </button>
-                            
-                            {/* Option 2: New Asset */}
-                            <button
-                                onClick={() => {
-                                    openAddModal('Asset');
-                                    setShowFabMenu(false);
-                                }}
-                                className="flex items-center gap-2 px-3 py-2 bg-blue-600 active:bg-blue-700 text-white rounded-full shadow-lg animate-in slide-in-from-bottom-3 duration-150"
-                            >
-                                <span className="text-xs font-bold px-1 select-none">New Asset</span>
-                                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                                    <Plus size={15} />
-                                </div>
-                            </button>
-                        </>
-                    )}
-                    
-                    {/* Main FAB Toggle */}
-                    <button
-                        onClick={() => setShowFabMenu(prev => !prev)}
-                        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all duration-300 ${
-                            showFabMenu ? 'bg-slate-600 rotate-45 scale-95 shadow-lg' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/30'
-                        }`}
-                        title="Add menu"
-                    >
-                        <Plus size={24} className="transition-transform" />
-                    </button>
-                </div>
-            )}
 
             {/* ── Right-click context menu (portal) ── */}
             {ctxMenu && createPortal(
@@ -2212,7 +2187,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
 
 
     return (
-        <div className="ers-page-form space-y-4 animate-in fade-in duration-300">
+        <div className="ers-page-form ers-dense ers-dense-labels space-y-4 animate-in fade-in duration-300">
             {/* Modals */}
             {isAddMfrOpen && (
                 <AddManufacturerModal
@@ -2280,7 +2255,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             <select
                                 value={asset.status || 'ACTIVE'}
                                 onChange={(e) => handleChange('status', e.target.value as AssetStatus)}
-                                className={`appearance-none pl-5 pr-6 py-1 rounded-full text-[11px] font-bold border transition-all duration-300 whitespace-nowrap cursor-pointer outline-none ${
+                                className={`ers-pill min-h-0 appearance-none pl-5 pr-6 py-1 rounded-full text-[11px] font-bold border transition-all duration-300 whitespace-nowrap cursor-pointer outline-none ${
                                     asset.status === AssetStatus.ACTIVE ? 'bg-green-50 border-green-300 text-green-700' :
                                     asset.status === AssetStatus.MAINTENANCE ? 'bg-amber-50 border-amber-300 text-amber-700' :
                                     asset.status === AssetStatus.STANDBY ? 'bg-blue-50 border-blue-300 text-blue-700' :
@@ -3135,7 +3110,7 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
         if (!item.isLinked) {
             return (
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
-                    ðŸ““ Text Component
+                    📓 Text Component
                 </span>
             );
         }
@@ -3145,13 +3120,13 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
         if (stockable) {
             return (
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">
-                    ðŸ“¦ {item.materialNumber} Â· {type}
+                    📦 {item.materialNumber} · {type}
                 </span>
             );
         }
         return (
             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">
-                âš™ï¸ {item.materialNumber} Â· {type}
+                ⚙️ {item.materialNumber} · {type}
             </span>
         );
     };
@@ -3168,12 +3143,12 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
                 uomOptions={uomOptions}
                 inventoryTypes={inventoryTypes}
             />
-            {/* Promote to Material Modal â€” portaled to body to escape overflow clipping */}
+            {/* Promote to Material Modal — portaled to body to escape overflow clipping */}
             {promoteItem && createPortal(
                 <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-4 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-blue-50 flex justify-between items-center">
-                            <h3 className="font-bold text-slate-800">â¬† Promote to Material</h3>
+                            <h3 className="font-bold text-slate-800">⬆ Promote to Material</h3>
                             <button onClick={() => setPromoteItem(null)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <div className="p-6 space-y-4">
@@ -3188,7 +3163,7 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
                                     className="w-full p-2 border border-slate-300 rounded text-sm"
                                 >
                                     {inventoryTypes.map(t => (
-                                        <option key={t.code} value={t.code}>{t.code} â€” {t.description}</option>
+                                        <option key={t.code} value={t.code}>{t.code} — {t.description}</option>
                                     ))}
                                 </select>
                             </div>
@@ -3203,17 +3178,89 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
                 </div>,
                 document.body
             )}
-            <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                <div>
-                    <h3 className="font-bold text-slate-700">Bill of Materials (BOM)</h3>
+            <div className="px-3 py-2.5 sm:p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center gap-3">
+                <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-700">Bill of Materials (BOM)</h3>
                     <span className="text-[10px] text-slate-400">{bomItems.length} component{bomItems.length !== 1 ? 's' : ''}</span>
                 </div>
-                <button onClick={() => setIsAddOpen(true)} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500">+ Add Part</button>
+                <button onClick={() => setIsAddOpen(true)} className="flex-shrink-0 text-xs font-semibold bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700">+ Add Part</button>
             </div>
             {loading ? (
-                <div className="p-8 text-center text-slate-400">Loading BOM...</div>
+                <div className="p-8 text-center text-sm text-slate-400">Loading BOM...</div>
+            ) : bomItems.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-slate-400">
+                    No components yet. Use "+ Add Part" to start building the BOM.
+                </div>
             ) : (
-                <table className="min-w-full divide-y divide-slate-200">
+                <>
+                {/* Phone: one stacked row per part — the six-column table cannot fit 390 px. */}
+                <div className="sm:hidden ers-dense divide-y divide-slate-100">
+                    {bomItems.map(item => (
+                        <div key={item.id} className="p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                    {renderTierBadge(item)}
+                                    {item.partNumber && <span className="text-xs font-mono text-slate-500 truncate">{item.partNumber}</span>}
+                                </div>
+                                <div className="flex items-center flex-shrink-0">
+                                    {!item.isLinked && (
+                                        <button
+                                            onClick={() => { setPromoteItem(item); setPromoteType('SPARE'); }}
+                                            className="text-amber-500 p-2 rounded hover:bg-blue-50"
+                                            title="Promote to Material"
+                                            aria-label="Promote to Material"
+                                        >
+                                            <ArrowUpRight size={15} />
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => handleRemoveItem(item.id)}
+                                        className="text-slate-400 hover:text-red-500 p-2"
+                                        title="Remove Part"
+                                        aria-label="Remove Part"
+                                    >
+                                        <X size={15} />
+                                    </button>
+                                </div>
+                            </div>
+                            <input
+                                className="w-full text-sm border border-slate-200 bg-white focus:border-blue-500 rounded px-2 py-1 outline-none"
+                                value={item.description}
+                                onChange={(e) => handleUpdateItem(item.id, 'description', e.target.value)}
+                                aria-label="Description"
+                            />
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    className="w-20 text-right text-sm border border-slate-200 bg-white focus:border-blue-500 rounded px-2 py-1 font-bold outline-none"
+                                    value={item.quantity}
+                                    onChange={(e) => handleUpdateItem(item.id, 'quantity', parseFloat(e.target.value))}
+                                    aria-label="Quantity"
+                                />
+                                <select
+                                    className="flex-1 min-w-0 text-sm border border-slate-200 bg-white focus:border-blue-500 rounded px-2 py-1 outline-none"
+                                    value={item.uom || ''}
+                                    onChange={(e) => handleUpdateItem(item.id, 'uom', e.target.value)}
+                                    aria-label="Unit of measure"
+                                >
+                                    <option value="">UOM</option>
+                                    {uomOptions.map(u => <option key={u} value={u}>{u}</option>)}
+                                    {!uomOptions.includes(item.uom) && item.uom && <option value={item.uom}>{item.uom}</option>}
+                                </select>
+                                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 flex-shrink-0">
+                                    <input
+                                        type="checkbox"
+                                        checked={item.critical}
+                                        onChange={(e) => handleUpdateItem(item.id, 'isCritical', e.target.checked)}
+                                        className="rounded border-slate-300 text-red-600 focus:ring-red-500"
+                                    />
+                                    Critical
+                                </label>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <table className="hidden sm:table min-w-full divide-y divide-slate-200">
                     <thead className="bg-white">
                         <tr>
                             <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Material / Part</th>
@@ -3289,15 +3336,9 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
                                 </td>
                             </tr>
                         ))}
-                        {bomItems.length === 0 && (
-                            <tr>
-                                <td colSpan={6} className="px-6 py-8 text-center text-slate-400 italic bg-slate-50 border-b border-slate-100">
-                                    No components yet. Click "+ Add Part" to start building the BOM.
-                                </td>
-                            </tr>
-                        )}
                     </tbody>
                 </table>
+                </>
             )}
         </div>
     );
@@ -4050,12 +4091,12 @@ function JobsTab({ asset }: { asset: Asset }) {
     const completedWOs = assetWOs.filter(wo => ['CLOSED', 'TECO', 'CANCELLED'].includes(wo.status));
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             {/* Asset Reliability summary — same engine as the WO Analysis tab */}
             {rel && rel.totalFailures > 0 && (
                 <div className="bg-white p-4 rounded-lg border border-slate-200">
                     <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2">
+                        <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wide flex items-center gap-2">
                             <Activity size={14} className="text-blue-600" /> Reliability from Work History
                         </h3>
                         <span className="text-[10px] text-slate-400 uppercase tracking-wide">last 12 months</span>
@@ -4101,7 +4142,7 @@ function JobsTab({ asset }: { asset: Asset }) {
 
             {/* Active Work Orders Section */}
             <div>
-                <h3 className="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2">
+                <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-2">
                     <Wrench size={14} /> Active Work Orders ({activeWOs.length})
                 </h3>
                 {activeWOs.map(wo => (
@@ -4136,8 +4177,8 @@ function JobsTab({ asset }: { asset: Asset }) {
                     </div>
                 ))}
                 {!activeWOs.length && (
-                    <div className="text-center py-8 text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg">
-                        <Wrench size={24} className="mx-auto mb-2 opacity-20" />
+                    <div className="flex items-center justify-center gap-2 py-3 text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg">
+                        <Wrench size={14} className="opacity-40" />
                         No active work orders for this asset.
                     </div>
                 )}
@@ -4145,7 +4186,7 @@ function JobsTab({ asset }: { asset: Asset }) {
 
             {/* Recurring PMs Section */}
             <div>
-                <h3 className="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2">
+                <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-2">
                     <Repeat size={14} /> Recurring PMs ({linkedPMs.length})
                 </h3>
                 {linkedPMs.map(pm => {
@@ -4188,8 +4229,8 @@ function JobsTab({ asset }: { asset: Asset }) {
                     );
                 })}
                 {!linkedPMs.length && (
-                    <div className="text-center py-8 text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg">
-                        <Repeat size={24} className="mx-auto mb-2 opacity-20" />
+                    <div className="flex items-center justify-center gap-2 py-3 text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg">
+                        <Repeat size={14} className="opacity-40" />
                         No recurring PMs linked to this asset.
                     </div>
                 )}
@@ -4199,7 +4240,7 @@ function JobsTab({ asset }: { asset: Asset }) {
             <div>
                 <button
                     onClick={() => setShowHistory(!showHistory)}
-                    className="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2 hover:text-blue-600 transition-colors w-full"
+                    className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-2 hover:text-blue-600 transition-colors w-full"
                 >
                     <History size={14} />
                     <span>Work Order History ({completedWOs.length})</span>
@@ -4311,26 +4352,27 @@ function TrackingTab({ asset }: { asset: Asset }) {
             {/* ── Audit Trail ── */}
             {trackingSubTab === 'audit' && (
                 <div className="flow-root">
-                    <ul role="list" className="-mb-8">
+                    <ul role="list" className="-mb-5 sm:-mb-8">
                         {auditEntries.map((e, idx) => (
                             <li key={e.id || idx}>
-                                <div className="relative pb-8">
+                                <div className="relative pb-5 sm:pb-8">
                                     {idx !== auditEntries.length - 1 ? (
-                                        <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true" />
+                                        <span className="absolute top-3.5 sm:top-4 left-3.5 sm:left-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true" />
                                     ) : null}
-                                    <div className="relative flex space-x-3">
+                                    <div className="relative flex gap-3">
                                         <div>
-                                            <span className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${e.action === 'INSERT' ? 'bg-emerald-500' : e.action === 'DELETE' ? 'bg-red-500' : 'bg-blue-500'}`}>
-                                                <History className="h-4 w-4 text-white" aria-hidden="true" />
+                                            <span className={`h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center ring-4 sm:ring-8 ring-white ${e.action === 'INSERT' ? 'bg-emerald-500' : e.action === 'DELETE' ? 'bg-red-500' : 'bg-blue-500'}`}>
+                                                <History className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-white" aria-hidden="true" />
                                             </span>
                                         </div>
-                                        <div className="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
-                                            <div>
-                                                <p className="text-sm text-slate-600">
+                                        {/* Phone: when/who stacks under the change — side by side it squeezed the change text to a 3-line column. */}
+                                        <div className="flex min-w-0 flex-1 flex-col sm:flex-row sm:justify-between gap-0.5 sm:gap-4 pt-1 sm:pt-1.5">
+                                            <div className="min-w-0">
+                                                <p className="text-xs sm:text-sm text-slate-600 break-words">
                                                     {describeAudit(e)} <span className="text-[10px] font-semibold uppercase text-slate-400">({e.action})</span>
                                                 </p>
                                             </div>
-                                            <div className="whitespace-nowrap text-right text-sm text-slate-500">
+                                            <div className="whitespace-nowrap sm:text-right text-[11px] sm:text-sm text-slate-500 flex items-baseline gap-2 sm:block">
                                                 <time>{e.timestamp ? new Date(e.timestamp).toLocaleString() : ''}</time>
                                                 <div className="text-[10px] text-slate-400">by {e.actorName || 'System'}</div>
                                             </div>

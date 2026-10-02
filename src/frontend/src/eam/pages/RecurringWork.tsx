@@ -1313,7 +1313,7 @@ export const RecurringWork: React.FC = () => {
             {/* List Sidebar — below lg the page itself scrolls (no half-height inner list) */}
             <div className={`flex flex-col bg-white rounded-card shadow-card border border-slate-200 lg:overflow-hidden transition-all duration-300 ${isFullscreen ? 'hidden' : selectedJob ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
                 <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center">
-                    <h2 className="font-bold text-slate-900">Recurring Jobs</h2>
+                    <h2 className="text-lg font-bold text-slate-900">Recurring Work</h2>
                     <div className="flex gap-2">
                         <button
                             onClick={() => setShowBulkImport(true)}
@@ -1325,7 +1325,7 @@ export const RecurringWork: React.FC = () => {
                         <button
                             onClick={() => canEditPM ? setShowGenerator(true) : denied('generate work orders from strategies')}
                             disabled={!canEditPM}
-                            className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             title={canEditPM ? 'Run Job Generator' : 'Needs Recurring Work · Edit'}
                         >
                             <Zap size={16} /> <span className="hidden xl:inline">Generate</span>
@@ -1454,7 +1454,8 @@ export const RecurringWork: React.FC = () => {
                                 return (
                                     <div
                                         key={job.id}
-                                        className={`mobile-card flex items-start gap-3 ${selectedJob?.id === job.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''} ${isSelected ? 'bg-blue-50/40' : ''} ${isOverdue ? 'overdue-strip' : ''}`}
+                                        // flex-row! — .mobile-card (unlayered) sets column, which put the checkbox on a row of its own
+                                        className={`mobile-card flex flex-row! items-start gap-3 ${selectedJob?.id === job.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''} ${isSelected ? 'bg-blue-50/40' : ''} ${isOverdue ? 'overdue-strip' : ''}`}
                                     >
                                         {/* Checkbox */}
                                         <input

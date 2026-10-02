@@ -447,23 +447,23 @@ export const PurchaseOrders: React.FC = () => {
         <div className="flex h-[calc(100vh-6rem)] gap-6">
             {/* List Sidebar */}
             <div className={`po-no-print flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedPO ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-                    <h2 className="font-bold text-slate-900">Purchase Orders</h2>
+                <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900 truncate">Purchase Orders</h2>
+                    {/* The one create button on every width — the floating "+" beside Log Issue is gone */}
                     <Button
                         onClick={handleCreatePO}
                         disabled={!canCreate}
                         size="sm"
                         leftIcon={<Plus size={16} />}
-                        className="hidden sm:inline-flex"
                         title={!canCreate ? 'Insufficient permissions' : 'Create new purchase order'}
                     >
-                        New PO
+                        <span className="sm:hidden">New</span><span className="hidden sm:inline">New PO</span>
                     </Button>
                 </div>
 
-                <div className="p-4 border-b border-slate-200 bg-slate-50 flex gap-2">
+                <div className="p-3 sm:p-4 border-b border-slate-200 bg-slate-50 flex gap-2">
                     <div className="relative flex-1">
-                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                         <input
                             type="text"
                             placeholder="Search PO #, Supplier..."
@@ -601,17 +601,6 @@ export const PurchaseOrders: React.FC = () => {
                     </div>
                     </div>
                 </div>
-            )}
-
-            {/* ═══ Mobile FAB — New PO (RBAC-gated, ≤640px only) ═══ */}
-            {!selectedPO && canCreate && (
-                <button
-                    className="fab"
-                    onClick={handleCreatePO}
-                    aria-label="New Purchase Order"
-                >
-                    <Plus size={24} />
-                </button>
             )}
 
             {/* GAP-04/21: Delete PO Confirmation */}

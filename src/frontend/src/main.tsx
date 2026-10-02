@@ -11,6 +11,15 @@ import { reloadOnceForStaleChunk } from './lib/lazyWithReload'
 import { errorLog } from './eam/services/ErrorLogService'
 void errorLog
 
+// iOS Safari zooms the page when a field under 16px takes focus. maximum-scale=1
+// stops that focus-zoom while iOS (10+) still allows pinch-zoom, so phone fields
+// can be 14px. iOS only: on Android maximum-scale WOULD block pinch-zoom, and
+// Android never zoomed on focus anyway.
+const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+if (isIOS) {
+  document.querySelector('meta[name="viewport"]')?.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover')
+}
+
 // ── Service-worker teardown ─────────────────────────────────────────────────
 // The app no longer ships a service worker (vite-plugin-pwa fully retired). We
 // unregister ANY lingering SW from an older PWA build and purge its caches.

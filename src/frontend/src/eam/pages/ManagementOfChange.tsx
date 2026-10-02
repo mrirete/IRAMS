@@ -226,12 +226,12 @@ export const ManagementOfChange: React.FC = () => {
     };
 
     return (
-        <div className="ers-page-wide space-y-6">
+        <div className="ers-page-wide space-y-4 sm:space-y-6">
             {/* Header */}
-            <div className="flex justify-between items-end flex-wrap gap-3">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Management of Change (eMoC)</h1>
-                    <p className="text-slate-500 text-sm">ISO 31000 • Change control for PM strategies, set-points, and configurations</p>
+            <div className="flex justify-between items-center sm:items-end flex-wrap gap-2 sm:gap-3">
+                <div className="min-w-0">
+                    <h1 className="text-lg font-bold text-slate-900">Management of Change (eMoC)</h1>
+                    <p className="hidden sm:block text-slate-500 text-sm">ISO 31000 • Change control for PM strategies, set-points, and configurations</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <AskRelanternButton
@@ -248,9 +248,9 @@ export const ManagementOfChange: React.FC = () => {
                     {canCreate ? (
                         <button
                             onClick={() => setShowCreateModal(true)}
-                            className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 hover:bg-primary-500"
+                            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold transition flex items-center gap-1.5 hover:bg-primary-700 whitespace-nowrap"
                         >
-                            <Plus size={16} /> New MoC Request
+                            <Plus size={16} /> <span className="sm:hidden">New</span><span className="hidden sm:inline">New MoC Request</span>
                         </button>
                     ) : (
                         <span className="text-xs text-slate-500">Ask a planner or engineer to raise a change.</span>
@@ -259,9 +259,9 @@ export const ManagementOfChange: React.FC = () => {
             </div>
 
             {/* Filters */}
-            <div className="flex flex-wrap gap-3 items-center">
-                <div className="relative flex-1 max-w-xs">
-                    <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+            <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+                <div className="relative basis-full sm:basis-auto flex-1 sm:max-w-xs">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                         type="text"
                         placeholder="Search MoC requests..."
@@ -275,7 +275,7 @@ export const ManagementOfChange: React.FC = () => {
                     value={filterType}
                     onChange={e => setFilterType(e.target.value)}
                     aria-label="Change type"
-                    className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="flex-1 sm:flex-none min-w-[9rem] px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
                     <option value="ALL">All change types</option>
                     {Object.entries(CHANGE_TYPES).map(([k, info]) => (
@@ -286,7 +286,7 @@ export const ManagementOfChange: React.FC = () => {
                     value={sortBy}
                     onChange={e => setSortBy(e.target.value as typeof sortBy)}
                     aria-label="Sort"
-                    className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="flex-1 sm:flex-none min-w-[9rem] px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
                     <option value="NEWEST">Newest first</option>
                     <option value="OLDEST">Oldest first</option>
@@ -322,7 +322,8 @@ export const ManagementOfChange: React.FC = () => {
             )}
 
             {/* Status Summary Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {/* Phone: one swipeable row of status chips — eight tiles filled a whole screen */}
+            <div className="flex sm:grid sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
                 {['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'IMPLEMENTED', 'CLOSED', 'REJECTED', 'CANCELLED'].map(status => {
                     const count = requests.filter(r => r.status === status).length;
                     const style = STATUS_STYLES[status];
@@ -330,11 +331,11 @@ export const ManagementOfChange: React.FC = () => {
                         <button
                             key={status}
                             onClick={() => setFilterStatus(filterStatus === status ? 'ALL' : status)}
-                            className={`p-3 rounded-lg border transition text-left ${filterStatus === status ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200 hover:border-slate-300'
+                            className={`flex-shrink-0 flex sm:block items-baseline gap-1.5 px-3 py-1.5 sm:p-3 rounded-full sm:rounded-lg border bg-white transition text-left whitespace-nowrap ${filterStatus === status ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200 hover:border-slate-300'
                                 }`}
                         >
-                            <p className="text-lg font-bold text-slate-900">{count}</p>
-                            <p className="text-xs text-slate-500">{status.replace(/_/g, ' ')}</p>
+                            <p className="text-sm sm:text-lg font-bold text-slate-900">{count}</p>
+                            <p className="text-[11px] sm:text-xs text-slate-500">{status.replace(/_/g, ' ')}</p>
                         </button>
                     );
                 })}

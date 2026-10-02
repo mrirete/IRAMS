@@ -419,9 +419,9 @@ export const ServiceRequests: React.FC = () => {
         <div className="ers-page-wide w-full flex flex-col h-[calc(100vh-6rem)] min-h-0">
             {/* Header */}
             <div className="mb-3 flex flex-wrap justify-between items-center gap-3">
-                <div className="hidden sm:block">
-                    <h1 className="text-lg md:text-2xl font-bold text-slate-900">Maintenance Requests</h1>
-                    <p className="text-xs sm:text-sm text-slate-500">
+                <div className="min-w-0">
+                    <h1 className="text-lg font-bold text-slate-900 truncate">Maintenance Requests</h1>
+                    <p className="hidden sm:block text-sm text-slate-500">
                         {loading ? 'Triage and convert issues to work orders.' : `${openCount} open · ${overdueAll} overdue`}
                     </p>
                 </div>
@@ -433,17 +433,17 @@ export const ServiceRequests: React.FC = () => {
                     />
                     <button
                         onClick={() => setIsCreating(true)}
-                        className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                        className="bg-primary-600 hover:bg-primary-700 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 shadow-sm whitespace-nowrap"
                     >
-                        <Plus size={18} /> New Request
+                        <Plus size={16} /> <span className="sm:hidden">New</span><span className="hidden sm:inline">New Request</span>
                     </button>
                 </div>
             </div>
 
             {/* Toolbar: search · filters · sort · view */}
             <div className="flex flex-wrap items-center gap-2 mb-2">
-                <div className="relative flex-1 min-w-[220px]">
-                    <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     <input
                         type="text"
                         value={filters.q}

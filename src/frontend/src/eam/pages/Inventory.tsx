@@ -2760,9 +2760,9 @@ export function Inventory({ onAnalyze }: InventoryProps) {
         <div className="flex h-full gap-6 relative">
             {/* List Sidebar */}
             <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedItem ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-                    <h2 className="font-bold text-slate-900">Inventory Registry</h2>
-                    <div className="flex gap-2 items-center">
+                <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900 truncate"><span className="sm:hidden">Inventory</span><span className="hidden sm:inline">Inventory Registry</span></h2>
+                    <div className="flex gap-2 items-center flex-shrink-0">
                         <AskRelanternButton
                             contextType="inventory"
                             contextSummary={`Inventory Overview: ${inventoryItems.length} items registered. Low Stock: ${inventoryItems.filter(i => i.totalQtyOnHand <= (i.minLevel || 0)).length}. Critical Spares: ${inventoryItems.filter(i => i.isCritical).length}. ${stores.length} store locations. Total Inventory Value: $${inventoryItems.reduce((sum, i) => sum + (i.itemCost || 0) * (i.totalQtyOnHand || 0), 0).toLocaleString()}. Ask about stock optimization, EOQ analysis, reorder strategies, dead stock identification, or spare parts criticality.`}
@@ -2787,17 +2787,17 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         <button
                             onClick={() => setShowAddModal(true)}
                             disabled={!canCreate}
-                            className={`bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
+                            className={`bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-700'}`}
                             title={!canCreate ? 'Insufficient permissions' : 'Create new inventory item'}
                         >
-                            <Plus size={16} /> New Item
+                            <Plus size={16} /> <span className="sm:hidden">New</span><span className="hidden sm:inline">New Item</span>
                         </button>
                     </div>
                 </div>
 
-                <div className="p-4 border-b border-slate-200 bg-slate-50 flex gap-2">
+                <div className="p-3 sm:p-4 border-b border-slate-200 bg-slate-50 flex gap-2">
                     <div className="relative flex-1">
-                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                         <input
                             type="text"
                             placeholder="Search Code, Description..."
@@ -2900,23 +2900,24 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                         {/* Row 2: Description */}
                                         <h3 className="text-sm font-medium text-slate-900 mb-1 line-clamp-1">{item.description}</h3>
                                         {/* Row 3: Qty + Store + Type */}
-                                        <div className="flex justify-between items-center text-[11px] text-slate-500">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`font-bold ${stockStatus === 'OUT' ? 'text-red-600' : stockStatus === 'LOW' ? 'text-amber-600' : 'text-green-600'}`}>
+                                        <div className="flex justify-between items-center gap-2 text-[11px] text-slate-500">
+                                            {/* Figures never break mid-value ("Qty: 12 / EA" was wrapping); the store name truncates instead */}
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className={`font-bold whitespace-nowrap flex-shrink-0 ${stockStatus === 'OUT' ? 'text-red-600' : stockStatus === 'LOW' ? 'text-amber-600' : 'text-green-600'}`}>
                                                     Qty: {item.totalQtyOnHand} {item.uom}
                                                 </span>
                                                 {reserved > 0 && (
-                                                    <span className={`font-bold ${available === 0 ? 'text-red-600' : 'text-amber-600'}`} title={`${reserved} reserved by open work orders`}>
+                                                    <span className={`font-bold whitespace-nowrap flex-shrink-0 ${available === 0 ? 'text-red-600' : 'text-amber-600'}`} title={`${reserved} reserved by open work orders`}>
                                                         Avail: {available}
                                                     </span>
                                                 )}
                                                 {primaryLocation && (
-                                                    <span className="text-slate-400">
+                                                    <span className="text-slate-400 truncate min-w-0">
                                                         {primaryLocation.storeName}{primaryLocation.binLocation ? ` / ${primaryLocation.binLocation}` : ''}
                                                     </span>
                                                 )}
                                             </div>
-                                            <span className="text-slate-400 text-[10px]">{item.type}</span>
+                                            <span className="text-slate-400 text-[10px] flex-shrink-0">{item.type}</span>
                                         </div>
                                     </div>
                                 </div>

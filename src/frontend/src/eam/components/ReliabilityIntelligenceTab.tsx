@@ -296,10 +296,10 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
                     a deployment instruction shown to reliability engineers,
                     for an optional service. Predictive intelligence simply
                     needs condition data; say that, and point at the next step. */}
-                <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
-                    <Cpu size={48} className="mx-auto mb-4 text-slate-300" />
-                    <h3 className="text-lg font-bold text-slate-700 mb-2">No predictive intelligence yet</h3>
-                    <p className="text-sm text-slate-500 mb-2 max-w-lg mx-auto">
+                <div className="bg-white border border-slate-200 rounded-xl p-5 sm:p-8 text-center">
+                    <Cpu size={32} className="mx-auto mb-3 text-slate-300" />
+                    <h3 className="text-sm sm:text-base font-bold text-slate-700 mb-1.5">No predictive intelligence yet</h3>
+                    <p className="text-xs sm:text-sm text-slate-500 mb-2 max-w-lg mx-auto">
                         {error || 'Health index, remaining useful life and failure probability are computed from this asset’s condition data. Nothing has been recorded for it yet.'}
                     </p>
                     <p className="text-xs text-slate-400 mb-5 max-w-lg mx-auto">
