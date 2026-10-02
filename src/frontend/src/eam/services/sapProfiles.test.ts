@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSapProfile, findHeaderRow, SAP_PROFILES, isDescriptionRow, readingTypeFromCharacteristic } from './assetTemplates';
+import { resolveSapProfile, findHeaderRow, SAP_PROFILES, isDescriptionRow, readingTypeFromCharacteristic, stripCockpitAnnotation } from './assetTemplates';
 
 const lower = (h: string[]) => h.map(x => x.toLowerCase());
 
@@ -135,5 +135,81 @@ describe('SAP measuring points — consultant load-file layout', () => {
     expect(readingTypeFromCharacteristic('YB_HOURS')).toBe('HOURS');
     expect(readingTypeFromCharacteristic('VIBRATION')).toBe('VIBRATION');
     expect(readingTypeFromCharacteristic('mp_current')).toBe('CURRENT');
+  });
+});
+
+describe('Migration Cockpit sheets', () => {
+  // The cockpit annotates its headers — "EQUNR(k/*)" key + mandatory,
+  // "EQTYP(*)" mandatory, "STRAT(k)" key — and names the register differently
+  // from the tables: EXTERNAL_NUMBER / KTX01 on a location, TECHID for the tag.
+  const norm = (h: string[]) => h.map(x => stripCockpitAnnotation(x).toLowerCase());
+
+  it('strips the key / mandatory annotation and nothing else', () => {
+    expect(stripCockpitAnnotation('EQUNR(k/*)')).toBe('EQUNR');
+    expect(stripCockpitAnnotation('EQTYP(*)')).toBe('EQTYP');
+    expect(stripCockpitAnnotation('STRAT(k)')).toBe('STRAT');
+    expect(stripCockpitAnnotation('EQKTX')).toBe('EQKTX');
+    expect(stripCockpitAnnotation('Equipment (tag)')).toBe('Equipment (tag)');
+  });
+
+  it('reads S_EQUI as equipment, with TECHID as the tag', () => {
+    const p = resolveSapProfile(norm(['EQUNR(k/*)', 'NRANGE_IND', 'EQTYP(*)', 'DATAB(*)', 'EQKTX', 'EQART', 'TPLNR', 'HEQUI', 'TECHID']))!;
+    expect(p.name).toBe('SAP equipment');
+    expect(p.aliases['techid']).toBe('tag');
+    const r: Record<string, string> = { equipmentnumber: '10004711', name: 'Feed pump', tag: 'P-101A' };
+    p.fixup!(r);
+    expect(r.tag).toBe('P-101A');
+    expect(r.hierarchylevel).toBe('EQUIPMENT');
+  });
+
+  it('warns when a cost centre is Excel’s rendering of a number, not a cost centre', () => {
+    const p = SAP_PROFILES.find(x => x.name === 'SAP equipment')!;
+    expect(p.rowWarnings!({ costcenter: '1.7E+07' })).toHaveLength(1);
+    expect(p.rowWarnings!({ costcenter: '1710000012' })).toHaveLength(0);
+  });
+
+  it('reads S_FUN_LOCATION by its cockpit key, not the table name', () => {
+    const p = resolveSapProfile(norm(['EXTERNAL_NUMBER(k/*)', 'TPLKZ(*)', 'FLTYP(*)', 'ALKEY', 'KTX01', 'EQART', 'TPLMA', 'ABCKZ']))!;
+    expect(p.name).toBe('SAP functional locations (cockpit)');
+    expect(p.aliases['external_number']).toBe('tag');
+    expect(p.aliases['ktx01']).toBe('name');
+    expect(p.aliases['tplma']).toBe('parenttag');
+    // The table-name shape still resolves to the older profile.
+    expect(resolveSapProfile(norm(['TPLNR', 'PLTXT', 'TPLMA']))!.name).toBe('SAP functional locations');
+  });
+
+  it('finds the header row of a cockpit sheet even though every cell is annotated', () => {
+    const rows = [
+      ['EXTERNAL_NUMBER(k/*)', 'TPLKZ(*)', 'FLTYP(*)', 'ALKEY', 'KTX01', 'TPLMA'],
+      ['SITE-HOU', 'YB01', 'M', '', 'Houston site', ''],
+    ];
+    expect(findHeaderRow(rows)).toBe(0);
+  });
+});
+
+describe('S_TEXTS_FL → the asset description', () => {
+  it('fills description from the sibling text sheet, first language wins, never over a value already there', () => {
+    const p = SAP_PROFILES.find(x => x.name === 'SAP functional locations (cockpit)')!;
+    const rows = [
+      { tag: 'SYS-300-BLR', name: 'Boiler system' },
+      { tag: 'SYS-300-FWS', name: 'Feedwater system', description: 'kept' },
+      { tag: 'SYS-300-NIL', name: 'No text' },
+    ];
+    p.enrich!(rows, {
+      sheet: sig => sig.join(',') === 'external_number,spras,longtext' ? [
+        { external_number: 'SYS-300-BLR', spras: 'EN', longtext: 'Two-drum water-tube boiler' },
+        { external_number: 'SYS-300-BLR', spras: 'DE', longtext: 'Zweitrommel-Wasserrohrkessel' },
+        { external_number: 'SYS-300-FWS', spras: 'EN', longtext: 'ignored' },
+      ] : null,
+    });
+    expect(rows[0].description).toBe('Two-drum water-tube boiler');
+    expect(rows[1].description).toBe('kept');
+    expect(rows[2].description).toBeUndefined();
+  });
+  it('leaves rows alone when the workbook has no text sheet', () => {
+    const p = SAP_PROFILES.find(x => x.name === 'SAP functional locations (cockpit)')!;
+    const rows = [{ tag: 'SYS-300-BLR', name: 'Boiler system' }];
+    p.enrich!(rows, { sheet: () => null });
+    expect(rows[0]).toEqual({ tag: 'SYS-300-BLR', name: 'Boiler system' });
   });
 });

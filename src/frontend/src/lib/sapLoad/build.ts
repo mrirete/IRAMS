@@ -223,6 +223,20 @@ export interface SapLoadSource {
     users: SrcUser[];
     /** Loaded optionally — the cockpit export reads it; the E82 workbook builder does not. */
     schedules?: SrcSchedule[];
+    /**
+     * What another system already knows an entity as (erp_object_map, 0275).
+     * An equipment imported from a SAP sheet keeps its EQUNR here under
+     * system "SAP". The cockpit export's delta mode leaves those assets out.
+     */
+    externalIds?: SrcExternalId[];
+}
+
+export interface SrcExternalId {
+    entity_type: string;
+    entity_id: string;
+    /** As bulkImportService records it: "SAP", "MAXIMO"... */
+    system: string;
+    external_key: string;
 }
 
 // ── Target-system parameters ────────────────────────────────────────────────

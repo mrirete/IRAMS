@@ -22,7 +22,7 @@ import {
     parseCsv, parseCockpitCsv, parseCockpitFileName, cockpitFolderName, missingMandatory,
     type CockpitSheet,
 } from './dialect';
-import { COCKPIT_OBJECTS, structureSpec, findStructures, type CockpitObjectKey } from './structures';
+import { COCKPIT_OBJECTS, MASTER_DATA_OBJECTS, structureSpec, findStructures, type CockpitObjectKey } from './structures';
 import { parseSapCycle, parseSapCycleText, type Cadence } from '../../eam/lib/sapCycles';
 
 // -- Files in, sheets out ---------------------------------------------------
@@ -460,7 +460,10 @@ export function toReadingRows(set: CockpitSet): ReadingImport {
     // -- everything else in the set
     for (const s of set.sheets) {
         if (s.object === 'measuringPoint' || s.object === 'measurementDocument') continue;
-        if (s.rows.length) {
+        if (!s.rows.length) continue;
+        if (MASTER_DATA_OBJECTS.has(s.object)) {
+            issues.add('info', `${s.structure} holds ${s.rows.length} row(s) of ${s.object === 'equipment' ? 'equipment' : 'functional locations'} — master data, not condition history; load it on the register through the Migration Center`, false);
+        } else {
             issues.add('info', `${s.structure} holds ${s.rows.length} row(s) of maintenance strategy — not part of the condition-history import`, false);
         }
     }

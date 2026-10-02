@@ -34,7 +34,7 @@ import type { CockpitIssue } from './inbound';
 import type { SapLoadSource, SrcAsset, SrcSchedule } from '../sapLoad/build';
 import { objectClassOf } from '../../eam/services/hierarchyModel';
 import { addCadence, sapCycleUnit, isMeterUnit, type Cadence, type CadenceUnit } from '../../eam/lib/sapCycles';
-import { toSapDate, toSapTime } from '../sapLoad/build';
+import { toSapDate, toSapTime, todaySapDate } from '../sapLoad/build';
 import { SAP_ILART_MAP, SAP_PRIOK_MAP } from '../../eam/services/assetTemplates';
 import { scheduleChange, cadenceText, revisionText, type ScheduleChange } from './handover';
 
@@ -67,6 +67,32 @@ export interface CockpitExportParams {
      * and are left out of a study-scoped send.
      */
     scope?: { studyId?: string; source?: string };
+    /**
+     * The register itself — PM - Functional location and PM - Equipment —
+     * in the same ZIP, ahead of everything that points at it. Default on.
+     * Off when SAP already holds the register and only condition data or
+     * strategy is being sent; a study-scoped send never includes it.
+     */
+    register?: boolean;
+    /** SWERK on every location and equipment. Falls back to the planning plant. */
+    maintenancePlant?: string;
+    /** INGRP. */
+    plannerGroup?: string;
+    /** BUKRS when the asset's company has no code of its own. */
+    companyCode?: string;
+    /** FLTYP on every functional location (M = technical system). Mandatory. */
+    flCategory?: string;
+    /** TPLKZ on every functional location — the structure indicator that must permit the tag format. Mandatory. */
+    structureIndicator?: string;
+    /** EQTYP on every equipment (M = machine). Mandatory. */
+    equipmentCategory?: string;
+    /**
+     * DATAB, the valid-from date SAP wants on every equipment, when the asset
+     * has no acquisition date of its own. DD.MM.YYYY. Defaults to today.
+     */
+    validFrom?: string;
+    /** SPRAS on every long text — the language key the texts are written in. Defaults to EN. */
+    language?: string;
 }
 
 /** One group of schedules that a study produced, as the page lists them. */
@@ -112,6 +138,7 @@ const inScope = (pm: SrcSchedule, scope: CockpitExportParams['scope']): boolean 
 
 export const defaultExportParams = (): CockpitExportParams => ({
     mode: 'delta', planningPlant: '', plant: '', orderType: 'PM01', numbering: 'legacy', sourceSystem: 'sap_pm',
+    register: true, flCategory: 'M', equipmentCategory: 'M', structureIndicator: '', language: 'EN',
 });
 
 // ── Result ───────────────────────────────────────────────────────────────────
@@ -148,7 +175,7 @@ export interface CockpitExport {
     /** Rows per object, for the page. */
     counts: Record<CockpitObjectKey, number>;
     /** What delta mode kept out because SAP has it. */
-    alreadyInSap: { points: number; readings: number; schedules: number };
+    alreadyInSap: { points: number; readings: number; schedules: number; assets: number };
 }
 
 class Issues {
@@ -171,6 +198,11 @@ const s = (v: unknown): string => (v == null ? '' : String(v)).trim();
 const LENGTHS: Record<string, number> = {
     PTTXT: 40, SHORT_TEXT: 40, PSTXT: 40, WPTXT: 40, KTEXT: 40, LTXA1: 40, MI_TEXT: 40,
     PLNNR: 8, WARPL: 12, WAPOS: 16, ATNAM: 30, CODGR: 8,
+    // The register.
+    EXTERNAL_NUMBER: 30, TPLNR: 30, TPLMA: 30, TPLKZ: 5, KTX01: 40,
+    EQUNR: 18, HEQUI: 18, EQKTX: 40, TECHID: 25, EQART: 10,
+    HERST: 30, TYPBZ: 20, SERGE: 30, INVNR: 25, BAUJJ: 4,
+    STORT: 10, INGRP: 3, KOSTL: 10, BUKRS: 4, ABCKZ: 1, ARBPL_ORG: 8, WERGW: 4, SWERK: 4, IWERK: 4,
 };
 
 /** IREAMS cadence unit -> SAP time unit key. Meters have no time unit. */
@@ -212,6 +244,9 @@ class Sheet {
     }
     file(): CockpitExportFile | null {
         if (this.rows.length === 0) return null;
+        if (this.spec.provisional) {
+            this.issues.add('warn', `${this.spec.structure} is written from a header IREAMS has not seen on a cockpit download: ${this.spec.provisional} Run Simulate in the cockpit before loading: an unknown column is rejected there, before anything is written.`, false);
+        }
         for (const g of missingMandatory(this)) {
             this.issues.add('error', `${this.spec.structure}.${g.field} is ${g.key ? 'a key field' : 'mandatory'} and is blank — SAP will reject the row`);
         }
@@ -232,10 +267,18 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
     const issues = new Issues();
     const fromSap = (sys: string | null | undefined) => !!sys && sys === (params.sourceSystem || 'sap_pm');
     const delta = params.mode === 'delta';
-    const alreadyInSap = { points: 0, readings: 0, schedules: 0 };
+    const alreadyInSap = { points: 0, readings: 0, schedules: 0, assets: 0 };
     const studyScoped = !!(params.scope && (params.scope.studyId || params.scope.source));
 
     const sheet = (object: CockpitObjectKey, structure: string) => new Sheet(object, structureSpec(object, structure)!, issues);
+
+    // What SAP already knows an asset as. An equipment imported from a SAP
+    // sheet keeps its EQUNR in erp_object_map under the system "SAP"; that is
+    // both the sign SAP has it and the key every dependent row must carry.
+    const sapKeyOf = new Map<string, string>();
+    for (const x of src.externalIds ?? []) {
+        if (x.entity_type === 'asset' && /^SAP/i.test(s(x.system)) && s(x.external_key)) sapKeyOf.set(x.entity_id, s(x.external_key));
+    }
 
     // Assets by id, with their SAP reference and object type.
     const assetById = new Map(src.assets.map(a => [a.id, a]));
@@ -243,10 +286,124 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
         if (!a) return { type: '', ref: '' };
         const cls = objectClassOf(a);
         if (cls === 'FLOC') return { type: 'IFL', ref: s(a.tag) };
-        if (cls === 'EQUIPMENT') return { type: 'IEQ', ref: params.numbering === 'legacy' ? (s(a.equipment_number) || s(a.tag)) : s(a.tag) };
+        if (cls === 'EQUIPMENT') return { type: 'IEQ', ref: sapKeyOf.get(a.id) || (params.numbering === 'legacy' ? (s(a.equipment_number) || s(a.tag)) : s(a.tag)) };
         return { type: '', ref: '' };
     };
     const workCentreCode = new Map(src.workCenters.map(w => [w.id, s(w.code)]));
+
+    // ── The register: functional locations, then equipment ──────────────────
+    // Loads first; every other object points at it. A study's outcome is
+    // strategy, not the register, so a study-scoped send leaves it out. In
+    // delta mode an asset SAP already knows (sapKeyOf) is not loaded again.
+    const flocs = sheet('functionalLocation', 'S_FUN_LOCATION');
+    // The register's description — what the Assets module calls Description,
+    // kept in properties.description and read by RCM as the duty narrative —
+    // is a long text to SAP, one row per location and language.
+    const flTexts = sheet('functionalLocation', 'S_TEXTS_FL');
+    const equi = sheet('equipment', 'S_EQUI');
+    const eqTexts = sheet('equipment', 'S_TEXTS_EQUI');
+    const descriptionOf = (a: SrcAsset): string => s((a.properties as Record<string, unknown> | null)?.description);
+    if (params.register !== false && !studyScoped) {
+        const parentOf = (a: SrcAsset): SrcAsset | undefined => (a.parent_id ? assetById.get(a.parent_id) : undefined);
+        const depthOf = (a: SrcAsset): number => {
+            let d = 0; let cur: SrcAsset | undefined = a; const seen = new Set<string>();
+            while (cur && cur.parent_id && !seen.has(cur.id)) { seen.add(cur.id); cur = assetById.get(cur.parent_id); d += 1; }
+            return d;
+        };
+        /** Nearest functional location above an asset, through any superior equipment. */
+        const flocAbove = (a: SrcAsset): SrcAsset | undefined => {
+            let cur = parentOf(a); const seen = new Set<string>();
+            while (cur && !seen.has(cur.id)) { if (objectClassOf(cur) === 'FLOC') return cur; seen.add(cur.id); cur = parentOf(cur); }
+            return undefined;
+        };
+        const byDepth = (a: SrcAsset, b: SrcAsset) => depthOf(a) - depthOf(b) || s(a.tag).localeCompare(s(b.tag));
+        const costCentreCode = new Map(src.costCenters.map(c => [c.id, s(c.code)]));
+        const company = new Map(src.companies.map(c => [c.id, c]));
+        const financial = new Map<string, SapLoadSource['assetFinancials'][number]>();
+        for (const f of src.assetFinancials) if (!financial.has(f.asset_id)) financial.set(f.asset_id, f);
+        const swerk = s(params.maintenancePlant) || s(params.planningPlant);
+        const wergw = s(params.plant) || swerk;
+        /** The fields a location and an equipment share: where it is, who plans it, who pays. */
+        const common = (a: SrcAsset): Record<string, string> => {
+            const arbpl = workCentreCode.get(s(a.responsible_work_center_id)) ?? '';
+            return {
+                SWERK: swerk, IWERK: s(params.planningPlant), INGRP: s(params.plannerGroup),
+                KOSTL: a.cost_center_id ? (costCentreCode.get(a.cost_center_id) ?? '') : '',
+                BUKRS: (a.company_id && s(company.get(a.company_id)?.code)) || s(params.companyCode),
+                ABCKZ: s(a.criticality).toUpperCase().slice(0, 1),
+                STORT: s((a.properties as Record<string, unknown> | null)?.location),
+                ARBPL_ORG: arbpl, WERGW: arbpl ? wergw : '',
+            };
+        };
+
+        const flocList = src.assets.filter(a => objectClassOf(a) === 'FLOC').sort(byDepth);
+        const eqList = src.assets.filter(a => objectClassOf(a) === 'EQUIPMENT').sort(byDepth);
+        // A location with equipment under it must allow installation (IEQUI),
+        // or the equipment rows that name it as TPLNR fail to load.
+        const hosts = new Set(eqList.map(e => flocAbove(e)?.id).filter((id): id is string => !!id));
+        const unclassified = src.assets.length - flocList.length - eqList.length;
+        if (unclassified > 0) issues.add('warn', `${unclassified} asset(s) have a hierarchy level that is neither a functional location nor equipment — not exported; fix the level in the Asset Register`, false);
+
+        for (const a of flocList) {
+            if (!s(a.tag)) { issues.add('warn', 'functional location(s) have no tag — not exported'); continue; }
+            if (delta && sapKeyOf.has(a.id)) { alreadyInSap.assets += 1; continue; }
+            const parent = parentOf(a);
+            if (parent && objectClassOf(parent) !== 'FLOC') issues.add('warn', 'functional location(s) sit under equipment — SAP allows only a functional location above a functional location; TPLMA left blank');
+            flocs.add({
+                EXTERNAL_NUMBER: s(a.tag),
+                TPLKZ: s(params.structureIndicator), FLTYP: s(params.flCategory),
+                KTX01: s(a.name) || s(a.tag),
+                EQART: s(a.hierarchy_level).toUpperCase(),
+                TPLMA: parent && objectClassOf(parent) === 'FLOC' ? s(parent.tag) : '',
+                IEQUI: hosts.has(a.id) ? 'X' : '',
+                ...common(a),
+            });
+            const text = descriptionOf(a);
+            if (text) flTexts.add({ EXTERNAL_NUMBER: s(a.tag), SPRAS: s(params.language) || 'EN', TEXT_DESCR: s(a.name) || s(a.tag), LONGTEXT: text });
+        }
+
+        let noPosition = 0;
+        for (const a of eqList) {
+            if (!s(a.tag) && !s(a.name)) { issues.add('warn', 'equipment with neither tag nor name — not exported'); continue; }
+            if (delta && sapKeyOf.has(a.id)) { alreadyInSap.assets += 1; continue; }
+            const parent = parentOf(a);
+            const floc = flocAbove(a);
+            if (!floc) noPosition += 1;
+            const fin = financial.get(a.id);
+            const props = (a.properties ?? {}) as Record<string, unknown>;
+            const year = s(props.constructionYear ?? props.construction_year ?? props.yearBuilt) || (/^(\d{4})/.exec(s(fin?.acquisition_date))?.[1] ?? '');
+            const cost = s(fin?.acquisition_cost);
+            equi.add({
+                EQUNR: objectOf(a).ref,
+                // SAP Help: X = internal numbering (EQUNR is a legacy key the
+                // cockpit maps on load); blank = external (EQUNR IS the number).
+                NRANGE_IND: params.numbering === 'internal' ? 'X' : '',
+                EQTYP: s(params.equipmentCategory),
+                DATAB: toSapDate(fin?.acquisition_date) || s(params.validFrom) || todaySapDate(),
+                EQKTX: s(a.name) || s(a.tag),
+                TECHID: s(a.tag),
+                EQART: s(a.asset_class || a.asset_type_code).toUpperCase(),
+                HERST: s(a.manufacturer), TYPBZ: s(a.model), SERGE: s(a.serial_number), BAUJJ: year,
+                INVNR: s(props.inventoryNumber ?? props.inventory_number),
+                TPLNR: floc ? s(floc.tag) : '',
+                HEQUI: parent && objectClassOf(parent) === 'EQUIPMENT' ? objectOf(parent).ref : '',
+                ANSDT: toSapDate(fin?.acquisition_date), ANSWT: cost,
+                WAERS: cost ? s(company.get(s(a.company_id))?.currency) : '',
+                ...common(a),
+            });
+            const text = descriptionOf(a);
+            if (text) eqTexts.add({ EQUNR: objectOf(a).ref, SPRAS: s(params.language) || 'EN', TEXT_DESCR: s(a.name) || s(a.tag), LONGTEXT: text });
+        }
+
+        if (eqList.length && !flocList.length) issues.add('error', 'no functional locations — every equipment row loads without a position (TPLNR blank). Give the register a site/unit/system tree first.', false);
+        if (noPosition) issues.add('warn', `${noPosition} equipment row(s) have no functional location above them — TPLNR blank; SAP accepts them but they will not appear in the location structure`, false);
+        if ((flocs.rows.length && (!s(params.structureIndicator) || !s(params.flCategory))) || (equi.rows.length && !s(params.equipmentCategory))) {
+            issues.add('info', 'The structure indicator (TPLKZ), location category (FLTYP) and equipment category (EQTYP) are SAP configuration — set them once in the SAP values above and every row gets them.', false);
+        }
+        if (equi.rows.length && params.numbering === 'internal') issues.add('info', 'EQUNR carries the tag as a legacy key (NRANGE_IND X): the cockpit assigns SAP numbers on load, and the points and items in this ZIP reference equipment by the same key, so one load in the cockpit’s order resolves them.', false);
+        if (equi.rows.length && params.numbering === 'legacy') issues.add('info', 'EQUNR carries the IREAMS equipment number as the SAP number (NRANGE_IND blank = external numbering); switch to internal numbering if these are not valid SAP equipment numbers. TECHID carries the field tag either way.', false);
+        if (equi.rows.length && !src.assetFinancials.length) issues.add('info', 'DATAB (valid-from) is mandatory on equipment and no asset carries an acquisition date — today’s date is written. Set the acquisition date on the asset where the real date matters.', false);
+    }
 
     // ── Measuring points ─────────────────────────────────────────────────────
     const points = sheet('measuringPoint', 'S_HEADER');
@@ -428,7 +585,8 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
     if (mpla.rows.length && params.numbering === 'internal') issues.add('info', 'WARPL and PLNNR carry IREAMS codes as legacy keys; the cockpit’s value mapping assigns SAP numbers on load.', false);
 
     // ── Assemble ─────────────────────────────────────────────────────────────
-    const files = [points, docs, hdr, ops, comps, mpla, mpos, objl].map(x => x.file()).filter((f): f is CockpitExportFile => !!f);
+    // In the cockpit's load order: the register, then what sits on it.
+    const files = [flocs, flTexts, equi, eqTexts, points, docs, hdr, ops, comps, mpla, mpos, objl].map(x => x.file()).filter((f): f is CockpitExportFile => !!f);
     const counts = Object.fromEntries((Object.keys(COCKPIT_OBJECT_BY_KEY) as CockpitObjectKey[]).map(k => [k, files.filter(f => f.object === k).reduce((n, f) => n + f.rows, 0)])) as Record<CockpitObjectKey, number>;
 
     let ho: CockpitHandover | null = null;
@@ -443,10 +601,10 @@ export function buildCockpitExport(src: SapLoadSource, params: CockpitExportPara
         issues.add('info', `${handover.length} schedule(s) SAP already has were changed by IREAMS — they are on the hand-over sheet with what SAP holds, what IREAMS holds now and why, for the planner to apply in IP02 / IA06 and then confirm here`, false);
     }
     if (inSyncSchedules) issues.add('info', `${inSyncSchedules} schedule(s) SAP already has are in sync — unchanged, or confirmed since the last change — and are not sent.`, false);
-    if (delta && (alreadyInSap.points || alreadyInSap.readings)) {
-        issues.add('info', `${alreadyInSap.points} point(s) and ${alreadyInSap.readings} reading(s) came from SAP and are not loaded again (delta mode).`, false);
+    if (delta && (alreadyInSap.points || alreadyInSap.readings || alreadyInSap.assets)) {
+        issues.add('info', `${alreadyInSap.assets} asset(s), ${alreadyInSap.points} point(s) and ${alreadyInSap.readings} reading(s) came from SAP and are not loaded again (delta mode).`, false);
     }
-    if (files.length === 0 && !ho) issues.add('warn', 'Nothing to export: no active points, readings or schedules that SAP does not already have.', false);
+    if (files.length === 0 && !ho) issues.add('warn', 'Nothing to export: no assets, active points, readings or schedules that SAP does not already have.', false);
 
     return { files, handover: ho, changes, sentScheduleIds, inSyncSchedules, issues: issues.list(), counts, alreadyInSap };
 }

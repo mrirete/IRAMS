@@ -11,9 +11,12 @@ import { renderCsv } from './dialect';
 import { structureSpec, fileNameOf, type CockpitObjectKey } from './structures';
 
 const FOLDER: Record<CockpitObjectKey, string> = {
+    functionalLocation: 'PM - Functional location',
+    equipment: 'PM - Equipment',
     measuringPoint: 'PM - Measuring point',
     measurementDocument: 'PM - Measurement document',
     generalTaskList: 'PM - General maintenance task list',
+    equipmentTaskList: 'PM - Equipment task list',
     maintenanceItem: 'PM - Maintenance item',
     maintenancePlan: 'PM - Maintenance plan',
 };
@@ -63,6 +66,26 @@ describe('the pieces', () => {
 });
 
 describe('task lists become job plans', () => {
+    it('reads an equipment task list the same way, with the equipment number as the group', () => {
+        const hdr = file('equipmentTaskList', 'S_TASKLIST_HDR', [
+            { EQUNR: '10004711', PLNAL: '01', KTEXT: 'P-101A own list', ARBPL: 'MNMEC-PP' },
+        ]);
+        const ops = file('equipmentTaskList', 'S_OPERATIONS', [
+            { EQUNR: '10004711', PLNAL: '01', VORNR: '0010', LTXA1: 'Grease DE bearing', STEUS: 'INT', ARBEI: '15', ARBEH: 'MIN' },
+        ]);
+        const comps = file('equipmentTaskList', 'S_COMPONENTS', [
+            { EQUNR: '10004711', PLNAL: '01', VORNR: '0010', IDNRK: 'GRS-0001', MENGE: '1', MEINS: 'KG' },
+        ]);
+        const r = toStrategyRows(set(hdr, ops, comps, TASKLIST, OPS));
+        expect(r.jobplan).toHaveLength(3);
+        const own = r.jobplan.find(j => j.tasklistgroup === '10004711')!;
+        expect(own).toMatchObject({ pmcode: '10004711/01', operationno: '0010', description: 'Grease DE bearing', workcentre: 'MNMEC-PP', esthours: '0.25' });
+        expect(JSON.parse(own.materials)).toEqual([{ code: 'GRS-0001', qty: '1', uom: 'KG' }]);
+        expect(r.issues.some(i => /1 step\(s\) come from equipment task lists/.test(i.message))).toBe(true);
+        // The general list in the same set is untouched by it.
+        expect(r.jobplan.filter(j => j.tasklistgroup === '30009001')).toHaveLength(2);
+    });
+
     it('maps an operation to a step of its list', () => {
         const { jobplan } = toStrategyRows(set(TASKLIST, OPS));
         expect(jobplan).toHaveLength(2);

@@ -7,7 +7,7 @@
  * tenant's rows and nothing else.
  */
 import { supabase } from '../../eam/lib/supabase';
-import type { SapLoadSource, SrcSchedule } from './build';
+import type { SapLoadSource, SrcSchedule, SrcExternalId } from './build';
 
 const PAGE = 1000;
 
@@ -52,7 +52,7 @@ export async function loadSapSource(): Promise<SapLoadSource> {
     const [
         assets, assetFinancials, inventoryItems, stock, stores, bomLines,
         readingDefinitions, readingLogs, vendors, costCenters, companies, workCenters,
-        workOrders, woFailureData, users, schedules,
+        workOrders, woFailureData, users, schedules, externalIds,
     ] = await Promise.all([
         fetchAll<SapLoadSource['assets'][number]>('assets',
             'id, tag, name, parent_id, hierarchy_level, criticality, equipment_number, company_id, cost_center_id, responsible_work_center_id, manufacturer, model, serial_number, asset_class, asset_type_code, status_code, properties',
@@ -89,11 +89,15 @@ export async function loadSapSource(): Promise<SapLoadSource> {
         fetchOptional<SrcSchedule>('recurring_work',
             'id, code, title, description, status, active, asset_id, assigned_assets, schedule_type, frequency_interval, frequency_unit, next_due_date, last_generated_date, job_type, priority_code, work_center_id, strategy_package, origin, templates, parent_pm_id, nesting_mode',
             'code'),
+        // Which assets another system already knows, and by what key (0275):
+        // an equipment imported from a SAP sheet keeps its EQUNR here. The
+        // cockpit export's delta mode reads it to leave those out.
+        fetchOptional<SrcExternalId>('erp_object_map', 'entity_type, entity_id, system, external_key', 'entity_id'),
     ]);
 
     return {
         assets, assetFinancials, inventoryItems, stock, stores, bomLines,
         readingDefinitions, readingLogs, vendors, costCenters, companies, workCenters,
-        workOrders, woFailureData, users, schedules,
+        workOrders, woFailureData, users, schedules, externalIds,
     };
 }

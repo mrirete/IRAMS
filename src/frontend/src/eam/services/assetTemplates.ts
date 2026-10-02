@@ -997,7 +997,7 @@ export function resolveWorkbookSheet(
     const sheets = wb.SheetNames.map(name => {
         const raw: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 });
         if (raw.length < 2) return { name, type: 'unknown' as ImportType };
-        const hdr = (raw[findHeaderRow(raw)] ?? []).map(h => String(h ?? '').trim().toLowerCase());
+        const hdr = (raw[findHeaderRow(raw)] ?? []).map(h => stripCockpitAnnotation(String(h ?? '').trim()).toLowerCase());
         const profile = resolveSapProfile(hdr);
         const keys = profile ? hdr.map(h => profile.aliases[h] ?? h) : hdr;
         return { name, type: profile?.type ?? detectImportType(keys) };
@@ -1058,7 +1058,7 @@ export function readSapSheet(wb: XLSX.WorkBook, signature: string[]): Record<str
         const raw: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 });
         if (raw.length < 2) continue;
         const hi = findHeaderRow(raw);
-        const keys = (raw[hi] ?? []).map(h => String(h ?? '').trim().toLowerCase());
+        const keys = (raw[hi] ?? []).map(h => stripCockpitAnnotation(String(h ?? '').trim()).toLowerCase());
         if (!signature.every(s => keys.includes(s))) continue;
         return raw.slice(hi + 1)
             .filter(r => r.some(c => c !== undefined && c !== null && c !== ''))
@@ -1352,13 +1352,53 @@ export const SAP_PROFILES: SapSheetProfile[] = [
         name: 'SAP equipment', type: 'asset',
         signature: ['equnr', 'eqktx'],
         aliases: {
-            equnr: 'equipmentnumber', eqktx: 'name', tidnr: 'tag', eqart: 'assettype',
+            // TIDNR is the tag in the tables (IH08 exports); TECHID is the same
+            // field on the Migration Cockpit's S_EQUI sheet.
+            equnr: 'equipmentnumber', eqktx: 'name', tidnr: 'tag', techid: 'tag', eqart: 'assettype',
             tplnr: 'parenttag', hequi: 'parenttag', herst: 'manufacturer', typbz: 'model',
             serge: 'serialnumber', abckz: 'criticality', kostl: 'costcenter', stort: 'location',
         },
         fixup: (r) => {
             if (!r['tag']) r['tag'] = r['equipmentnumber'] || '';  // external numbering / no TIDNR column
             if (!r['hierarchylevel']) r['hierarchylevel'] = 'EQUIPMENT';
+        },
+        rowWarnings: (r) => {
+            // A cockpit sheet that went through Excel: YYYYMMDD dates and
+            // ten-digit cost centres come back as 2E+07 / 1.7E+07.
+            const w: string[] = [];
+            if (/^\d(\.\d+)?E\+\d+$/i.test(r['costcenter'] || '')) w.push(`cost centre "${r['costcenter']}" is Excel's rendering of a number, not the cost centre — format the KOSTL column as text in the source file`);
+            return w;
+        },
+    },
+    {
+        // Functional locations as the Migration Cockpit names them: the key
+        // is EXTERNAL_NUMBER and the description KTX01 (TPLNR / PLTXT in the
+        // tables, below). Listed first — the two signatures do not overlap.
+        name: 'SAP functional locations (cockpit)', type: 'asset',
+        signature: ['external_number', 'tplkz'],
+        aliases: {
+            external_number: 'tag', ktx01: 'name', tplma: 'parenttag', eqart: 'assettype',
+            abckz: 'criticality', kostl: 'costcenter', stort: 'location',
+            herst: 'manufacturer', typbz: 'model', serge: 'serialnumber',
+        },
+        fixup: (r) => {
+            if (!r['name']) r['name'] = r['tag'] || '';
+        },
+        // The long text lives on the sibling S_TEXTS_FL sheet, one row per
+        // location and language. It becomes the asset's Description
+        // (properties.description). First language wins when there are several.
+        enrich: (rows, ctx) => {
+            const texts = ctx.sheet(['external_number', 'spras', 'longtext']);
+            if (!texts) return;
+            const byTag = new Map<string, string>();
+            for (const t of texts) {
+                const tag = (t['external_number'] || '').trim();
+                const text = (t['longtext'] || '').trim();
+                if (tag && text && !byTag.has(tag)) byTag.set(tag, text);
+            }
+            for (const r of rows) {
+                if (!r['description'] && byTag.has(r['tag'] || '')) r['description'] = byTag.get(r['tag'] || '')!;
+            }
         },
     },
     {
@@ -1372,6 +1412,15 @@ export const SAP_PROFILES: SapSheetProfile[] = [
         },
     },
 ];
+
+/**
+ * A header cell as the Migration Cockpit writes it — "EQUNR(k/*)", "EQTYP(*)",
+ * "STRAT(k)" — down to the field name the profiles key on. Any other header
+ * passes through untouched.
+ */
+export function stripCockpitAnnotation(header: string): string {
+    return header.replace(/\((?:k|\*|k\/\*)\)\s*$/i, '');
+}
 
 /** Match a SAP sheet profile: every signature header present. Order matters —
  *  more specific signatures (BOM before Equipment) are listed first. */
@@ -1414,7 +1463,7 @@ export function findHeaderRow(rawRows: unknown[][], maxScan = 8): number {
     let best = 0, bestHits = 0;
     for (let i = 0; i < Math.min(maxScan, rawRows.length); i++) {
         const hits = new Set(
-            (rawRows[i] ?? []).map(c => String(c ?? '').trim().toLowerCase()).filter(c => known.has(c)),
+            (rawRows[i] ?? []).map(c => stripCockpitAnnotation(String(c ?? '').trim()).toLowerCase()).filter(c => known.has(c)),
         );
         if (hits.size > bestHits) { best = i; bestHits = hits.size; }
     }
@@ -1527,7 +1576,7 @@ export function parseImportFile(file: File, forceType?: ImportType, sheetName?: 
                 // SAP-style workbooks carry title/hint rows above the header row.
                 const headerRowIdx = findHeaderRow(rawRows);
                 const headers = (rawRows[headerRowIdx] as string[]).map(h => String(h || '').trim());
-                const headersLower = headers.map(h => h.toLowerCase());
+                const headersLower = headers.map(h => stripCockpitAnnotation(h).toLowerCase());
                 // SAP field-name sheets rewrite to canonical headers via profile.
                 const sapProfile = resolveSapProfile(headersLower);
                 const keys = sapProfile ? headersLower.map(h => sapProfile.aliases[h] ?? h) : headersLower;

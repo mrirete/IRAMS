@@ -9,7 +9,19 @@
  * the shape it handed out.
  *
  * Received 2026-09-21: PM - Measurement document, PM - Maintenance plan,
- * PM - Measuring point. The rest of the reliability set follows.
+ * PM - Measuring point. Received 2026-10-02: PM - Equipment and PM -
+ * Functional location — the two master-data objects everything else points
+ * at. The equipment header was read off a filled template (twelve real rows:
+ * control valves, motors, a pump at plant 1710); the functional-location
+ * headers off the empty templates.
+ *
+ * The master-data objects name things differently from the ECC tables, and
+ * differently from the consultant's workbook in ../sapLoad/spec.ts: the
+ * functional location is keyed EXTERNAL_NUMBER (not TPLNR) and described by
+ * KTX01 (not PLTXT); the main work centre is ARBPL_ORG + WERGW (there is no
+ * GEWRK); the equipment tag is TECHID (not TIDNR); there is no KOKRS; and
+ * DATAB, the valid-from date, is mandatory on equipment. A file in the
+ * table-name shape does not load.
  *
  * A structure belongs to its OBJECT, never to the catalogue at large, and the
  * names are neither unique nor a promise about the shape. The measuring point
@@ -30,11 +42,17 @@
 import { parseCockpitColumn, cockpitFileName, type CockpitColumn } from './dialect';
 
 export type CockpitObjectKey =
+    | 'functionalLocation'
+    | 'equipment'
     | 'measurementDocument'
     | 'maintenancePlan'
     | 'maintenanceItem'
     | 'generalTaskList'
+    | 'equipmentTaskList'
     | 'measuringPoint';
+
+/** The objects that are master data — the register — rather than condition history or strategy. */
+export const MASTER_DATA_OBJECTS: ReadonlySet<CockpitObjectKey> = new Set<CockpitObjectKey>(['functionalLocation', 'equipment']);
 
 export interface CockpitStructureSpec {
     /** Staging structure name — the CSV file stem. */
@@ -45,20 +63,94 @@ export interface CockpitStructureSpec {
     header: string;
     /** What the structure holds, in plain words. */
     note: string;
+    /**
+     * Set when the header was NOT read off a cockpit file but derived — and
+     * says from what. The one exception to the verbatim rule, kept visible:
+     * a file written from a provisional header is flagged for the person
+     * loading it, and the flag comes off when a real download confirms it.
+     */
+    provisional?: string;
 }
 
 export interface CockpitObjectSpec {
     key: CockpitObjectKey;
     /** The object's name in the cockpit — the ZIP is "Source data for <name>.zip". */
     name: string;
-    /** How many objects the cockpit says must be loaded first. */
-    predecessorCount: number;
+    /** How many objects the cockpit says must be loaded first. Absent where the cockpit's list has not been seen at all. */
+    predecessorCount?: number;
     /** The predecessor list, where it has actually been read off the cockpit. */
     predecessors?: string[];
     structures: CockpitStructureSpec[];
 }
 
 export const COCKPIT_OBJECTS: CockpitObjectSpec[] = [
+    {
+        key: 'functionalLocation',
+        name: 'PM - Functional location',
+        // The register's spine: everything else — equipment, points, items —
+        // points at a location by its label. Parents load before children,
+        // through TPLMA. Prerequisites as SAP Help lists them for the staging
+        // object (2023); the README in the download itself was empty.
+        predecessorCount: 4,
+        predecessors: ['Fixed asset (incl. balances and transactions)', 'CO - Cost center', 'PS - WBS element', 'Work center/Resource'],
+        structures: [
+            {
+                structure: 'S_FUN_LOCATION',
+                mode: 'FreeText_Mandatory',
+                note: 'The location itself. EXTERNAL_NUMBER is the label (TPLNR in the tables) and the key every other structure joins on; TPLKZ is the structure indicator that must permit that label format, FLTYP the category — the three mandatory fields. KTX01 is the description. TPLMA names the superior location and POSNR the position under it; IEQUI and EINZL say whether equipment may be installed here and whether only one piece may. ARBPL_ORG + WERGW is the main work centre (there is no GEWRK), ARBPL_LOCATION a work centre used as a location. The warranty block (GWLDT/GWLEN/MGANR/WAGET/GAERB, _K customer-side, _L/_O/_I vendor-side) and the sales block (VKORG onward) stay blank for a plant register.',
+                header: 'EXTERNAL_NUMBER(k/*),TPLKZ(*),FLTYP(*),ALKEY,KTX01,INVNR,INBDT,BEGRU,BRGEW,GEWEI,EQART,IFLOT_SNTYPE,IFLOT_SRTYPE,GROES,HERST,TYPBZ,MAPAR,HERLD,BAUJJ,BAUMM,SERGE,ANSWT,WAERS,ANSDT,GWLDT_K,GWLEN_K,MGANR_K,WAGET_O,GAERB_O,GWLDT_L,GWLEN_L,MGANR_L,WAGET_I,GAERB_I,SWERK,MAINTROOM,ARBPL_LOCATION,SORTFIELD,STORT,BEBER,ABCKZ,INGRP,IWERK,ARBPL_ORG,WERGW,RBNR,BUKRS,GSBER,ANLNR,ANLUN,KOSTL,PROID,AUFNR_S,DAUFN,TPLMA,POSNR,IEQUI,EINZL,SUBMT,VKORG,VTWEG,SPART,VKBUR,VKGRP',
+            },
+            {
+                structure: 'S_IHPA_FL',
+                mode: 'FreeText',
+                note: 'Partners at the location, one row per role (PARVW) and position: a customer (KUNNR), a vendor (LIFNR), a person (PERNR) or a business partner (PARNR). This is where the contractor or the responsible person for a location travels.',
+                header: 'EXTERNAL_NUMBER(k/*),PARVW(k/*),POSNR(k/*),KUNNR,LIFNR,PERNR,PARNR',
+            },
+            {
+                structure: 'S_TEXTS_FL',
+                mode: 'FreeText',
+                note: 'The long text per language (SPRAS): TEXT_DESCR is the short description in that language, LONGTEXT the body. The IREAMS asset description lands here.',
+                header: 'EXTERNAL_NUMBER(k/*),SPRAS(k/*),TEXT_DESCR,LONGTEXT',
+            },
+        ],
+    },
+    {
+        key: 'equipment',
+        name: 'PM - Equipment',
+        // Loads after the functional locations it is installed at (TPLNR) and
+        // the superior equipment it hangs under (HEQUI). SAP Help (staging
+        // object, 2023) names three structures — S_EQUI, S_IHPA, S_TEXTS_EQUI
+        // — and these prerequisites. Only S_EQUI has been received as a file;
+        // the other two are provisional, see their notes.
+        predecessorCount: 7,
+        predecessors: [
+            'Batch unique at material and client level', 'Batch unique at plant level',
+            'Fixed asset (incl. balances and transactions) or Fixed asset - Master data',
+            'PM - Functional location', 'CO - Cost center', 'PS - WBS element', 'Work center/Resource',
+        ],
+        structures: [
+            {
+                structure: 'S_EQUI',
+                mode: 'FreeText_Mandatory',
+                note: 'The equipment master. EQUNR is the key — the SAP number under external numbering, or the legacy key the cockpit maps to an SAP number when NRANGE_IND is X (SAP Help: "leave the Indicator: Use Internal Number Range field empty for an external number range; enter an X if it is internal"). EQTYP is the category (M = machine) and DATAB the valid-from date, and those three are the mandatory fields. EQKTX is the description, EQART the object type. TECHID is the technical identification number — the TAG on the machine and the P&ID, which IREAMS keeps as the asset tag (the tables call it TIDNR; the cockpit does not). TPLNR installs the equipment at a location, HEQUI under a superior equipment, POSNR at a position. ARBPL_ORG + WERGW is the main work centre. MATNR + GERNR + BATCH are for serialised equipment that is also a material; SUBMT is the construction-type material. The sample sheet received showed what Excel does to this file: DATAB, INBDT, ANSWT and KOSTL came back as 2E+07 and 1.7E+07, because YYYYMMDD dates and a ten-digit cost centre were read as numbers.',
+                header: 'EQUNR(k/*),NRANGE_IND,EQTYP(*),DATAB(*),EQKTX,INVNR,INBDT,BEGRU,BRGEW,GEWEI,GROES,EQART,EQUI_SNTYPE,EQUI_SRTYPE,HERST,HERLD,TYPBZ,BAUJJ,BAUMM,MAPAR,SERGE,ANSWT,WAERS,ANSDT,GWLDT_K,GWLEN_K,MGANR_K,WAGET_O,GAERB_O,GWLDT_L,GWLEN_L,MGANR_L,WAGET_I,GAERB_I,SWERK,STORT,MAINTROOM,BEBER,ARBPL_LOCATION,ABCKZ,SORTFIELD,INGRP,IWERK,ARBPL_ORG,WERGW,RBNR,BUKRS,GSBER,ANLNR,ANLUN,KOSTL,PROID,AUFNR_S,DAUFN,TPLNR,HEQUI,POSNR,TECHID,SUBMT,VKORG,VTWEG,SPART,VKBUR,VKGRP,MATNR,GERNR,BATCH',
+            },
+            {
+                structure: 'S_IHPA',
+                mode: 'FreeText',
+                note: 'Partners on the equipment, one row per role (PARVW) and position — the functional location’s S_IHPA_FL keyed on the equipment instead. SAP Help: the partner function must be the language-independent database value, and partner synchronisation (EQUI-KUNDE filling the EQUI/EQUZ fields) does not happen on migration.',
+                header: 'EQUNR(k/*),PARVW(k/*),POSNR(k/*),KUNNR,LIFNR,PERNR,PARNR',
+                provisional: 'Header derived from S_IHPA_FL (read off the functional-location download) with the equipment key in place of EXTERNAL_NUMBER, and the structure name from SAP Help, which lists exactly these three structures for the object. The SAP assessor confirmed (2026-10-03) that no PM - Equipment source-data download exists to read it from, so the cockpit’s Simulate step is where it is checked.',
+            },
+            {
+                structure: 'S_TEXTS_EQUI',
+                mode: 'FreeText',
+                note: 'Short and long text per language (SPRAS): TEXT_DESCR is the description in that language, LONGTEXT the body — where the Assets module’s Description lands. SAP Help: when the same language has a description here and in S_EQUI, the text structure wins and the master’s EQKTX is ignored.',
+                header: 'EQUNR(k/*),SPRAS(k/*),TEXT_DESCR,LONGTEXT',
+                provisional: 'Header derived from S_TEXTS_FL (read off the functional-location download) with the equipment key in place of EXTERNAL_NUMBER, and the structure name from SAP Help, which lists exactly these three structures for the object. The SAP assessor confirmed (2026-10-03) that no PM - Equipment source-data download exists to read it from, so the cockpit’s Simulate step is where it is checked.',
+            },
+        ],
+    },
     {
         key: 'measuringPoint',
         name: 'PM - Measuring point',
@@ -159,6 +251,88 @@ export const COCKPIT_OBJECTS: CockpitObjectSpec[] = [
                 mode: 'FreeText',
                 note: 'Limits drawn against a specific contract and contract item.',
                 header: 'PLNNR(k/*),PLNAL(k/*),VORNR(k/*),CONTRACT(k/*),CONTRACT_ITEM(k/*),LIMIT,NO_LIMIT',
+            },
+        ],
+    },
+    {
+        key: 'equipmentTaskList',
+        name: 'PM - Equipment task list',
+        // Received 2026-10-02 as a ZIP, headers read off the files. The same
+        // eleven structures as the general list, with ONE difference that runs
+        // through every file: the key is EQUNR + PLNAL, not PLNNR + PLNAL —
+        // the equipment number IS the group, so a list belongs to one machine.
+        // Two smaller differences: WERKS on the header is not mandatory here,
+        // and S_PRTS's first key field is mandatory (the general list's PLNNR
+        // there is key but not mandatory). Prerequisites as SAP Help lists
+        // them (the README in the download was empty).
+        predecessorCount: 5,
+        predecessors: ['Product', 'PM - Equipment', 'PM - Functional location', 'MM - Purchase contract', 'MM - Purchasing info record with conditions'],
+        structures: [
+            {
+                structure: 'S_TASKLIST_HDR',
+                mode: 'FreeText_Mandatory',
+                note: 'The list, keyed on the equipment it belongs to plus a counter. Otherwise the general list’s header: STRAT names the strategy whose packages schedule the operations, VERWE the usage, STATU the status, ANLZU the system condition.',
+                header: 'EQUNR(k/*),PLNAL(k/*),ANDAT,DATUV,KTEXT,WERKS,ARBPL,ARBPL_WERK,VERWE,STATU,STRAT,VAGRP,ANLZU,ISTRU,TDLINE',
+            },
+            {
+                structure: 'S_OPERATIONS',
+                mode: 'FreeText_Mandatory',
+                note: 'The steps, keyed equipment + counter + operation. Field for field the general list’s operations.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),ARBPL,WERKS,STEUS,LTXA1,AUFKT,EQUNR_OP,TPLNR_OP,INDET,ARBEI,ARBEH,LARNT,ANZZL,DAUNO,DAUNE,PRZNT,BMVRG,BMEIH,SORTL,PREIS,WAERS,PEINH,INFNR,LIFNR,PLIFZ,EBELN,EBELP,SAKTO,MATKL,EKGRP,EKORG,EXECUTION_STAGE,VERTN,TDLINE',
+            },
+            {
+                structure: 'S_SUBOPERATIONS',
+                mode: 'FreeText',
+                note: 'Steps within a step.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),UVORN(k/*),ARBPL,WERKS,STEUS,LTXA1,AUFKT,EQUNR_OP,TPLNR_OP,INDET,ARBEI,ARBEH,LARNT,ANZZL,DAUNO,DAUNE,PRZNT,BMVRG,BMEIH,SORTL,PREIS,WAERS,PEINH,INFNR,LIFNR,PLIFZ,EBELN,EBELP,SAKTO,MATKL,EKGRP,EKORG,EXECUTION_STAGE,VERTN,TDLINE',
+            },
+            {
+                structure: 'S_MPACK',
+                mode: 'FreeText',
+                note: 'Which strategy package each step belongs to — the cadence, as on the general list.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),STRAT(k),PAKET(k)',
+            },
+            {
+                structure: 'S_COMPONENTS',
+                mode: 'FreeText',
+                note: 'Planned materials per step.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),IDNRK(k),MENGE,MEINS,RGEKZ,ABLAD,WEMPF',
+            },
+            {
+                structure: 'S_PRTS',
+                mode: 'FreeText',
+                note: 'Production resources, tools and document links per step. EQUNR is key AND mandatory here, where the general list’s PLNNR is key only.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),PSNFH(k/*),FHMAR,MATNR,FHWRK,STEUF,MGVGW,MGEINH,SFHNR,DOKAR,DOKNR,DOKTL,DOKVR,EQUNR_REF,EQPNT',
+            },
+            {
+                structure: 'S_SPACK_OUTLINE',
+                mode: 'FreeText',
+                note: 'External service package: the outline hierarchy for a step done by a contractor.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),OUTLINE(k/*),PARENT_OUTLINE,OUTLINE_LEVEL_NAME,SHORT_TEXT',
+            },
+            {
+                structure: 'S_SPACK_LINES',
+                mode: 'FreeText',
+                note: 'Service lines under a step.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),SRV_LINE(k/*),SHORT_TEXT,QUANTITY,UOM,GROSS_PRICE,PRICE_UNIT',
+            },
+            {
+                structure: 'S_SPACK_SRV_OUT',
+                mode: 'FreeText',
+                note: 'Service lines placed within an outline level.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),OUTLINE(k/*),SRV_LINE(k/*),SHORT_TEXT,QUANTITY,UOM,GROSS_PRICE,PRICE_UNIT',
+            },
+            {
+                structure: 'S_SPACK_LIMITS',
+                mode: 'FreeText',
+                note: 'Value limits on unplanned services for a step.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),OVERALL_LIMIT,EXP_VALUE',
+            },
+            {
+                structure: 'S_SPACK_CONTR_LIMIT',
+                mode: 'FreeText',
+                note: 'Limits drawn against a specific contract and contract item.',
+                header: 'EQUNR(k/*),PLNAL(k/*),VORNR(k/*),CONTRACT(k/*),CONTRACT_ITEM(k/*),LIMIT,NO_LIMIT',
             },
         ],
     },

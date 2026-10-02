@@ -172,6 +172,15 @@ export const SapLoadCenterPage: React.FC = () => {
         measuringPointCategory: params.measuringPointCategory ?? '',
         sourceSystem: 'sap_pm',
         scope: studies.find(g => g.key === cockpitScope)?.scope,
+        // The register goes in the same ZIP, ahead of what points at it, from
+        // the same SAP values the workbook uses.
+        register: true,
+        maintenancePlant: params.maintenancePlant,
+        plannerGroup: params.plannerGroup,
+        companyCode: params.companyCode,
+        flCategory: params.flCategory,
+        structureIndicator: params.structureIndicator,
+        equipmentCategory: params.equipmentCategory,
     }), [cockpitMode, cockpitScope, params, studies]);
     const cockpit = useMemo(() => (source ? buildCockpitExport(source, cockpitParams) : null), [source, cockpitParams]);
     const cockpitRows = cockpit ? cockpit.files.reduce((n, f) => n + f.rows, 0) : 0;
@@ -272,11 +281,13 @@ export const SapLoadCenterPage: React.FC = () => {
                 {loadError && <p className="text-sm text-rose-700 mt-3">{loadError}</p>}
                 {cockpit && (
                     <>
-                        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                             {/* One structure per tile — an object's row total would add a plan's
                                 items and object-list rows to the plans and read as three times
-                                the schedules there are. */}
+                                the schedules there are. Register first: it is what the rest
+                                points at, and it loads first. */}
                             {([
+                                ['S_FUN_LOCATION', 'Functional locations'], ['S_EQUI', 'Equipment'],
                                 ['S_HEADER', 'Measuring points'], ['S_MEASUREMENT_DOCU', 'Readings'],
                                 ['S_OPERATIONS', 'Task-list steps'], ['S_MPLA', 'PM schedules'],
                             ] as const).map(([structure, name]) => (
@@ -286,9 +297,9 @@ export const SapLoadCenterPage: React.FC = () => {
                                 </div>
                             ))}
                         </div>
-                        {(cockpit.handover || cockpit.alreadyInSap.points > 0 || cockpit.alreadyInSap.readings > 0) && cockpitMode === 'delta' && (
+                        {(cockpit.handover || cockpit.alreadyInSap.assets > 0 || cockpit.alreadyInSap.points > 0 || cockpit.alreadyInSap.readings > 0) && cockpitMode === 'delta' && (
                             <p className="text-xs text-slate-500 mt-3">
-                                Not sent because SAP already has them: {cockpit.alreadyInSap.points} point(s), {cockpit.alreadyInSap.readings} reading(s)
+                                Not sent because SAP already has them: {cockpit.alreadyInSap.assets} asset(s), {cockpit.alreadyInSap.points} point(s), {cockpit.alreadyInSap.readings} reading(s)
                                 {cockpit.handover ? `, ${cockpit.handover.rows} schedule(s)` : ''}.
                                 {cockpit.handover ? ' The schedules IREAMS changed are listed on a hand-over sheet in the file, with their SAP numbers, for the planner to update in SAP.' : ''}
                             </p>

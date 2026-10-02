@@ -175,16 +175,81 @@ describe('the registry is what SAP handed out', () => {
         // has not been read off the cockpit, so only the count is recorded.
         expect(COCKPIT_OBJECT_BY_KEY.measurementDocument.predecessorCount).toBe(1);
         expect(COCKPIT_OBJECT_BY_KEY.measurementDocument.predecessors).toBeUndefined();
+        // The downloads' READMEs were empty; these lists come from SAP Help and
+        // are recorded in full, with the count agreeing.
+        for (const k of ['equipment', 'functionalLocation', 'equipmentTaskList'] as const) {
+            expect(COCKPIT_OBJECT_BY_KEY[k].predecessors).toHaveLength(COCKPIT_OBJECT_BY_KEY[k].predecessorCount!);
+        }
+        expect(COCKPIT_OBJECT_BY_KEY.equipment.predecessors).toContain('PM - Functional location');
+        expect(COCKPIT_OBJECT_BY_KEY.equipmentTaskList.predecessors).toContain('PM - Equipment');
+    });
+
+    it('keys the register on the cockpit’s names, not the table names', () => {
+        // The functional location is EXTERNAL_NUMBER + KTX01 to the cockpit,
+        // TPLNR + PLTXT to the tables; the tag is TECHID, not TIDNR; the main
+        // work centre is ARBPL_ORG + WERGW and GEWRK does not exist. A file in
+        // table-name shape is what the consultant's workbook produces, and it
+        // does not load.
+        const fl = fields('functionalLocation', 'S_FUN_LOCATION');
+        expect(fl.slice(0, 3)).toEqual(['EXTERNAL_NUMBER', 'TPLKZ', 'FLTYP']);
+        expect(fl).toEqual(expect.arrayContaining(['KTX01', 'TPLMA', 'ARBPL_ORG', 'WERGW', 'IEQUI', 'EINZL']));
+        expect(fl).not.toEqual(expect.arrayContaining(['TPLNR']));
+        expect(fl).not.toEqual(expect.arrayContaining(['PLTXT']));
+        expect(fl).not.toEqual(expect.arrayContaining(['GEWRK']));
+        expect(fl).not.toEqual(expect.arrayContaining(['KOKRS']));
+        for (const s of COCKPIT_OBJECT_BY_KEY.functionalLocation.structures) {
+            expect(columnsOf(s)[0]).toMatchObject({ name: 'EXTERNAL_NUMBER', key: true, mandatory: true });
+        }
+
+        const eq = fields('equipment', 'S_EQUI');
+        expect(eq).toHaveLength(67);
+        expect(eq).toEqual(expect.arrayContaining(['TECHID', 'DATAB', 'TPLNR', 'HEQUI', 'ARBPL_ORG', 'WERGW']));
+        expect(eq).not.toEqual(expect.arrayContaining(['TIDNR']));
+        expect(eq).not.toEqual(expect.arrayContaining(['GEWRK']));
+        const mandatory = columnsOf(structureSpec('equipment', 'S_EQUI')!).filter(c => c.mandatory).map(c => c.name);
+        expect(mandatory).toEqual(['EQUNR', 'EQTYP', 'DATAB']);
     });
 
     it('names each object the way its ZIP is named', () => {
         expect(COCKPIT_OBJECTS.map(o => cockpitFolderName(o.name))).toEqual([
+            'Source data for PM - Functional location',
+            'Source data for PM - Equipment',
             'Source data for PM - Measuring point',
             'Source data for PM - Measurement document',
             'Source data for PM - General maintenance task list',
+            'Source data for PM - Equipment task list',
             'Source data for PM - Maintenance item',
             'Source data for PM - Maintenance plan',
         ]);
+    });
+
+    it('marks exactly the headers that were never read off a download as provisional, and nothing else', () => {
+        const provisional = ALL_STRUCTURES.filter(x => x.spec.provisional).map(x => `${x.object}/${x.spec.structure}`);
+        expect(provisional).toEqual(['equipment/S_IHPA', 'equipment/S_TEXTS_EQUI']);
+        // Each is its functional-location twin with the equipment key in front.
+        expect(fields('equipment', 'S_TEXTS_EQUI')).toEqual(['EQUNR', ...fields('functionalLocation', 'S_TEXTS_FL').slice(1)]);
+        expect(fields('equipment', 'S_IHPA')).toEqual(['EQUNR', ...fields('functionalLocation', 'S_IHPA_FL').slice(1)]);
+    });
+
+    it('keys the equipment task list on the equipment, in every structure, and otherwise mirrors the general list', () => {
+        const eq = COCKPIT_OBJECT_BY_KEY.equipmentTaskList;
+        const gen = COCKPIT_OBJECT_BY_KEY.generalTaskList;
+        expect(eq.structures.map(x => x.structure)).toEqual(gen.structures.map(x => x.structure));
+        for (const spec of eq.structures) {
+            const cols = columnsOf(spec);
+            expect(cols[0]).toMatchObject({ name: 'EQUNR', key: true, mandatory: true });
+            expect(cols[1].name).toBe('PLNAL');
+            // Same fields after the group key, in the same order.
+            const twin = gen.structures.find(x => x.structure === spec.structure)!;
+            expect(cols.slice(1).map(c => c.name)).toEqual(columnsOf(twin).slice(1).map(c => c.name));
+        }
+        // The two header-level differences the files actually carry.
+        const werks = columnsOf(structureSpec('equipmentTaskList', 'S_TASKLIST_HDR')!).find(c => c.name === 'WERKS')!;
+        expect(werks.mandatory).toBe(false);
+        expect(columnsOf(structureSpec('generalTaskList', 'S_TASKLIST_HDR')!).find(c => c.name === 'WERKS')!.mandatory).toBe(true);
+        expect(columnsOf(structureSpec('generalTaskList', 'S_PRTS')!)[0]).toMatchObject({ name: 'PLNNR', key: true, mandatory: false });
+        // A bare S_OPERATIONS file is now ambiguous: the folder has to say which list it is.
+        expect(findStructures('S_OPERATIONS').map(x => x.object)).toEqual(['generalTaskList', 'equipmentTaskList']);
     });
 
     it('keeps the task list keyed group/counter, all the way down', () => {

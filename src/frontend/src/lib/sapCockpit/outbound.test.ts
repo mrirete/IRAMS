@@ -12,14 +12,15 @@ import { readCockpitSet, toReadingRows } from './inbound';
 import { toStrategyRows } from './strategy';
 import { buildZip, readZip } from './zip';
 import { structureSpec } from './structures';
+import { parseCockpitCsv } from './dialect';
 import type { SapLoadSource } from '../sapLoad/build';
 
-const PARAMS: CockpitExportParams = { ...defaultExportParams(), planningPlant: '102A', plant: '102A', orderType: 'PM01' };
+const PARAMS: CockpitExportParams = { ...defaultExportParams(), planningPlant: '102A', plant: '102A', orderType: 'PM01', maintenancePlant: '102A', structureIndicator: 'YB01', companyCode: '1030', plannerGroup: 'A01', validFrom: '01.10.2026' };
 
 function fixture(): SapLoadSource {
     return {
         assets: [
-            { id: 'floc', tag: 'SYS-300-BLR', name: 'Boiler system', parent_id: null, hierarchy_level: 'SYSTEM', criticality: 'B', equipment_number: null, company_id: 'co' },
+            { id: 'floc', tag: 'SYS-300-BLR', name: 'Boiler system', parent_id: null, hierarchy_level: 'SYSTEM', criticality: 'B', equipment_number: null, company_id: 'co', properties: { description: 'Two-drum water-tube boiler, 40 t/h, feeding the 300 header' } },
             { id: 'pump', tag: 'P-101A', name: 'Feed pump', parent_id: 'floc', hierarchy_level: 'EQUIPMENT', criticality: 'A', equipment_number: '10004711', company_id: 'co' },
             { id: 'fan', tag: 'FAN-301', name: 'Primary air fan', parent_id: 'floc', hierarchy_level: 'EQUIPMENT', criticality: 'B', equipment_number: '10004712', company_id: 'co' },
         ] as SapLoadSource['assets'],
@@ -129,10 +130,120 @@ describe('files in the cockpit’s own shape', () => {
     });
 });
 
+describe('the register, in the cockpit’s own names', () => {
+    const rowObj = (x: ReturnType<typeof buildCockpitExport>, structure: string, i = 0) =>
+        parseCockpitCsv(fileOf(x, structure)!.text, fileOf(x, structure)!.fileName).rows[i];
+
+    it('writes the register first — locations, then equipment — ahead of what points at it', () => {
+        const x = buildCockpitExport(fixture(), PARAMS);
+        expect(x.files.slice(0, 3).map(f => f.structure)).toEqual(['S_FUN_LOCATION', 'S_TEXTS_FL', 'S_EQUI']);
+        expect(x.files[0].folder).toBe('Source data for PM - Functional location');
+        expect(x.files[2].folder).toBe('Source data for PM - Equipment');
+        expect(x.counts.functionalLocation).toBe(2);   // the location and its long text: counts are rows per object
+        expect(x.counts.equipment).toBe(2);
+    });
+
+    it('a functional location is EXTERNAL_NUMBER + KTX01, and allows installation when equipment sits under it', () => {
+        const x = buildCockpitExport(fixture(), PARAMS);
+        const fl = rowObj(x, 'S_FUN_LOCATION');
+        expect(fl).toMatchObject({
+            EXTERNAL_NUMBER: 'SYS-300-BLR', TPLKZ: 'YB01', FLTYP: 'M', KTX01: 'Boiler system', EQART: 'SYSTEM',
+            SWERK: '102A', IWERK: '102A', INGRP: 'A01', BUKRS: '1030', ABCKZ: 'B', TPLMA: '', IEQUI: 'X',
+        });
+        expect(fl).not.toHaveProperty('TPLNR');
+        expect(fl).not.toHaveProperty('PLTXT');
+    });
+
+    it('an equipment carries its number as EQUNR, its tag as TECHID, its position as TPLNR, and a valid-from date', () => {
+        const x = buildCockpitExport(fixture(), { ...PARAMS, measuringPointCategory: 'M' });   // the point category is the only other blank SAP would reject
+        const pump = rowObj(x, 'S_EQUI', 1);   // rows sort by depth then tag: FAN-301 before P-101A
+        expect(pump).toMatchObject({
+            EQUNR: '10004711', NRANGE_IND: '', EQTYP: 'M', DATAB: '01.10.2026',
+            EQKTX: 'Feed pump', TECHID: 'P-101A', TPLNR: 'SYS-300-BLR', HEQUI: '',
+            SWERK: '102A', IWERK: '102A', BUKRS: '1030', ABCKZ: 'A',
+        });
+        expect(pump).not.toHaveProperty('TIDNR');
+        expect(x.issues.some(i => i.level === 'error')).toBe(false);
+    });
+
+    it('internal numbering: the tag is the legacy key, on the equipment and on everything that points at it', () => {
+        const x = buildCockpitExport(fixture(), { ...PARAMS, numbering: 'internal' });
+        expect(rowObj(x, 'S_EQUI', 1)).toMatchObject({ EQUNR: 'P-101A', NRANGE_IND: 'X', TECHID: 'P-101A' });
+        expect(rowObj(x, 'S_HEADER')).toMatchObject({ MEAS_POINT_OBJ_NO: 'P-101A' });
+        expect(rowObj(x, 'S_MPOS')).toMatchObject({ EQUNR: 'P-101A' });
+    });
+
+    it('delta: an asset SAP already knows is not loaded, and the rows that point at it carry SAP’s number', () => {
+        const src = fixture();
+        // The fan was imported from a SAP sheet: erp_object_map remembers its EQUNR.
+        src.externalIds = [{ entity_type: 'asset', entity_id: 'fan', system: 'SAP', external_key: '20000099' }];
+        const x = buildCockpitExport(src, PARAMS);
+        const eq = parseCockpitCsv(fileOf(x, 'S_EQUI')!.text).rows;
+        expect(eq.map(r => r.TECHID)).toEqual(['P-101A']);
+        expect(x.alreadyInSap.assets).toBe(1);
+        expect(rowObj(x, 'S_OBJ_LIST')).toMatchObject({ EQUNR: '20000099' });
+        // Full mode loads it too, under the number SAP has.
+        const full = buildCockpitExport(src, { ...PARAMS, mode: 'full' });
+        expect(parseCockpitCsv(fileOf(full, 'S_EQUI')!.text).rows.map(r => r.EQUNR)).toEqual(['20000099', '10004711']);
+    });
+
+    it('a study-scoped send, or register off, carries no register', () => {
+        const scoped = buildCockpitExport(fixture(), { ...PARAMS, scope: { studyId: 'any' } });
+        expect(scoped.files.some(f => f.object === 'equipment' || f.object === 'functionalLocation')).toBe(false);
+        const off = buildCockpitExport(fixture(), { ...PARAMS, register: false });
+        expect(off.files.some(f => f.object === 'equipment' || f.object === 'functionalLocation')).toBe(false);
+        expect(fileOf(off, 'S_HEADER')).toBeDefined();
+    });
+
+    it('a location’s description — the Assets module’s Description — travels as its long text', () => {
+        const x = buildCockpitExport(fixture(), PARAMS);
+        expect(x.files.slice(0, 3).map(f => f.structure)).toEqual(['S_FUN_LOCATION', 'S_TEXTS_FL', 'S_EQUI']);
+        expect(rowObj(x, 'S_TEXTS_FL')).toEqual({
+            EXTERNAL_NUMBER: 'SYS-300-BLR', SPRAS: 'EN', TEXT_DESCR: 'Boiler system',
+            LONGTEXT: 'Two-drum water-tube boiler, 40 t/h, feeding the 300 header',
+        });
+        // No description, no text row — and the language is a parameter.
+        const src = fixture();
+        src.assets[0] = { ...src.assets[0], properties: {} };
+        expect(fileOf(buildCockpitExport(src, PARAMS), 'S_TEXTS_FL')).toBeUndefined();
+        expect(rowObj(buildCockpitExport(fixture(), { ...PARAMS, language: 'DE' }), 'S_TEXTS_FL').SPRAS).toBe('DE');
+    });
+
+    it('an equipment’s description travels on S_TEXTS_EQUI, keyed the way the equipment is, and says the header is provisional', () => {
+        const src = fixture();
+        src.assets[1] = { ...src.assets[1], properties: { description: 'Boiler feed pump, 6-stage, 40 t/h at 70 bar' } };
+        const x = buildCockpitExport(src, PARAMS);
+        expect(x.files.slice(0, 4).map(f => f.structure)).toEqual(['S_FUN_LOCATION', 'S_TEXTS_FL', 'S_EQUI', 'S_TEXTS_EQUI']);
+        expect(rowObj(x, 'S_TEXTS_EQUI')).toEqual({ EQUNR: '10004711', SPRAS: 'EN', TEXT_DESCR: 'Feed pump', LONGTEXT: 'Boiler feed pump, 6-stage, 40 t/h at 70 bar' });
+        // Internal numbering: the text row carries the same legacy key as the equipment row.
+        expect(rowObj(buildCockpitExport(src, { ...PARAMS, numbering: 'internal' }), 'S_TEXTS_EQUI').EQUNR).toBe('P-101A');
+        // The header has not been seen on a download, and the file says so — once, as a warning, not a blocker.
+        const warns = x.issues.filter(i => i.level === 'warn' && /S_TEXTS_EQUI is written from a header IREAMS has not seen/.test(i.message));
+        expect(warns).toHaveLength(1);
+        // No description, no file, no warning.
+        expect(fileOf(buildCockpitExport(fixture(), PARAMS), 'S_TEXTS_EQUI')).toBeUndefined();
+        expect(buildCockpitExport(fixture(), PARAMS).issues.some(i => /S_TEXTS_EQUI/.test(i.message))).toBe(false);
+    });
+
+    it('reports the structure indicator SAP will reject a location without, as the configuration it is', () => {
+        const x = buildCockpitExport(fixture(), { ...PARAMS, structureIndicator: '' });
+        expect(x.issues.some(i => i.level === 'error' && /S_FUN_LOCATION\.TPLKZ is mandatory and is blank/.test(i.message))).toBe(true);
+        expect(x.issues.some(i => i.level === 'info' && /structure indicator \(TPLKZ\)/.test(i.message))).toBe(true);
+    });
+
+    it('what the register export writes, the cockpit reader recognises as the register', () => {
+        const x = buildCockpitExport(fixture(), PARAMS);
+        const set = readCockpitSet(exportZipEntries(x));
+        expect(set.sheets.map(s => s.object).slice(0, 3)).toEqual(['functionalLocation', 'functionalLocation', 'equipment']);
+        const { issues } = toReadingRows(set);
+        expect(issues.some(i => /S_EQUI holds 2 row\(s\) of equipment — master data/.test(i.message))).toBe(true);
+    });
+});
+
 describe('delta by identity', () => {
     it('does not load again what came from SAP, and says so', () => {
         const x = buildCockpitExport(fixture(), PARAMS);
-        expect(x.alreadyInSap).toEqual({ points: 1, readings: 1, schedules: 1 });
+        expect(x.alreadyInSap).toEqual({ points: 1, readings: 1, schedules: 1, assets: 0 });
         const points = rowsOf(fileOf(x, 'S_HEADER')!.text);
         expect(points.some(r => r.startsWith('90000001'))).toBe(false);
         const docs = rowsOf(fileOf(x, 'S_MEASUREMENT_DOCU')!.text);
@@ -181,7 +292,7 @@ describe('delta by identity', () => {
 
     it('full mode loads everything, keyed on the SAP numbers where they exist', () => {
         const x = buildCockpitExport(fixture(), { ...PARAMS, mode: 'full' });
-        expect(x.alreadyInSap).toEqual({ points: 0, readings: 0, schedules: 0 });
+        expect(x.alreadyInSap).toEqual({ points: 0, readings: 0, schedules: 0, assets: 0 });
         expect(x.handover).toBeNull();
         expect(rowsOf(fileOf(x, 'S_HEADER')!.text)).toHaveLength(3);
         expect(rowsOf(fileOf(x, 'S_MEASUREMENT_DOCU')!.text)).toHaveLength(4);

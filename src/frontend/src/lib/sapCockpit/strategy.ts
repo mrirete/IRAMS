@@ -103,24 +103,33 @@ export function toStrategyRows(set: CockpitSet): StrategyImport {
     let skipped = 0;
 
     // ── Job plans ───────────────────────────────────────────────────────────
-    const hdrSheet = sheetOf(set, 'generalTaskList', 'S_TASKLIST_HDR');
-    const opSheet = sheetOf(set, 'generalTaskList', 'S_OPERATIONS');
-    const packSheet = sheetOf(set, 'generalTaskList', 'S_MPACK');
-    const compSheet = sheetOf(set, 'generalTaskList', 'S_COMPONENTS');
+    // Two task-list objects, one shape. A general list is keyed PLNNR + PLNAL;
+    // an equipment list is keyed EQUNR + PLNAL — the equipment number IS the
+    // group. Equipment-list rows are read with EQUNR standing in for PLNNR,
+    // so one pass handles both, and the equipment is remembered on the row.
+    const rowsOf = (structure: string): Record<string, string>[] => [
+        ...(sheetOf(set, 'generalTaskList', structure)?.rows ?? []),
+        ...(sheetOf(set, 'equipmentTaskList', structure)?.rows ?? []).map(r => ({ ...r, PLNNR: s(r.EQUNR), _equipment: s(r.EQUNR) })),
+    ];
+    const hdrRows = rowsOf('S_TASKLIST_HDR');
+    const opRows = rowsOf('S_OPERATIONS');
+    const packRows = rowsOf('S_MPACK');
+    const compRows = rowsOf('S_COMPONENTS');
+    let equipmentSteps = 0;
 
     const headers = new Map<string, Record<string, string>>();
-    for (const r of hdrSheet?.rows ?? []) {
+    for (const r of hdrRows) {
         const ref = taskListRef(r.PLNNR, r.PLNAL);
         if (ref !== '/01' || s(r.PLNNR)) headers.set(ref, r);
     }
 
     const packages = new Map<string, Record<string, string>>();
-    for (const r of packSheet?.rows ?? []) {
+    for (const r of packRows) {
         packages.set(opKey(r.PLNNR, r.PLNAL, r.VORNR), r);
     }
 
     const components = new Map<string, { code: string; qty: string; uom: string }[]>();
-    for (const r of compSheet?.rows ?? []) {
+    for (const r of compRows) {
         const code = s(r.IDNRK);
         if (!code) continue;
         const k = opKey(r.PLNNR, r.PLNAL, r.VORNR);
@@ -142,11 +151,11 @@ export function toStrategyRows(set: CockpitSet): StrategyImport {
     /** Cadences of a task list's steps, by task-list ref — a strategy plan's base cadence is the shortest. */
     const listPackages = new Map<string, Cadence[]>();
 
-    if (opSheet && !hdrSheet) {
+    if (opRows.length && !hdrRows.length) {
         issues.add('warn', 'Task-list operations are in this set but the task-list header is not — the operations import, but without the list’s description, plant or strategy.', false);
     }
 
-    for (const r of opSheet?.rows ?? []) {
+    for (const r of opRows) {
         const ref = taskListRef(r.PLNNR, r.PLNAL);
         const description = s(r.LTXA1);
         if (!s(r.PLNNR) || !s(r.VORNR)) {
@@ -198,10 +207,14 @@ export function toStrategyRows(set: CockpitSet): StrategyImport {
         if (s(r.EQUNR_OP) || s(r.TPLNR_OP)) {
             issues.add('info', 'operation(s) name their own equipment or functional location (EQUNR_OP / TPLNR_OP) — IREAMS job-plan steps carry no asset of their own, so the step belongs to whatever the schedule covers');
         }
+        if (r._equipment) equipmentSteps += 1;
         jobplan.push(row);
     }
+    if (equipmentSteps) {
+        issues.add('info', `${equipmentSteps} step(s) come from equipment task lists: the list is tied to one equipment (its EQUNR is the task-list group), so the steps belong to whichever schedule covers that equipment.`, false);
+    }
 
-    if (packSheet?.rows.length && jobplan.length && set.strategyPackages.length === 0) {
+    if (packRows.length && jobplan.length && set.strategyPackages.length === 0) {
         issues.add('warn', 'Strategy packages say WHICH package each step belongs to, but a package’s cycle lives in the strategy, which has no migration object (SAP: "taken from the Maintenance Strategy object"). Add an export of the strategy packages (IP11, or table T351P: STRAT, PAKET/ZAEHL, ZYKL1/ZYKZT, ZEIEH) to this set and every step gets its cycle.', false);
     }
 

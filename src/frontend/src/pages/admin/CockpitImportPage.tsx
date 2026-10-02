@@ -101,7 +101,8 @@ export const CockpitImportPage: React.FC = () => {
                 <p className="text-slate-500 text-sm mt-1 max-w-2xl">
                     Download the source data from the cockpit, unzip it, and drop the folders here. Measuring points and
                     measurement documents become the condition history a reliability study runs on; task lists, maintenance
-                    items and plans become job plans and PM schedules.
+                    items and plans become job plans and PM schedules. Equipment and functional-location folders are
+                    recognised and counted here, but the register itself loads through the Migration Center.
                 </p>
             </div>
 
