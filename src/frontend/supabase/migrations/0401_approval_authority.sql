@@ -16,9 +16,12 @@
 --     and the ones below it; a person whose own step covers the value needs
 --     nobody else.
 --   • SUBSTITUTES: an approver names a stand-in for a date range; the stand-in
---     signs on their behalf (recorded), but never something they raised.
+--     signs on their behalf (recorded), but never something they raised, and
+--     only while the approver's own account is active.
 --   • ESCALATION: a step not signed within its allowance is reported to the
 --     next level; after the second allowance the next level may sign it.
+--     A step whose roles nobody holds goes to the administrators instead of
+--     waiting in silence.
 --   • Work orders are gated at RELEASE (→ Scheduled / In progress) on planned
 --     cost. Emergency orders are exempt and reviewed afterwards; so, by
 --     default, are orders generated from a maintenance plan — their cost was
@@ -224,6 +227,7 @@ BEGIN
      WHERE a.substitute_user_id = me AND a.company_id = s.company_id
        AND current_date BETWEEN a.valid_from AND a.valid_to
        AND (u.roles ->> 0) = ANY (s.roles)
+       AND coalesce(u.status, 'active') = 'active'   -- a closed account delegates nothing
      LIMIT 1;
     IF v_for IS NOT NULL AND s.requested_by IS DISTINCT FROM me THEN
         RETURN jsonb_build_object('via', 'SUBSTITUTE', 'on_behalf_of', v_for);
@@ -257,6 +261,7 @@ DECLARE
     v_roles  text[];
     v_title  text;
     v_msg    text;
+    v_rows   integer;
 BEGIN
     SELECT * INTO s FROM public.approval_steps WHERE id = p_step;
     IF NOT FOUND THEN RETURN; END IF;
@@ -316,14 +321,38 @@ BEGIN
                     OR EXISTS (SELECT 1 FROM public.work_center_members m
                                 WHERE m.contact_id = u.contact_id AND m.work_center_id = v_wc))
             UNION
-            -- and whoever is standing in for one of them today
+            -- and whoever is standing in for one of them today (both the
+            -- approver and the stand-in must still be active accounts)
             SELECT a.substitute_user_id
               FROM public.approver_substitutes a
-              JOIN public.users u ON u.id = a.user_id
+              JOIN public.users u  ON u.id = a.user_id
+              JOIN public.users su ON su.id = a.substitute_user_id
              WHERE a.company_id = s.company_id AND current_date BETWEEN a.valid_from AND a.valid_to
                AND (u.roles ->> 0) = ANY (v_roles)
+               AND coalesce(u.status, 'active') = 'active'
+               AND coalesce(su.status, 'active') = 'active'
            ) r
      WHERE r.uid IS DISTINCT FROM s.requested_by OR p_kind = 'LATE';
+
+    -- A step whose roles nobody holds reaches no one, and the document waits
+    -- in silence. That is a routing fault, not something to hide: the
+    -- administrators are told (they may sign any step) and can either fill the
+    -- role or change the chain in Admin › Approvals.
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows = 0 THEN
+        INSERT INTO public.notifications (recipient_id, title, message, severity, notification_type, module,
+               entity_id, entity_type, entity_number, action_link, action_required, created_by, company_id)
+        SELECT u.id::text, 'Approval has nobody to sign it: ' || coalesce(v_number, ''),
+               coalesce(v_what, '') || ' — step ' || s.step_order || ' is signed by '
+                 || array_to_string(s.roles, ' / ') || ', and nobody holds that role. '
+                 || 'Give someone the role in People & Org, or change the chain in Admin › Approvals. '
+                 || 'As an administrator you can also approve it yourself.',
+               'WARNING', 'ESCALATION', v_module, s.doc_id::text, v_entity, v_number, v_link, true,
+               coalesce(public.caller_user_id()::text, 'SYSTEM'), s.company_id
+          FROM public.users u
+         WHERE u.company_id = s.company_id AND coalesce(u.status, 'active') = 'active'
+           AND u.roles ?| ARRAY['SUPER_ADMIN', 'SYS_ADMIN'];
+    END IF;
 END $$;
 REVOKE ALL ON FUNCTION public.approval_notify(uuid, text) FROM public, anon, authenticated;
 
