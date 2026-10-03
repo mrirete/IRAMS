@@ -74,7 +74,13 @@ export const hasJSA = (wo: WorkOrder): boolean =>
  * Lightweight Planned-vs-Reactive classification — no item scoring. Use this for
  * list rows / KPI rollups where only the classification is needed.
  */
-export const hasLabour = (wo: WorkOrder): boolean => (wo.labor || []).length > 0;
+// Labour is resourced when a craft line exists, OR a person is ticked on any
+// step, OR the order has an assignee — planners assign on the step far more
+// often than they add a craft line, and the chip stayed amber for them.
+export const hasLabour = (wo: WorkOrder): boolean =>
+  (wo.labor || []).length > 0
+  || (wo.tasks || []).some(t => (t.assignedUserIds || []).length > 0)
+  || !!wo.assignedTo;
 
 export function classifyWork(wo: WorkOrder): WorkClassification {
   // A job is properly planned only with task steps + an effort estimate + labour

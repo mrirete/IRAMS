@@ -70,8 +70,17 @@ export function dueState(r: Pick<ServiceRequest, 'status' | 'slaDeadline'>, now 
     const hours = (new Date(r.slaDeadline).getTime() - now) / 3600000;
     if (!Number.isFinite(hours)) return null;
     if (hours < 0) return { kind: 'overdue', label: `${formatSpan(-hours)} over` };
-    if (hours < 4) return { kind: 'soon', label: `${formatSpan(hours)} left` };
+    // Inside the last four hours the minutes matter: rounded to the hour, a
+    // fresh Emergency read "4h left" for its first half hour and looked stuck.
+    if (hours < 4) return { kind: 'soon', label: `${formatCountdown(hours)} left` };
     return { kind: 'ok', label: `${formatSpan(hours)} left` };
+}
+
+/** "3h 39m", "2h", "45m" — the close-range clock. */
+export function formatCountdown(hours: number): string {
+    const mins = Math.max(1, Math.floor(hours * 60));
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return h === 0 ? `${m}m` : m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 /** "45m", "5h", "3d", "6w" — one unit, rounded so it never reads as 0. */

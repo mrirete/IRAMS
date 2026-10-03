@@ -264,8 +264,50 @@ export class NotificationService {
         const wantEmail = activeChannels.includes('EMAIL');
         const emailRecipientIds: string[] = [];
 
+        // What the notice is about, in words: the rule's own text plus the
+        // record's number, asset and problem. "WR Approved" alone told the
+        // reader nothing about which job or where.
+        const subject = [
+            entityNumber,
+            entity.assetCode || entity.assetName,
+            String(entity.title || entity.description || '').trim().slice(0, 90),
+        ].filter(Boolean).join(' · ');
+        const ruleMessage = [rule.description || `${rule.name} triggered`, subject].filter(Boolean).join(' — ');
+        const ruleTitle = entityNumber ? `${rule.name}: ${entityNumber}` : rule.name;
+        // A hand-off the reader must act on. Set per rule (0400); the three
+        // legacy event names are kept for rules written before the flag.
+        const actionRequired = rule.actionRequired === true
+            || ['APPROVAL_NEEDED', 'ASSIGNED', 'TECO_BLOCKED'].includes(rule.eventTrigger);
+
         const vendorIds = recipients.filter(r => r && r.startsWith('VENDOR::'));
-        const userTargets = recipients.filter(r => r && !r.startsWith('VENDOR::'));
+        const unroutedRoles = recipients.filter(r => r && r.startsWith('UNROUTED::')).map(r => r.replace('UNROUTED::', ''));
+        const userTargets = recipients.filter(r => r && !r.startsWith('VENDOR::') && !r.startsWith('UNROUTED::'));
+
+        // A role nobody holds is a routing fault, not something to hide by
+        // notifying the person who clicked. Admins are told what to fix; only
+        // when there is no admin either does the actor get the notice.
+        if (unroutedRoles.length > 0 && activeChannels.includes('IN_APP')) {
+            const admins = [...new Set((await Promise.all(['SYS_ADMIN', 'SUPER_ADMIN'].map(role =>
+                this.resolveRoleRecipientsScoped(role, 'GLOBAL')))).flat())];
+            if (admins.length === 0) {
+                if (context?.currentUserId) userTargets.push(context.currentUserId);
+            } else {
+                await Promise.allSettled(admins.map(adminId => db.createNotification({
+                    recipientId: adminId,
+                    title: `Nobody to notify: ${rule.name}`,
+                    message: `No one holds the ${unroutedRoles.join(' / ')} role${entity.workCenterId ? ' for this department' : ''}, so "${rule.name}" reached no one for ${subject || 'this record'}. Give someone the role in People & Org, or change the rule's recipients.`,
+                    severity: 'WARNING',
+                    notificationType: this.mapEventToType(rule.eventTrigger),
+                    module: rule.module,
+                    entityId: entity.id,
+                    entityType,
+                    entityNumber,
+                    actionLink: this.buildActionLink(rule.module, entity.id),
+                    actionRequired: true,
+                    createdBy: context?.currentUserId || 'SYSTEM',
+                })));
+            }
+        }
 
         for (const recipientId of vendorIds) {
             try {
@@ -299,13 +341,18 @@ export class NotificationService {
         // requests instead of one per recipient.
         const resolvedUsers = (await Promise.all(userTargets.map(r => this.resolveRecipientUserId(r).catch(() => r))))
             .filter((u): u is string => !!u);
-        const uniqueUsers = [...new Set(resolvedUsers)];
+        let uniqueUsers = [...new Set(resolvedUsers)];
+        // A hand-off is for the people who must act next — not for the person
+        // who just made the move, when someone else is there to receive it.
+        if (actionRequired && context?.currentUserId && uniqueUsers.some(u => u !== context.currentUserId)) {
+            uniqueUsers = uniqueUsers.filter(u => u !== context.currentUserId);
+        }
         if (wantEmail) emailRecipientIds.push(...uniqueUsers);
         if (activeChannels.includes('IN_APP') && uniqueUsers.length > 0) {
             const results = await Promise.allSettled(uniqueUsers.map(resolvedUserId => db.createNotification({
                 recipientId: resolvedUserId,
-                title: rule.name,
-                message: rule.description || `${rule.name} triggered for ${entityNumber}`,
+                title: ruleTitle,
+                message: ruleMessage,
                 severity: rule.severity,
                 notificationType: this.mapEventToType(rule.eventTrigger),
                 module: rule.module,
@@ -313,7 +360,7 @@ export class NotificationService {
                 entityType,
                 entityNumber,
                 actionLink: this.buildActionLink(rule.module, entity.id),
-                actionRequired: ['APPROVAL_NEEDED', 'ASSIGNED', 'TECO_BLOCKED'].includes(rule.eventTrigger),
+                actionRequired,
                 escalationTimeoutMinutes: rule.escalationTimeoutMinutes || 0,
                 escalationRecipientRole: rule.escalationRecipientRole || '',
                 createdBy: context?.currentUserId || 'SYSTEM',
@@ -325,8 +372,8 @@ export class NotificationService {
         // and the global channel must be on — both checked above).
         if (wantEmail && emailRecipientIds.length > 0) {
             await this.queueEmails(emailRecipientIds, {
-                title: rule.name,
-                message: rule.description || `${rule.name} triggered for ${entityNumber}`,
+                title: ruleTitle,
+                message: ruleMessage,
                 severity: rule.severity,
                 module: rule.module,
                 entityNumber,
@@ -373,7 +420,8 @@ export class NotificationService {
                 case 'DYNAMIC': {
                     const targetKey = (r.targetId || '').toLowerCase();
                     if (targetKey === 'assignee' && entity.assignedTo) return [entity.assignedTo];
-                    if (targetKey === 'requester' && (entity.requestedBy || entity.requesterId)) return [entity.requestedBy || entity.requesterId];
+                    // On a work order the requester is whoever reported the fault (0349 reported_by).
+                    if (targetKey === 'requester' && (entity.requestedBy || entity.requesterId || entity.reportedBy)) return [entity.requestedBy || entity.requesterId || entity.reportedBy];
                     if (targetKey === 'permitholder' && entity.requestedBy) return [entity.requestedBy];
                     if (targetKey === 'createdby' && entity.createdBy) return [entity.createdBy];
                     if (targetKey === 'workcentercrew' || targetKey === 'workcentersupervisor') {
@@ -384,11 +432,15 @@ export class NotificationService {
                 }
                 case 'ROLE':
                     try {
+                        // The record's own department first: the supervisor of the
+                        // equipment's work centre, not of whoever happened to click.
+                        const deptUsers = await this.resolveRoleInDepartment(r.targetId, entity);
+                        if (deptUsers.length > 0) return deptUsers;
                         const roleUsers = await this.resolveRoleRecipientsScoped(r.targetId, scope, context?.currentUserId, entity.siteId || entity.site_id);
                         if (roleUsers.length > 0) return roleUsers;
-                        return context?.currentUserId ? [context.currentUserId] : [];
+                        return [`UNROUTED::${r.targetId}`];
                     } catch {
-                        return context?.currentUserId ? [context.currentUserId] : [];
+                        return [`UNROUTED::${r.targetId}`];
                     }
                 case 'VENDOR':
                     return r.targetId ? [`VENDOR::${r.targetId}`] : [];
@@ -409,6 +461,7 @@ export class NotificationService {
             'WO_ASSIGNED': 'ASSIGNMENT',
             'WO_STATUS_CHANGE': 'STATUS_CHANGE',
             'WO_COMPLETED': 'STATUS_CHANGE',
+            'WO_ACCEPTED': 'STATUS_CHANGE',
             'WO_CLOSED': 'STATUS_CHANGE',
             'WO_OVERDUE': 'SCHEDULE_ALERT',
             'WO_CANCELLED': 'STATUS_CHANGE',
@@ -1029,6 +1082,35 @@ export class NotificationService {
                 .filter(Boolean) as string[];
         } catch (e) {
             console.error('[SCOPED-ROLE] Role resolution failed:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Holders of a role inside the record's responsible department (work
+     * centre): the record's own work centre, else the one its asset answers
+     * to. A member flagged LEAD counts as the department's SUPERVISOR whatever
+     * their role list says. Empty when the record has no department or no
+     * member holds the role — the caller then widens to the org chart.
+     */
+    private static async resolveRoleInDepartment(roleCode: string, entity: any): Promise<string[]> {
+        try {
+            let wcId: string | null = entity?.workCenterId || entity?.work_center_id || null;
+            const assetId = entity?.assetId || entity?.asset_id;
+            if (!wcId && assetId) {
+                const { data: asset } = await supabase.from('assets').select('responsible_work_center_id').eq('id', assetId).maybeSingle();
+                wcId = (asset as any)?.responsible_work_center_id || null;
+            }
+            if (!wcId) return [];
+            const { data: members } = await supabase.from('work_center_members').select('contact_id, role').eq('work_center_id', wcId);
+            if (!members || members.length === 0) return [];
+            const { data: contacts } = await supabase.from('contacts').select('id, user_id, roles').in('id', members.map((m: any) => m.contact_id));
+            const leads = new Set(members.filter((m: any) => m.role === 'LEAD').map((m: any) => m.contact_id));
+            const wantsSupervisor = String(roleCode || '').toUpperCase().replace(/[\s_-]/g, '') === 'SUPERVISOR';
+            const matches = (contacts || []).filter((c: any) => this.roleMatches(roleCode, c.roles) || (wantsSupervisor && leads.has(c.id)));
+            return (await Promise.all(matches.map((c: any) => this.contactToUserId(c)))).filter(Boolean) as string[];
+        } catch (e) {
+            console.error('[DEPT-ROLE] Department role resolution failed:', e);
             return [];
         }
     }

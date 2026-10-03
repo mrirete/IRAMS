@@ -21,11 +21,12 @@ export interface NotificationEventDef {
 export const NOTIFICATION_EVENTS: Record<string, NotificationEventDef[]> = {
     requests: [
         { code: 'SR_CREATED', description: 'Work request submitted' },
-        { code: 'SR_STATUS_CHANGE', description: 'Request status changed — filter on status (APPROVED / REJECTED / CONVERTED …)' },
+        { code: 'SR_STATUS_CHANGE', description: 'Request status changed — filter on status (REVIEW / AUTHORIZED / REJECTED / CONVERTED), and on priority for high-consequence jobs' },
     ],
     workOrders: [
         { code: 'WO_CREATED', description: 'Work order created' },
         { code: 'WO_STATUS_CHANGE', description: 'Work order status changed — filter on status (TECO, COMPLETED …)' },
+        { code: 'WO_ACCEPTED', description: 'Completed work accepted by the supervisor — ready for financial close' },
     ],
     pm: [
         { code: 'PM_DUE', description: 'PM approaching or due today (within lead time)' },

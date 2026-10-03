@@ -66,6 +66,7 @@ export const ServiceRequests: React.FC = () => {
     const [pinned, setPinned] = useState<ServiceRequest[]>([]); // deep-linked requests outside the closed window
     const [assets, setAssets] = useState<Asset[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>([]);
+    const [workCenters, setWorkCenters] = useState<{ id: string; code: string; name: string }[]>([]);
     const [loading, setLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
@@ -120,6 +121,7 @@ export const ServiceRequests: React.FC = () => {
                 if (!alive) return;
                 lookups.current = { assets: a, users: u };
                 setAssets(a); setDictionaries(d);
+                db.getWorkCenters(true).then(w => { if (alive) setWorkCenters(w as any); }).catch(() => { /* the field shows "Not set" */ });
                 await loadRequests();
             } catch (e: any) {
                 showToast('Could not load requests: ' + (e?.message || e), 'error');
@@ -318,27 +320,19 @@ export const ServiceRequests: React.FC = () => {
             const fresh = await db.getRequest(id);
             if (fresh) {
                 const ui = toUI(fresh);
+                // Every hand-off is a rule (Admin › Notifications, seeded by 0400):
+                // the requester hears about each step, and the people who hold
+                // the NEXT step — authorizers, then approvers — are told it is
+                // theirs. Nothing about a request is notified from code.
                 await NotificationService.checkRules('requests', 'SR_STATUS_CHANGE', ui, { currentUserId: user?.id });
-                // No rule covers Review / Authorize — the requester heard nothing
-                // between raising and conversion. Tell them directly.
-                if (ui.requesterId && ui.requesterId !== user?.id && (to === RequestStatus.REVIEW || to === RequestStatus.AUTHORIZED)) {
-                    const num = ui.requestNumber || 'Your request';
-                    NotificationService.notify({
-                        recipientId: ui.requesterId,
-                        title: to === RequestStatus.REVIEW ? `${num} is being reviewed` : `${num} has been authorized`,
-                        message: to === RequestStatus.REVIEW
-                            ? 'A supervisor has picked up your request and is reviewing it.'
-                            : 'Your request was authorized and is with planning to become a work order.',
-                        severity: 'INFO',
-                        notificationType: 'STATUS_CHANGE',
-                        module: 'requests',
-                        entityId: id,
-                        entityType: 'WORK_REQUEST',
-                        entityNumber: num,
-                        actionLink: `/requests?id=${id}`,
-                        actionRequired: false,
-                        createdBy: user?.id || 'SYSTEM',
-                    }).catch(console.error);
+                // The order raised from it is a new order like any other: the
+                // department's planner is told there is work to plan.
+                if (to === RequestStatus.CONVERTED && ui.linkedWOId) {
+                    NotificationService.checkRules('workOrders', 'WO_CREATED', {
+                        id: ui.linkedWOId, woNumber: woNumber || ui.linkedWONumber, title: ui.description,
+                        assetId: ui.assetId, assetName: ui.assetName, workCenterId: ui.workCenterId,
+                        priority: ui.priority, reportedBy: ui.requesterId,
+                    }, { currentUserId: user?.id }).catch(console.error);
                 }
             }
         } catch (e) {
@@ -358,6 +352,7 @@ export const ServiceRequests: React.FC = () => {
             description: edits.description.trim(),
             is_breakdown: edits.isBreakdown,
             functional_failure_id: (edits.functionalFailureType || null) as any,
+            ...((edits.workCenterId || '') !== (r.workCenterId || '') ? { work_center_id: (edits.workCenterId || null) as any } : {}),
             ...(edits.priority !== r.priority ? { risk_score: RPN_FOR_PRIORITY[edits.priority] } : {}),
         }, actor);
         await loadRequests();
@@ -611,6 +606,7 @@ export const ServiceRequests: React.FC = () => {
                 dupCount={selected ? dupes.get(selected.id) || 0 : 0}
                 position={position}
                 assetClassCode={selected?.assetId ? assetMeta.get(selected.assetId)?.classCode : undefined}
+                workCenters={workCenters}
                 onClose={() => setSelectedId(null)}
                 onStep={step}
                 onTransition={onTransition}

@@ -16,6 +16,7 @@ export interface RequestEdits {
     isBreakdown: boolean;
     functionalFailureType?: string;
     priority: RequestPriority;
+    workCenterId?: string;
 }
 
 export interface RequestDetailDrawerProps {
@@ -23,6 +24,8 @@ export interface RequestDetailDrawerProps {
     dupCount: number;
     position: { index: number; total: number } | null;
     assetClassCode?: string;
+    /** Departments (work centres) a reviewer may route the request to. */
+    workCenters?: { id: string; code: string; name: string }[];
     onClose: () => void;
     onStep: (delta: 1 | -1) => void;
     /** Moves the request on; resolves with the WO number when it converts. */
@@ -54,6 +57,7 @@ const editsOf = (r: ServiceRequest): RequestEdits => ({
     isBreakdown: !!r.isBreakdown,
     functionalFailureType: r.functionalFailureType,
     priority: r.priority,
+    workCenterId: r.workCenterId,
 });
 
 const Label: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -61,9 +65,9 @@ const Label: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 export const RequestDetailDrawer: React.FC<RequestDetailDrawerProps> = ({
-    request, dupCount, position, assetClassCode, onClose, onStep, onTransition, onSave, onDelete, onOpenWO, onShowDuplicates,
+    request, dupCount, position, assetClassCode, workCenters = [], onClose, onStep, onTransition, onSave, onDelete, onOpenWO, onShowDuplicates,
 }) => {
-    const { user, permissions } = useAuth();
+    const { user, role, permissions } = useAuth();
     const { showToast } = useToast();
     const canEdit = permissions?.requests?.edit === true;
     const canDelete = permissions?.requests?.delete === true;
@@ -89,7 +93,8 @@ export const RequestDetailDrawer: React.FC<RequestDetailDrawerProps> = ({
         if (!request || !draft) return false;
         const base = editsOf(request);
         return base.description !== draft.description || base.isBreakdown !== draft.isBreakdown
-            || (base.functionalFailureType || '') !== (draft.functionalFailureType || '') || base.priority !== draft.priority;
+            || (base.functionalFailureType || '') !== (draft.functionalFailureType || '') || base.priority !== draft.priority
+            || (base.workCenterId || '') !== (draft.workCenterId || '');
     }, [request, draft]);
 
     const guard = (go: () => void) => (dirty ? setPendingLeave(() => go) : go());
@@ -141,14 +146,23 @@ export const RequestDetailDrawer: React.FC<RequestDetailDrawerProps> = ({
     });
     const remove = () => run(async () => { await onDelete(r.id); setDeleteOpen(false); });
 
+    // A supervisor may authorize a request they raised. A high-consequence job
+    // (Emergency) then needs a second person to approve it — the authorizer
+    // cannot also be the approver. Admins are exempt (single-supervisor sites);
+    // the database enforces the same rule (0400).
+    const isAdmin = ['SUPER_ADMIN', 'SYS_ADMIN'].includes(String(role || '').toUpperCase());
+    const needsSecondApprover = r.status === RequestStatus.AUTHORIZED && r.priority === 'EMERGENCY'
+        && !!r.authorizedBy && r.authorizedBy === user?.id && !isAdmin;
+
     // The one forward step, if this caller may take it.
     const next = nextStep(r.status);
-    const primary =
+    const primary = needsSecondApprover ? null :
         next === 'REVIEW' && canEdit ? { label: 'Start review', go: () => advance(RequestStatus.REVIEW), cls: 'bg-slate-700 hover:bg-slate-800' } :
         next === 'AUTHORIZE' && canAuthorize ? { label: 'Authorize', go: () => advance(RequestStatus.AUTHORIZED, { authorized_by: user?.id, authorized_at: new Date().toISOString() }), cls: 'bg-primary-600 hover:bg-primary-500' } :
         next === 'APPROVE' && canApprove ? { label: 'Approve & create work order', go: () => advance(RequestStatus.CONVERTED), cls: 'bg-green-600 hover:bg-green-700' } :
         null;
-    const waitingOn = next && !primary
+    const waitingOn = needsSecondApprover ? 'a second approver — an Emergency job cannot be approved by the person who authorized it'
+        : next && !primary
         ? { REVIEW: 'a reviewer', AUTHORIZE: 'someone who can authorize', APPROVE: 'someone who can approve' }[next]
         : null;
     const canReject = canEdit && (r.status === RequestStatus.REVIEW || r.status === RequestStatus.AUTHORIZED);
@@ -360,6 +374,24 @@ export const RequestDetailDrawer: React.FC<RequestDetailDrawerProps> = ({
                         <div className="min-w-0">
                             <Label>Status</Label>
                             <div className="text-sm text-slate-800">{STATUS_LABEL[r.status]}</div>
+                        </div>
+                        {/* Who is told and who plans the work follows this. */}
+                        <div className="min-w-0 sm:col-span-2">
+                            <Label>Responsible department</Label>
+                            {isEditable ? (
+                                <select
+                                    value={draft.workCenterId || ''}
+                                    onChange={e => setDraft({ ...draft, workCenterId: e.target.value || undefined })}
+                                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                                >
+                                    <option value="">Not set — notices fall back to the org chart</option>
+                                    {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                                </select>
+                            ) : (
+                                <div className="text-sm text-slate-800">
+                                    {(() => { const w = workCenters.find(x => x.id === r.workCenterId); return w ? `${w.code} — ${w.name}` : 'Not set'; })()}
+                                </div>
+                            )}
                         </div>
                     </section>
 

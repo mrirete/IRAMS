@@ -37,6 +37,7 @@ import { evaluateReading } from '../../lib/readingAlarm';
 import { movementTypeFor } from '../lib/movementType';
 import { mapOrgLevelRow, type OrgLevel, type OrgPerson } from '../lib/orgLevels';
 import { isPreventiveWoType, buildWorkOrder } from '../lib/workOrder';
+import { priorityFromRpn } from '../lib/requestPriority';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { addCadence, normaliseUnit, toDateOnly } from '../lib/pmCadence';
 import { absorptionWindowDays, includedScopesSuffix, isAbsorbedBy, mergeIncludedScopes, type IncludedScope, type NestingMode } from '../lib/pmHierarchy';
@@ -3639,12 +3640,24 @@ export class DatabaseService {
             throw new Error('Workflow Violation: Request must be AUTHORIZED before Approval.');
         }
 
-        // 2. Update Request -> CONVERTED
-        const { error: updateErr } = await supabase.from('service_requests').update({
-            status: 'CONVERTED',
-            updated_at: new Date().toISOString()
-        }).eq('id', requestId);
-        if (updateErr) throw updateErr;
+        // Marks the request converted — only ever called once its order exists.
+        // (It used to run first: a failed order insert left a closed request
+        // with no work order behind it.)
+        const markConverted = async () => {
+            const { error: updateErr } = await supabase.from('service_requests').update({
+                status: 'CONVERTED',
+                updated_at: new Date().toISOString()
+            }).eq('id', requestId);
+            if (updateErr) throw updateErr;
+        };
+
+        // 2. An order already raised from this request (an earlier attempt that
+        // stopped before the request was marked) is reused, never duplicated.
+        const { data: existing } = await supabase.from('work_orders').select('*').eq('request_id', requestId).limit(1);
+        if (existing && existing.length > 0) {
+            await markConverted();
+            return existing[0];
+        }
 
         // GAP-4 FIX: Use DB sequence for collision-safe WO numbers (SAP AUFNR parity)
         const { data: seqData, error: seqErr } = await supabase.rpc('generate_wo_number');
@@ -3656,8 +3669,12 @@ export class DatabaseService {
         // the hand-rolled insert here dropped the request's triage — every
         // converted order became MEDIUM with no work centre or cost centre.
         const risk = Number(req.risk_score);
+        // The order inherits the priority the request board showed — one
+        // banding (lib/requestPriority). The local cut-offs that lived here
+        // turned every breakdown into HIGH, so an Emergency request became an
+        // order due in a week (2026-10-03).
         const priorityCode = req.priority_code || req.priority
-            || (req.is_breakdown ? 'HIGH' : Number.isFinite(risk) ? (risk >= 15 ? 'EMERGENCY' : risk >= 10 ? 'HIGH' : risk >= 5 ? 'MEDIUM' : 'LOW') : 'MEDIUM');
+            || (Number.isFinite(risk) ? priorityFromRpn(risk) : req.is_breakdown ? 'HIGH' : 'MEDIUM');
         const row = buildWorkOrder({
             woNumber,
             title: String(req.title || req.description || 'Work request').substring(0, 80),
@@ -3672,13 +3689,32 @@ export class DatabaseService {
             ...(req.needed_by ? { dueDate: String(req.needed_by) } : {}),
             createdBy: actor && actor.length > 10 ? actor : null,
             costFrozen: false, frozenLaborCost: 0, frozenMaterialCost: 0,
-            properties: { source: 'service_request', request_number: req.request_number || null, risk_score: Number.isFinite(risk) ? risk : null },
+            properties: {
+                source: 'service_request', request_number: req.request_number || null, risk_score: Number.isFinite(risk) ? risk : null,
+                // The fault the requester picked travels with the order.
+                ...(req.functional_failure_id ? { fault_type: req.functional_failure_id } : {}),
+            },
         });
         (row as any).id = crypto.randomUUID();
+        // A breakdown stays a breakdown, and the outage started when it was
+        // reported — the technician no longer re-enters both at completion.
+        if (req.is_breakdown) {
+            (row as any).breakdown = true;
+            (row as any).malfunction_start = req.created_at;
+        }
 
         const { data: woData, error: woError } = await supabase.from('work_orders').insert(row).select().single();
         if (woError) throw woError;
 
+        // The database may still refuse the conversion (0400: an Emergency
+        // job needs a second approver). The order is taken back so the refusal
+        // leaves nothing behind.
+        try {
+            await markConverted();
+        } catch (e) {
+            await supabase.from('work_orders').delete().eq('id', woData.id);
+            throw e;
+        }
         return woData;
     }
 
@@ -6731,7 +6767,8 @@ export class DatabaseService {
             channels: r.channels || [],
             escalationTimeoutMinutes: r.escalation_timeout_minutes,
             escalationRecipientRole: r.escalation_recipient_role || '',
-            escalationScope: r.escalation_scope || 'ORG_UNIT'
+            escalationScope: r.escalation_scope || 'ORG_UNIT',
+            actionRequired: r.action_required === true, // 0400
         }));
 
         return mapped;

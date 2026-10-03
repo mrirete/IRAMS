@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { RequestStatus, type ServiceRequest } from '../types';
 import { requestDueAt } from './requestPriority';
 import {
-    needsMyAction, duplicateCounts, dueState, formatSpan, matchesFilters, matchesChip,
+    needsMyAction, duplicateCounts, dueState, formatSpan, formatCountdown, matchesFilters, matchesChip,
     sortRequests, EMPTY_FILTERS, type FilterContext,
 } from './requestBoard';
 
@@ -34,6 +34,15 @@ describe('response target by priority', () => {
     it('has no clock once converted or rejected', () => {
         expect(dueState(req({ status: RequestStatus.CONVERTED, createdAt: hoursAgo(500) }), NOW)).toBeNull();
         expect(dueState(req({ status: RequestStatus.REJECTED, createdAt: hoursAgo(500) }), NOW)).toBeNull();
+    });
+});
+
+describe('formatCountdown', () => {
+    it('keeps the minutes inside the last hours', () => {
+        expect(formatCountdown(3.65)).toBe('3h 39m');
+        expect(formatCountdown(2)).toBe('2h');
+        expect(formatCountdown(0.5)).toBe('30m');
+        expect(formatCountdown(0.001)).toBe('1m');
     });
 });
 

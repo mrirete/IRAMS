@@ -1628,6 +1628,33 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             return;
         }
 
+        // ── Status follows the work (forward only) ──
+        // The edit that completes the plan moves OPEN → PLAN; the first step
+        // started moves SCHED → WIP. Each fires on the change itself, never on
+        // a state that was already true, so a status set back by hand stays
+        // put. Work complete and Closed are never automatic.
+        let autoStatusNote = '';
+        if (!updates.status) {
+            const next = { ...localJob, ...updates };
+            if (localJob.status === 'OPEN'
+                && assessReadiness(next, { criticality: assetCriticality }).requiredMet
+                && !assessReadiness(localJob, { criticality: assetCriticality }).requiredMet) {
+                updates = { ...updates, status: WorkOrderStatus.PLAN };
+                autoStatusNote = ' (automatic: planning essentials complete)';
+            } else if (localJob.status === 'SCHED' && updates.tasks) {
+                const started = (ts?: JobTask[]) => (ts || []).some(t => ['IN_PROGRESS', 'COMPLETED'].includes(String(t.status).toUpperCase()));
+                // Same two gates the manual move to In progress applies above.
+                const stagingOk = !(localJob.inventory && localJob.inventory.length > 0) || localJob.properties?.staging_confirmed === true;
+                const critAB = ['A', 'B'].includes(String(assetCriticality || '').toUpperCase());
+                const jsaOk = !critAB || String(next.jsa?.status || '').toUpperCase() === 'AUTHORIZED';
+                if (started(updates.tasks) && !started(localJob.tasks) && stagingOk && jsaOk) {
+                    updates = { ...updates, status: WorkOrderStatus.WIP };
+                    autoStatusNote = ' (automatic: first step started)';
+                }
+            }
+            if (autoStatusNote) showToast(updates.status === WorkOrderStatus.PLAN ? 'Status moved to Planned — the planning essentials are complete.' : 'Status moved to In progress — the first step was started.', 'info');
+        }
+
         // Auto-journal status & assignment changes as SYSTEM entries — the
         // "History" half of Analysis & History was manual notes only; process
         // events left no trace in the record.
@@ -1640,7 +1667,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             isSystem: true,
         });
         if (updates.status && updates.status !== localJob.status) {
-            sysEntries.push({ ...stamp(), entry: `Status changed: ${localJob.status || '—'} → ${updates.status}${updates.status === 'WAIT' && updates.waitReason ? ` — ${updates.waitReason}` : ''}` });
+            sysEntries.push({ ...stamp(), entry: `Status changed: ${localJob.status || '—'} → ${updates.status}${updates.status === 'WAIT' && updates.waitReason ? ` — ${updates.waitReason}` : ''}${autoStatusNote}` });
         }
         if (updates.assignedTo !== undefined && updates.assignedTo !== localJob.assignedTo) {
             // Names, not ids — the journal is read by people (2026-09-19 register #33).
@@ -1779,6 +1806,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             reviewedBy: user?.id, reviewedAt: new Date().toISOString(), reviewNotes: note.trim(),
             journals: [stampEntry(`Work accepted by ${who}: ${note.trim()}`), ...(localJob.journals || [])],
         } as any);
+        // Accepted work is ready for its financial close — finance is told
+        // instead of having to find the order (rule seeded by 0400).
+        NotificationService.checkRules('workOrders', 'WO_ACCEPTED', { ...localJob, reviewedBy: user?.id }, { currentUserId: user?.id || 'SYSTEM' }).catch(console.error);
         showToast('Work accepted.', 'success');
     };
     /** Operations took the asset back — the return-to-service moment. */
@@ -6916,7 +6946,21 @@ const TaskEditor: React.FC<{
         }
     };
 
+    // The step as it stood before the last template import, so a wrong pick
+    // can be taken back. Held while this step stays open in the editor.
+    const [importUndo, setImportUndo] = useState<{ taskId: string; title: string; before: Partial<JobTask> } | null>(null);
+    const undoImport = () => {
+        if (!importUndo || importUndo.taskId !== task.id) return;
+        onChange(importUndo.before);
+        setImportUndo(null);
+    };
+
     const importFromLibrary = (libTask: LibraryTask) => {
+        setImportUndo({
+            taskId: task.id,
+            title: libTask.title,
+            before: { instructions: task.instructions || [], description: task.description, estHours: task.estHours, libraryTaskId: task.libraryTaskId },
+        });
         const updates: Partial<JobTask> = {
             instructions: [
                 ...(task.instructions || []),
@@ -6929,7 +6973,8 @@ const TaskEditor: React.FC<{
             // Enhancement 3: Track library task ID for TECO locking
             libraryTaskId: libTask.id,
         };
-        if (!task.description || task.description === 'New Task') {
+        // Any default step name gives way to the template's title.
+        if (['', 'new task', 'new task step', 'untitled step', 'untitled'].includes(String(task.description || '').trim().toLowerCase())) {
             updates.description = libTask.title;
         }
         if (libTask.estimatedDuration && !task.estHours) {
@@ -7137,6 +7182,16 @@ const TaskEditor: React.FC<{
                             </button>
                         </div>
                     </div>
+
+                    {importUndo && importUndo.taskId === task.id && (
+                        <div className="px-3 py-2 border-b border-blue-100 bg-blue-50 flex items-center justify-between gap-3 text-xs text-blue-800">
+                            <span className="truncate">Imported “{importUndo.title}”.</span>
+                            <span className="flex items-center gap-3 flex-shrink-0">
+                                <button type="button" onClick={undoImport} className="font-semibold text-blue-700 hover:text-blue-900 underline">Undo import</button>
+                                <button type="button" onClick={() => setImportUndo(null)} className="text-blue-500 hover:text-blue-700" aria-label="Keep the imported template">Keep</button>
+                            </span>
+                        </div>
+                    )}
 
                     <div className="p-2 sm:p-3">
                         <ProcedureBuilder
