@@ -25,7 +25,7 @@ export const BEGIN_MARK = '-- ── BEGIN GENERATED SEED (scripts/gen-role-perm
 export const END_MARK = '-- ── END GENERATED SEED ──';
 
 /** Permission flags that are booleans; anything else is not an RLS concern. */
-const ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'authorize', 'viewCosts', 'assign'];
+const ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'authorize', 'authorizeOwn', 'viewCosts', 'assign'];
 
 /** Deterministic: sorted, so a regenerated file diffs cleanly against the committed one. */
 export function generateSeedSql() {

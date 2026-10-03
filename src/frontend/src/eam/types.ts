@@ -27,6 +27,7 @@ export interface ModulePermissions {
   delete: boolean;
   approve: boolean; // Functional approval (e.g. Technical)
   authorize: boolean; // Financial/Final authorization
+  authorizeOwn?: boolean; // Requests only: may authorize a request they raised themselves
   viewCosts: boolean; // Hide sensitive data
   assign: boolean;
   spendingLimit?: number; // Max $ amount for approval/auth (Specific to Purchasing)

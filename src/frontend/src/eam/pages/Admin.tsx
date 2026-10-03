@@ -1256,6 +1256,7 @@ const UserPermissionManager: React.FC = () => {
                         combined.delete = combined.delete || p.delete;
                         combined.approve = combined.approve || p.approve;
                         combined.authorize = combined.authorize || p.authorize;
+                        combined.authorizeOwn = combined.authorizeOwn || p.authorizeOwn;
                         combined.assign = combined.assign || p.assign;
                         combined.viewCosts = combined.viewCosts || p.viewCosts;
                         combined.spendingLimit = Math.max(combined.spendingLimit || 0, p.spendingLimit || 0);
@@ -1412,13 +1413,14 @@ const UserPermissionManager: React.FC = () => {
 
     const modules = ADMIN_MODULES;
 
-    const actions: { key: keyof ModulePermissions; label: string }[] = [
+    const actions: { key: keyof ModulePermissions; label: string; only?: string }[] = [
         { key: 'view', label: 'View' },
         { key: 'create', label: 'Create' },
         { key: 'edit', label: 'Edit' },
         { key: 'delete', label: 'Delete' },
         { key: 'approve', label: 'Approve' },
         { key: 'authorize', label: 'Authorize' }, // New Action
+        { key: 'authorizeOwn', label: 'Authorize own', only: 'requests' }, // may authorize a request they raised
         { key: 'assign', label: 'Assign' },
         { key: 'viewCosts', label: 'View Costs' },
     ];
@@ -1986,6 +1988,9 @@ const UserPermissionManager: React.FC = () => {
                                                                     <td className="px-4 py-3 text-sm font-medium text-slate-900">{mod.label}</td>
                                                                     {actions.map(action => {
                                                                         const isEnabled = perms[action.key];
+                                                                        if (action.only && action.only !== mod.key) {
+                                                                            return <td key={action.key} className="px-2 py-3 text-center text-slate-300 text-xs">-</td>;
+                                                                        }
                                                                         return (
                                                                             <td key={action.key} className="px-2 py-3 text-center">
                                                                                 <input

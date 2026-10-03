@@ -33,7 +33,7 @@ const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 
 if (!TOKEN) { console.error('SUPABASE_ACCESS_TOKEN is not set (sbp_…).'); process.exit(1); }
 
-const ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'authorize', 'viewCosts', 'assign'];
+const ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'authorize', 'authorizeOwn', 'viewCosts', 'assign'];
 const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
 const run = async (query) => {

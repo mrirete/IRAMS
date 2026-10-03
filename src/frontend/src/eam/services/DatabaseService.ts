@@ -3636,7 +3636,11 @@ export class DatabaseService {
         const { data: req, error: getErr } = await supabase.from('service_requests').select('*').eq('id', requestId).single();
         if (getErr || !req) throw new Error('Request not found');
 
-        if (req.status !== 'AUTHORIZED') {
+        // An Emergency (risk score in the top band) is fast-tracked: it may
+        // become an order straight from New or Review, and the database stamps
+        // the approver as its authorizer (0400). Everything else is authorized first.
+        const fastTrack = priorityFromRpn(req.risk_score) === 'EMERGENCY' && ['NEW', 'REVIEW'].includes(req.status);
+        if (req.status !== 'AUTHORIZED' && !fastTrack) {
             throw new Error('Workflow Violation: Request must be AUTHORIZED before Approval.');
         }
 
@@ -3706,9 +3710,8 @@ export class DatabaseService {
         const { data: woData, error: woError } = await supabase.from('work_orders').insert(row).select().single();
         if (woError) throw woError;
 
-        // The database may still refuse the conversion (0400: an Emergency
-        // job needs a second approver). The order is taken back so the refusal
-        // leaves nothing behind.
+        // The database may still refuse the conversion (0400 workflow guard).
+        // The order is taken back so the refusal leaves nothing behind.
         try {
             await markConverted();
         } catch (e) {

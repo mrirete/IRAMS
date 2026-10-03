@@ -146,22 +146,28 @@ export const RequestDetailDrawer: React.FC<RequestDetailDrawerProps> = ({
     });
     const remove = () => run(async () => { await onDelete(r.id); setDeleteOpen(false); });
 
-    // A supervisor may authorize a request they raised. A high-consequence job
-    // (Emergency) then needs a second person to approve it — the authorizer
-    // cannot also be the approver. Admins are exempt (single-supervisor sites);
-    // the database enforces the same rule (0400).
+    // Authorizing a request you raised yourself is a matrix permission
+    // (Requests › Authorize own) — on for supervisors by default. Admins are
+    // exempt. The database enforces the same rule (0400).
     const isAdmin = ['SUPER_ADMIN', 'SYS_ADMIN'].includes(String(role || '').toUpperCase());
-    const needsSecondApprover = r.status === RequestStatus.AUTHORIZED && r.priority === 'EMERGENCY'
-        && !!r.authorizedBy && r.authorizedBy === user?.id && !isAdmin;
+    const ownRequest = !!user?.id && r.requesterId === user.id;
+    const blockedOwn = r.status === RequestStatus.REVIEW && canAuthorize && ownRequest
+        && permissions?.requests?.authorizeOwn !== true && !isAdmin;
+    // An Emergency does not wait in the approval queue: whoever may approve
+    // raises the order straight from New or Review and the manager reviews
+    // it afterwards. The approver is recorded as the authorizer.
+    const fastTrack = r.priority === 'EMERGENCY' && canApprove
+        && (r.status === RequestStatus.NEW || r.status === RequestStatus.REVIEW);
 
     // The one forward step, if this caller may take it.
     const next = nextStep(r.status);
-    const primary = needsSecondApprover ? null :
+    const primary = fastTrack ? { label: 'Raise emergency work order', go: () => advance(RequestStatus.CONVERTED), cls: 'bg-red-600 hover:bg-red-700' } :
+        blockedOwn ? null :
         next === 'REVIEW' && canEdit ? { label: 'Start review', go: () => advance(RequestStatus.REVIEW), cls: 'bg-slate-700 hover:bg-slate-800' } :
         next === 'AUTHORIZE' && canAuthorize ? { label: 'Authorize', go: () => advance(RequestStatus.AUTHORIZED, { authorized_by: user?.id, authorized_at: new Date().toISOString() }), cls: 'bg-primary-600 hover:bg-primary-500' } :
         next === 'APPROVE' && canApprove ? { label: 'Approve & create work order', go: () => advance(RequestStatus.CONVERTED), cls: 'bg-green-600 hover:bg-green-700' } :
         null;
-    const waitingOn = needsSecondApprover ? 'a second approver — an Emergency job cannot be approved by the person who authorized it'
+    const waitingOn = blockedOwn ? 'someone else to authorize — your role cannot authorize a request you raised'
         : next && !primary
         ? { REVIEW: 'a reviewer', AUTHORIZE: 'someone who can authorize', APPROVE: 'someone who can approve' }[next]
         : null;

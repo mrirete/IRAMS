@@ -191,7 +191,10 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         // requests.authorize, so no line role could move a request past
         // Review. The supervisor authorises the technical need; the planner /
         // manager approves the commitment (SAP: notification → order).
-        requests: { ...BASIC_ACCESS, approve: true, authorize: true, assign: true, spendingLimit: 5000 },
+        // authorizeOwn: a supervisor authorizes requests for their own area,
+        // including ones they raised. Withdraw it per role or per person where
+        // a site wants a second pair of eyes on every request.
+        requests: { ...BASIC_ACCESS, approve: true, authorize: true, authorizeOwn: true, assign: true, spendingLimit: 5000 },
         workOrders: { ...BASIC_ACCESS, approve: true, assign: true, spendingLimit: 5000 },
         pm: { ...BASIC_ACCESS, approve: true, assign: true },
         scheduling: { ...BASIC_ACCESS, approve: true, assign: true },
@@ -220,7 +223,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     MANAGER: {
         dashboard: { ...BASIC_ACCESS, viewCosts: true },
         assets: { ...BASIC_ACCESS, viewCosts: true },
-        requests: { ...BASIC_ACCESS, approve: true, authorize: true, assign: true, viewCosts: true, spendingLimit: 25000 },
+        requests: { ...BASIC_ACCESS, approve: true, authorize: true, authorizeOwn: true, assign: true, viewCosts: true, spendingLimit: 25000 },
         workOrders: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 25000 },
         pm: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true },
         scheduling: { ...BASIC_ACCESS, approve: true, assign: true },
@@ -252,7 +255,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     ASSET_MANAGER: {
         dashboard: { ...BASIC_ACCESS, viewCosts: true },
         assets: { ...BASIC_ACCESS, approve: true, viewCosts: true },
-        requests: { ...BASIC_ACCESS, approve: true, authorize: true, assign: true, viewCosts: true, spendingLimit: 25000 },
+        requests: { ...BASIC_ACCESS, approve: true, authorize: true, authorizeOwn: true, assign: true, viewCosts: true, spendingLimit: 25000 },
         workOrders: { ...BASIC_ACCESS, approve: true, viewCosts: true, spendingLimit: 25000 },
         pm: { ...BASIC_ACCESS, approve: true, viewCosts: true },
         scheduling: VIEW_ONLY_PERM,
