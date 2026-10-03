@@ -462,6 +462,7 @@ export class NotificationService {
             'WO_STATUS_CHANGE': 'STATUS_CHANGE',
             'WO_COMPLETED': 'STATUS_CHANGE',
             'WO_ACCEPTED': 'STATUS_CHANGE',
+            'WO_RELEASE_REQUESTED': 'STATUS_CHANGE',
             'WO_CLOSED': 'STATUS_CHANGE',
             'WO_OVERDUE': 'SCHEDULE_ALERT',
             'WO_CANCELLED': 'STATUS_CHANGE',

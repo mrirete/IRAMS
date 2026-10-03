@@ -30,7 +30,7 @@ export interface ModulePermissions {
   authorizeOwn?: boolean; // Requests only: may authorize a request they raised themselves
   viewCosts: boolean; // Hide sensitive data
   assign: boolean;
-  spendingLimit?: number; // Max $ amount for approval/auth (Specific to Purchasing)
+  spendingLimit?: number; // Approval limit: purchasing = PO value the role may authorise; workOrders = planned cost it may release (0401)
 }
 
 export interface DataScope {
@@ -1048,6 +1048,23 @@ export interface OperationActual {
   costCenterId?: string;     // default settlement receiver (from the work center)
   actualHours: number;       // Σ confirmed hours
   actualLabourCost: number;  // Σ(hours × resolved rate)
+}
+
+/**
+ * 0401 — where an order stands against the approval limits. Amounts are null
+ * for a caller who may not see costs.
+ */
+export interface WoReleaseState {
+  needs_release: boolean;      // planned cost is above MY limit and not yet approved
+  awaiting_approval: boolean;  // someone asked for a release that is still outstanding
+  can_approve: boolean;        // my limit covers the planned cost
+  requested_at: string | null;
+  requested_by: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  planned_cost: number | null;
+  my_limit: number | null;
+  approved_amount: number | null;
 }
 
 /** WM-2c — order-level actual roll-up (the settlement basis handed to FI-1). */

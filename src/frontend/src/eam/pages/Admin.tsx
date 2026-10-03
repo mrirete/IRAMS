@@ -2003,7 +2003,7 @@ const UserPermissionManager: React.FC = () => {
                                                                         );
                                                                     })}
                                                                     <td className="px-2 py-2 text-center">
-                                                                        {(mod.key === 'purchasing' || mod.key === 'requests') ? (
+                                                                        {(mod.key === 'purchasing' || mod.key === 'requests' || mod.key === 'workOrders') ? (
                                                                             <input
                                                                                 type="number"
                                                                                 placeholder="0.00"

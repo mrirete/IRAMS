@@ -26,6 +26,7 @@ export const NOTIFICATION_EVENTS: Record<string, NotificationEventDef[]> = {
     workOrders: [
         { code: 'WO_CREATED', description: 'Work order created' },
         { code: 'WO_STATUS_CHANGE', description: 'Work order status changed — filter on status (TECO, COMPLETED …)' },
+        { code: 'WO_RELEASE_REQUESTED', description: 'Planned cost is above the planner\'s limit — an approver with a higher limit must release the order' },
         { code: 'WO_ACCEPTED', description: 'Completed work accepted by the supervisor — ready for financial close' },
     ],
     pm: [

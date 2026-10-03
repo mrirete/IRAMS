@@ -38,7 +38,7 @@ import {
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
 import { FinOpsService, type CostAllocation, type WarrantyCheckResult, type CostAnomalyResult, type WorkOrderSettlement } from '../services/FinOpsService';
 import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS } from '../constants';
-import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, OrderActuals, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
+import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, OrderActuals, WoReleaseState, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
 import { LoadingState, DetailRail, RailRow, RAIL_INPUT, RAIL_INPUT_LOCKED } from '../components/ui';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
@@ -1596,6 +1596,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             }
         }
 
+        // Cost release (0401): the database refuses this move; say why first.
+        if ((updates.status === 'SCHED' || updates.status === 'WIP') && ['OPEN', 'PLAN'].includes(String(localJob.status)) && releaseState?.needs_release) {
+            showToast('Planned cost is above your release limit — request a cost release (banner at the top of the order) before scheduling.', 'error');
+            return;
+        }
+
         // Waiting needs a reason (0349): the card, the rail and the schedule read it.
         if (!force && updates.status === 'WAIT' && localJob.status !== 'WAIT' && !updates.waitReason) {
             const reason = await promptModal({
@@ -1792,6 +1798,55 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         type: 'SYSTEM', createdBy: (user as any)?.username || user?.email || 'system',
         createdAt: new Date().toISOString(), isSystem: true, entry,
     });
+    // ── Cost release (0401): the order against the approval limits ──
+    // Re-read whenever a save lands, since the plan (and so the cost) moved.
+    const [releaseState, setReleaseState] = useState<WoReleaseState | null>(null);
+    useEffect(() => {
+        if (!localJob.id || isSaving) return;
+        let alive = true;
+        DatabaseService.getInstance().getWoReleaseState(localJob.id)
+            .then(s => { if (alive) setReleaseState(s); })
+            .catch(() => { if (alive) setReleaseState(null); });
+        return () => { alive = false; };
+    }, [localJob.id, localJob.status, isSaving]);
+
+    const handleRequestRelease = async () => {
+        try {
+            const s = await DatabaseService.getInstance().requestWoCostRelease(localJob.id);
+            setReleaseState(s);
+            NotificationService.checkRules('workOrders', 'WO_RELEASE_REQUESTED', localJob, { currentUserId: user?.id || 'SYSTEM' }).catch(console.error);
+            showToast('Cost release requested — the approver has been notified.', 'success');
+        } catch (e: any) {
+            showToast(e?.message || 'Could not request the release.', 'error');
+        }
+    };
+    const handleApproveCost = async () => {
+        const ok = await confirmModal({
+            title: 'Approve the planned cost',
+            message: `Release ${localJob.woNumber || 'this order'} for scheduling${releaseState?.planned_cost != null ? ` at a planned cost of ${releaseState.planned_cost.toLocaleString()}` : ''}. If the plan later grows beyond this amount it will need approving again.`,
+            confirmLabel: 'Approve cost',
+        });
+        if (!ok) return;
+        try {
+            const s = await DatabaseService.getInstance().approveWoCost(localJob.id);
+            setReleaseState(s);
+            const requester = (localJob as any).plannerId || localJob.assignedTo;
+            if (requester) {
+                NotificationService.notify({
+                    recipientId: requester,
+                    title: `Cost approved: ${localJob.woNumber || 'work order'}`,
+                    message: `The planned cost of "${localJob.title}" was approved. It can be scheduled.`,
+                    severity: 'SUCCESS', notificationType: 'STATUS_CHANGE', module: 'workOrders',
+                    entityId: localJob.id, entityType: 'WORK_ORDER', entityNumber: localJob.woNumber || '',
+                    actionLink: `/work-orders/${localJob.id}`, actionRequired: false, createdBy: user?.id || 'SYSTEM',
+                }).catch(console.error);
+            }
+            showToast('Planned cost approved — the order can be scheduled.', 'success');
+        } catch (e: any) {
+            showToast(e?.message || 'Could not approve the cost.', 'error');
+        }
+    };
+
     /** Supervisor accepts the completed work — writes the review columns the table always had. */
     const handleAcceptWork = async () => {
         const note = await promptModal({
@@ -2351,6 +2406,29 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     jumped width as you switched tabs — the cap lives here now and the
                     tabs inherit it. */}
                 <div className="ers-page-record">
+                    {releaseState && (releaseState.needs_release || (releaseState.awaiting_approval && releaseState.can_approve)) && (
+                        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0 text-sm text-amber-900">
+                                <div className="font-semibold">
+                                    {releaseState.needs_release ? 'Planned cost is above your release limit' : 'Cost release requested'}
+                                </div>
+                                <div className="text-xs text-amber-800 mt-0.5">
+                                    {releaseState.planned_cost != null && <>Planned {releaseState.planned_cost.toLocaleString()}{releaseState.needs_release && releaseState.my_limit != null ? ` · your limit ${releaseState.my_limit.toLocaleString()}` : ''}. </>}
+                                    {releaseState.needs_release
+                                        ? (releaseState.requested_at
+                                            ? `Release requested${releaseState.requested_by ? ` by ${releaseState.requested_by}` : ''} — waiting for an approver. The order cannot be scheduled until then.`
+                                            : 'Someone with a higher limit must approve the cost before this order can be scheduled.')
+                                        : `${releaseState.requested_by || 'The planner'} is waiting for you to approve the planned cost.`}
+                                </div>
+                            </div>
+                            {releaseState.needs_release && !releaseState.requested_at && canEdit && (
+                                <button type="button" onClick={handleRequestRelease} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-amber-600 text-white hover:bg-amber-700">Request release</button>
+                            )}
+                            {!releaseState.needs_release && releaseState.can_approve && (
+                                <button type="button" onClick={handleApproveCost} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700">Approve cost</button>
+                            )}
+                        </div>
+                    )}
                     {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} users={users} />}
                     {activeTab === 'tasks' && (
                         <TasksTab

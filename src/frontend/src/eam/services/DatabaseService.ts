@@ -44,6 +44,7 @@ import { absorptionWindowDays, includedScopesSuffix, isAbsorbedBy, mergeIncluded
 import {
     OperationActual,
     OrderActuals,
+    WoReleaseState,
     ServiceRequest,
     OrganizationUnit,
     Contact,
@@ -5312,6 +5313,29 @@ export class DatabaseService {
      * labour cost (operation-linked confirmations + any order-level labour not tied to
      * an operation) plus actual parts cost.
      */
+    // ── Cost release (0401) ─────────────────────────────────────────────────
+    // An order whose planned cost is above the caller's work-order limit needs
+    // an approver whose limit covers it before it can be scheduled. The
+    // database decides; these only ask. Null = the migration is not applied
+    // yet (the page then shows nothing and the gate does not exist either).
+    public async getWoReleaseState(woId: string): Promise<WoReleaseState | null> {
+        const { data, error } = await supabase.rpc('ers_wo_release_state', { p_wo: woId });
+        if (error || !data) return null;
+        return data as WoReleaseState;
+    }
+
+    public async requestWoCostRelease(woId: string): Promise<WoReleaseState> {
+        const { data, error } = await supabase.rpc('ers_request_wo_cost_release', { p_wo: woId });
+        if (error) throw new Error(error.message);
+        return data as WoReleaseState;
+    }
+
+    public async approveWoCost(woId: string): Promise<WoReleaseState> {
+        const { data, error } = await supabase.rpc('ers_approve_wo_cost', { p_wo: woId });
+        if (error) throw new Error(error.message);
+        return data as WoReleaseState;
+    }
+
     public async getOrderActuals(woId: string): Promise<OrderActuals> {
         const operations = await this.getOperationActuals(woId);
         const operationLabour = operations.reduce((s, o) => s + o.actualLabourCost, 0);

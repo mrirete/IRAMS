@@ -7,8 +7,9 @@
  * with the diff.
  *
  * Only TRUE flags become rows: presence means permitted, absence means not.
- * `spendingLimit` is a number rather than a permission and is deliberately
- * skipped — approval limits are enforced in application logic, not RLS.
+ * `spendingLimit` is a number rather than a permission, so it never becomes a
+ * role_permissions row; limits above zero go to their own table,
+ * role_spending_limits (0401), which caller_spending_limit() reads.
  *
  * Pure module — no CLI side effects, so vitest can import it. Regenerate the
  * migration with `npm run gen:role-permissions`; the drift guard lives in
@@ -30,11 +31,14 @@ const ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'authorize', 'au
 /** Deterministic: sorted, so a regenerated file diffs cleanly against the committed one. */
 export function generateSeedSql() {
     const rows = [];
+    const limits = [];
     const add = (role, perms) => {
         for (const module of Object.keys(perms).sort()) {
             for (const action of ACTIONS) {
                 if (perms[module]?.[action] === true) rows.push([role, module, action]);
             }
+            const limit = Number(perms[module]?.spendingLimit) || 0;
+            if (limit > 0) limits.push([role, module, limit]);
         }
     };
 
@@ -53,6 +57,10 @@ export function generateSeedSql() {
         'DELETE FROM public.role_permissions;',
         'INSERT INTO public.role_permissions (role, module, action) VALUES',
         values + ';',
+        `-- ${limits.length} approval limits (role, module, amount). Do not hand-edit.`,
+        'DELETE FROM public.role_spending_limits;',
+        'INSERT INTO public.role_spending_limits (role, module, spending_limit) VALUES',
+        limits.map(([r, m, n]) => `    ('${r}', '${m}', ${n})`).join(',\n') + ';',
         END_MARK,
     ].join('\n');
 }
