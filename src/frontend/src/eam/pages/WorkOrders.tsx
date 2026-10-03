@@ -1598,7 +1598,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
         // Cost release (0401): the database refuses this move; say why first.
         if ((updates.status === 'SCHED' || updates.status === 'WIP') && ['OPEN', 'PLAN'].includes(String(localJob.status)) && releaseState?.needs_release) {
-            showToast('Planned cost is above your release limit — request a cost release (banner at the top of the order) before scheduling.', 'error');
+            showToast('The planned cost needs approval before this order can be released — request a cost release (banner at the top of the order).', 'error');
             return;
         }
 
@@ -1814,8 +1814,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         try {
             const s = await DatabaseService.getInstance().requestWoCostRelease(localJob.id);
             setReleaseState(s);
-            NotificationService.checkRules('workOrders', 'WO_RELEASE_REQUESTED', localJob, { currentUserId: user?.id || 'SYSTEM' }).catch(console.error);
-            showToast('Cost release requested — the approver has been notified.', 'success');
+            showToast(s.awaiting_approval ? 'Cost release requested — the approver has been notified.' : 'Planned cost approved — the order can be scheduled.', 'success');
         } catch (e: any) {
             showToast(e?.message || 'Could not request the release.', 'error');
         }
@@ -1823,25 +1822,15 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const handleApproveCost = async () => {
         const ok = await confirmModal({
             title: 'Approve the planned cost',
-            message: `Release ${localJob.woNumber || 'this order'} for scheduling${releaseState?.planned_cost != null ? ` at a planned cost of ${releaseState.planned_cost.toLocaleString()}` : ''}. If the plan later grows beyond this amount it will need approving again.`,
+            message: `Sign your approval step on ${localJob.woNumber || 'this order'}${releaseState?.planned_cost != null ? ` at a planned cost of ${releaseState.planned_cost.toLocaleString()}` : ''}. If the plan later grows beyond this amount it will need approving again.`,
             confirmLabel: 'Approve cost',
         });
         if (!ok) return;
         try {
             const s = await DatabaseService.getInstance().approveWoCost(localJob.id);
             setReleaseState(s);
-            const requester = (localJob as any).plannerId || localJob.assignedTo;
-            if (requester) {
-                NotificationService.notify({
-                    recipientId: requester,
-                    title: `Cost approved: ${localJob.woNumber || 'work order'}`,
-                    message: `The planned cost of "${localJob.title}" was approved. It can be scheduled.`,
-                    severity: 'SUCCESS', notificationType: 'STATUS_CHANGE', module: 'workOrders',
-                    entityId: localJob.id, entityType: 'WORK_ORDER', entityNumber: localJob.woNumber || '',
-                    actionLink: `/work-orders/${localJob.id}`, actionRequired: false, createdBy: user?.id || 'SYSTEM',
-                }).catch(console.error);
-            }
-            showToast('Planned cost approved — the order can be scheduled.', 'success');
+            // The database notifies the next step's holders, or the requester once the chain is complete.
+            showToast(s.awaiting_approval ? 'Your step is signed — the next approver has been notified.' : 'Planned cost approved — the order can be scheduled.', 'success');
         } catch (e: any) {
             showToast(e?.message || 'Could not approve the cost.', 'error');
         }
@@ -2410,21 +2399,42 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                             <div className="min-w-0 text-sm text-amber-900">
                                 <div className="font-semibold">
-                                    {releaseState.needs_release ? 'Planned cost is above your release limit' : 'Cost release requested'}
+                                    {releaseState.can_approve ? 'Cost release waiting for your approval' : 'Planned cost needs approval before release'}
                                 </div>
                                 <div className="text-xs text-amber-800 mt-0.5">
-                                    {releaseState.planned_cost != null && <>Planned {releaseState.planned_cost.toLocaleString()}{releaseState.needs_release && releaseState.my_limit != null ? ` · your limit ${releaseState.my_limit.toLocaleString()}` : ''}. </>}
-                                    {releaseState.needs_release
-                                        ? (releaseState.requested_at
-                                            ? `Release requested${releaseState.requested_by ? ` by ${releaseState.requested_by}` : ''} — waiting for an approver. The order cannot be scheduled until then.`
-                                            : 'Someone with a higher limit must approve the cost before this order can be scheduled.')
-                                        : `${releaseState.requested_by || 'The planner'} is waiting for you to approve the planned cost.`}
+                                    {releaseState.planned_cost != null && <>Planned {releaseState.planned_cost.toLocaleString()}{releaseState.needs_release && releaseState.my_limit != null ? ` · you may release up to ${releaseState.my_limit.toLocaleString()}` : ''}. </>}
+                                    {releaseState.can_approve
+                                        ? `${releaseState.requested_by || 'The planner'} is waiting for you to approve the planned cost.`
+                                        : releaseState.awaiting_approval
+                                            ? `Release requested${releaseState.requested_by ? ` by ${releaseState.requested_by}` : ''}. The order cannot be scheduled until every step is signed.`
+                                            : 'The approval steps must be signed before this order can be scheduled.'}
                                 </div>
+                                {/* The chain: who has signed, who is next. */}
+                                {releaseState.awaiting_approval && (releaseState.chain || []).length > 0 && (
+                                    <ol className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+                                        {releaseState.chain.map((st, i) => {
+                                            const roles = st.roles.map(r => r.split('_').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ')).join(' / ');
+                                            const done = st.status === 'APPROVED';
+                                            const current = !done && releaseState.chain.findIndex(x => x.status === 'PENDING') === i;
+                                            return (
+                                                <li key={st.step} className="flex items-center gap-1.5">
+                                                    {i > 0 && <span className="text-amber-400">→</span>}
+                                                    <span
+                                                        className={`px-2 py-0.5 rounded-full border ${done ? 'bg-green-50 border-green-200 text-green-800' : current ? 'bg-white border-amber-400 text-amber-900 font-semibold' : 'bg-white border-amber-200 text-amber-700'}`}
+                                                        title={done ? `${st.decided_by || ''}${st.on_behalf_of ? ` on behalf of ${st.on_behalf_of}` : ''}${st.via === 'ESCALATED' ? ' (escalated)' : ''}` : undefined}
+                                                    >
+                                                        {done ? '✓ ' : ''}{roles}{done && st.decided_by ? ` · ${st.decided_by}` : ''}{st.overdue ? ' · overdue' : ''}
+                                                    </span>
+                                                </li>
+                                            );
+                                        })}
+                                    </ol>
+                                )}
                             </div>
-                            {releaseState.needs_release && !releaseState.requested_at && canEdit && (
+                            {releaseState.needs_release && !releaseState.awaiting_approval && canEdit && (
                                 <button type="button" onClick={handleRequestRelease} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-amber-600 text-white hover:bg-amber-700">Request release</button>
                             )}
-                            {!releaseState.needs_release && releaseState.can_approve && (
+                            {releaseState.can_approve && (
                                 <button type="button" onClick={handleApproveCost} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700">Approve cost</button>
                             )}
                         </div>

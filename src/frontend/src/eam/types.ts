@@ -30,7 +30,7 @@ export interface ModulePermissions {
   authorizeOwn?: boolean; // Requests only: may authorize a request they raised themselves
   viewCosts: boolean; // Hide sensitive data
   assign: boolean;
-  spendingLimit?: number; // Approval limit: purchasing = PO value the role may authorise; workOrders = planned cost it may release (0401)
+  spendingLimit?: number; // Legacy figure, read by nothing: approval authority is the value-band chain in Admin › Approvals (0401)
 }
 
 export interface DataScope {
@@ -1050,14 +1050,49 @@ export interface OperationActual {
   actualLabourCost: number;  // Σ(hours × resolved rate)
 }
 
+/** 0401 — approval chains (Admin › Approvals). */
+export type ApprovalDocType = 'WORK_ORDER' | 'PURCHASE_ORDER';
+export interface ApprovalChainStep {
+  step_order: number;
+  roles: string[];
+  up_to_amount: number;
+  notify_after_hours: number;   // late → the next level is told
+  takeover_after_hours: number; // later still → the next level may sign it
+}
+export interface ApprovalChain {
+  is_default: boolean;
+  exempt_plan_generated: boolean;
+  steps: ApprovalChainStep[];
+}
+export interface ApproverSubstitute {
+  id: string;
+  userId: string;
+  substituteUserId: string;
+  validFrom: string; // yyyy-mm-dd
+  validTo: string;
+}
+/** One signed or waiting step of a document's chain. */
+export interface ApprovalStepState {
+  step: number;
+  roles: string[];
+  status: 'PENDING' | 'APPROVED';
+  via: 'OWN' | 'REQUESTER' | 'SUBSTITUTE' | 'ESCALATED' | 'ADMIN' | null;
+  decided_by: string | null;
+  on_behalf_of: string | null;
+  decided_at: string | null;
+  overdue: boolean;
+}
+
 /**
- * 0401 — where an order stands against the approval limits. Amounts are null
+ * 0401 — where an order stands against the approval chain. Amounts are null
  * for a caller who may not see costs.
  */
 export interface WoReleaseState {
-  needs_release: boolean;      // planned cost is above MY limit and not yet approved
-  awaiting_approval: boolean;  // someone asked for a release that is still outstanding
-  can_approve: boolean;        // my limit covers the planned cost
+  needs_release: boolean;      // planned cost is above what I may release and not yet approved
+  awaiting_approval: boolean;  // a chain is open with steps still to sign
+  can_approve: boolean;        // the next step is one I may sign
+  exempt: boolean;             // Emergency, or generated from a maintenance plan
+  chain: ApprovalStepState[];
   requested_at: string | null;
   requested_by: string | null;
   approved_at: string | null;

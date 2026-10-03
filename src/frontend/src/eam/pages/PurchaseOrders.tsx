@@ -1737,6 +1737,14 @@ const AuthoriseTab: React.FC<{
         setBusy(true); setError('');
         try {
             const res = await DatabaseService.getInstance().authorizePurchaseOrder(po.id, needsReason ? reason.trim() : undefined) as PoBudgetCheck;
+            // 0401: the order's value needs more than one signature. This call
+            // signed the caller's step; the order is authorised by the last one.
+            const pending = res as unknown as { pending?: boolean; waiting_on?: string[] };
+            if (pending.pending) {
+                const next = (pending.waiting_on || []).map(r => r.split('_').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ')).join(' / ');
+                showToast(`${po.poCode}: your approval is recorded. Waiting on ${next || 'the next approver'} — they have been notified.`, 'info');
+                return;
+            }
             const stamped: Partial<PurchaseOrder> = {
                 authorizedById: res.authorized_by, authorizedAt: res.authorized_at, budgetCheck: res,
                 budgetOverrideReason: needsReason ? reason.trim() : null,
@@ -1751,7 +1759,7 @@ const AuthoriseTab: React.FC<{
             void notifyCreator(profile?.fullName || profile?.username || res.authorized_by || 'an approver');
         } catch (e: any) {
             const msg: string = e?.message || 'Authorisation failed.';
-            setError(msg.replace(/^BUDGET_[A-Z]+:\s*/, ''));
+            setError(msg.replace(/^(BUDGET_[A-Z]+|NOT_YOUR_STEP):\s*/, ''));
         } finally { setBusy(false); }
     };
 

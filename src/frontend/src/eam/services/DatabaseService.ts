@@ -45,6 +45,10 @@ import {
     OperationActual,
     OrderActuals,
     WoReleaseState,
+    ApprovalChain,
+    ApprovalChainStep,
+    ApprovalDocType,
+    ApproverSubstitute,
     ServiceRequest,
     OrganizationUnit,
     Contact,
@@ -5313,11 +5317,46 @@ export class DatabaseService {
      * labour cost (operation-linked confirmations + any order-level labour not tied to
      * an operation) plus actual parts cost.
      */
+    // ── Approval chains (0401) ──────────────────────────────────────────────
+    public async getApprovalChain(doc: ApprovalDocType): Promise<ApprovalChain> {
+        const { data, error } = await supabase.rpc('ers_get_approval_chain', { p_doc: doc });
+        if (error) throw new Error(error.message);
+        return data as ApprovalChain;
+    }
+
+    public async saveApprovalChain(doc: ApprovalDocType, steps: ApprovalChainStep[], exemptPlanGenerated?: boolean): Promise<ApprovalChain> {
+        const { data, error } = await supabase.rpc('ers_save_approval_chain', {
+            p_doc: doc, p_steps: steps, p_exempt_plan_generated: exemptPlanGenerated ?? null,
+        });
+        if (error) throw new Error(error.message);
+        return data as ApprovalChain;
+    }
+
+    public async getApproverSubstitutes(): Promise<ApproverSubstitute[]> {
+        const { data, error } = await supabase.from('approver_substitutes').select('*').order('valid_from', { ascending: false });
+        if (error) throw new Error(error.message);
+        return (data || []).map((r: any) => ({
+            id: r.id, userId: r.user_id, substituteUserId: r.substitute_user_id, validFrom: r.valid_from, validTo: r.valid_to,
+        }));
+    }
+
+    public async addApproverSubstitute(s: Omit<ApproverSubstitute, 'id'>): Promise<void> {
+        const { error } = await supabase.from('approver_substitutes').insert({
+            user_id: s.userId, substitute_user_id: s.substituteUserId, valid_from: s.validFrom, valid_to: s.validTo,
+        });
+        if (error) throw new Error(error.message);
+    }
+
+    public async removeApproverSubstitute(id: string): Promise<void> {
+        const { error } = await supabase.from('approver_substitutes').delete().eq('id', id);
+        if (error) throw new Error(error.message);
+    }
+
     // ── Cost release (0401) ─────────────────────────────────────────────────
-    // An order whose planned cost is above the caller's work-order limit needs
-    // an approver whose limit covers it before it can be scheduled. The
-    // database decides; these only ask. Null = the migration is not applied
-    // yet (the page then shows nothing and the gate does not exist either).
+    // An order whose planned cost is above what the caller's step may release
+    // needs the approval chain signed before it can be scheduled. The database
+    // decides, signs and notifies; these only ask. Null = the migration is not
+    // applied yet (the page then shows nothing and the gate does not exist either).
     public async getWoReleaseState(woId: string): Promise<WoReleaseState | null> {
         const { data, error } = await supabase.rpc('ers_wo_release_state', { p_wo: woId });
         if (error || !data) return null;

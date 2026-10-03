@@ -17,6 +17,7 @@ import { ROLE_PERMISSION_TEMPLATES } from '../constants/rolePermissions';
 import { DatabaseService } from '../services/DatabaseService';
 import { FinOpsService, CostCenter } from '../services/FinOpsService';
 import { NotificationConfig } from '../components/NotificationConfig';
+import { ApprovalSettings } from '../components/ApprovalSettings';
 import { ModuleLicensingPanel } from '../../components/admin/ModuleLicensingPanel';
 import { db } from '../firebaseConfig';
 import { supabase } from '../lib/supabase';
@@ -30,7 +31,7 @@ import { OrgTreePicker } from '../components/OrgTreePicker';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 
 // --- Types for Local Component State ---
-type AdminTab = 'dictionaries' | 'users' | 'permissions' | 'licensing' | 'notifications' | 'settings' | 'libraries';
+type AdminTab = 'dictionaries' | 'users' | 'permissions' | 'licensing' | 'notifications' | 'approvals' | 'settings' | 'libraries';
 
 // --- Components ---
 
@@ -1974,7 +1975,6 @@ const UserPermissionManager: React.FC = () => {
                                                             {actions.map(action => (
                                                                 <th key={action.key} className="px-2 py-3 text-center text-xs font-semibold text-slate-500 uppercase">{action.label}</th>
                                                             ))}
-                                                            <th className="px-2 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Limit ($)</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-200 bg-white">
@@ -2002,19 +2002,6 @@ const UserPermissionManager: React.FC = () => {
                                                                             </td>
                                                                         );
                                                                     })}
-                                                                    <td className="px-2 py-2 text-center">
-                                                                        {(mod.key === 'purchasing' || mod.key === 'requests' || mod.key === 'workOrders') ? (
-                                                                            <input
-                                                                                type="number"
-                                                                                placeholder="0.00"
-                                                                                className="w-24 text-right text-xs border border-slate-300 rounded p-1"
-                                                                                value={perms.spendingLimit || ''}
-                                                                                onChange={(e) => handlePermissionChange(mod.key, 'spendingLimit', parseFloat(e.target.value))}
-                                                                            />
-                                                                        ) : (
-                                                                            <span className="text-slate-300 text-xs">-</span>
-                                                                        )}
-                                                                    </td>
                                                                 </tr>
                                                             );
                                                         })}
@@ -2364,6 +2351,12 @@ export const Admin: React.FC = () => {
                         <Bell size={16} /> Notifications
                     </button>
                     <button
+                        onClick={() => setActiveTab('approvals')}
+                        className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'approvals' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                    >
+                        <Shield size={16} /> Approvals
+                    </button>
+                    <button
                         onClick={() => setActiveTab('libraries')}
                         className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'libraries' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
@@ -2407,6 +2400,7 @@ export const Admin: React.FC = () => {
                         </div>
                     )}
                     {activeTab === 'notifications' && <NotificationConfig />}
+                    {activeTab === 'approvals' && <ApprovalSettings />}
                     {activeTab === 'libraries' && <TaskLibraryManager />}
                     {activeTab === 'settings' && (
                         <div className="animate-in fade-in duration-300 space-y-6">
